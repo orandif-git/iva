@@ -47,7 +47,9 @@ export class Api {
     const run = async () => {
       const rt = this.refreshToken;
       if (!rt) return false;
-      const r = await fetch(this.refreshUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: rt }) });
+      let r;
+      try { r = await fetch(this.refreshUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: rt }) }); }
+      catch { return false; }                                  // no network: keep the sign-in, the app can still show what it saved
       if (!r.ok) { this.clear(); return false; }
       this.setTokens(await r.json());
       return true;
