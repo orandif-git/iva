@@ -34,6 +34,7 @@ export class Api {
     Object.assign(this, { refreshUrl, key, storage, onSignedOut });
     this.access = null;
     this._refreshing = null;
+    this.lastStale = 0;
   }
   get refreshToken() { try { return this.storage.getItem(this.key); } catch { return null; } }
   set refreshToken(v) { try { v ? this.storage.setItem(this.key, v) : this.storage.removeItem(this.key); } catch { /* private mode */ } }
@@ -64,6 +65,7 @@ export class Api {
     let r;
     try { r = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
     catch { throw new ApiError(0, "network", "Cannot reach the server. Check your internet connection."); }
+    if (r.headers.get("X-From-Cache")) this.lastStale = Date.now();       // the service worker answered from its saved copy because the network is down
     if (r.status === 401 && retry) {
       const j = await r.clone().json().catch(() => ({}));
       if (["invalid_token", "missing_token"].includes(j.error?.code) && await this.refresh()) return this.call(method, url, body, { blob, retry: false });

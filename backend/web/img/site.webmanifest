@@ -23,6 +23,24 @@
   }
  ],
  "theme_color": "#128BE0",
- "background_color": "#FFFFFF",
- "display": "standalone"
+ "background_color": "#EEF2F7",
+ "display": "standalone",
+ "id": "/",
+ "start_url": "/",
+ "scope": "/",
+ "orientation": "any",
+ "categories": [
+  "business",
+  "productivity"
+ ],
+ "shortcuts": [
+  {
+   "name": "Alerts",
+   "url": "/#/alerts"
+  },
+  {
+   "name": "Cameras",
+   "url": "/#/cameras"
+  }
+ ]
 }

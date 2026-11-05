@@ -36,7 +36,7 @@ async def test_pages_are_served_with_a_strict_content_policy(client, path):
 
 
 async def test_scripts_and_styles_are_served_and_nothing_outside_the_web_folder(client):
-    assert "javascript" in (await client.get("/js/customer.js")).headers["content-type"]
+    assert "javascript" in (await client.get("/js/app/main.js")).headers["content-type"]
     assert (await client.get("/css/app.css")).status_code == 200
     for bad in ("/../app/config.py", "/..%2fapp%2fconfig.py", "/%2e%2e/app/config.py", "/js/../../app/main.py"):
         r = await client.get(bad)
@@ -56,7 +56,7 @@ async def test_api_answers_are_not_cached_and_api_routes_are_not_hidden_by_the_p
 def test_the_pages_use_no_inline_style_or_html_injection():
     """The pages build everything from text nodes. A source check that nobody adds innerHTML or inline styles later."""
     import pathlib
-    for f in pathlib.Path(get_settings().web_dir or pathlib.Path(__file__).resolve().parents[1] / "web").glob("js/*.js"):
+    for f in pathlib.Path(get_settings().web_dir or pathlib.Path(__file__).resolve().parents[1] / "web").glob("js/**/*.js"):
         src = f.read_text()
         assert "innerHTML" not in src and "outerHTML" not in src and "insertAdjacentHTML" not in src and "document.write" not in src and "eval(" not in src, f.name
         assert 'setAttribute("style"' not in src, f.name
@@ -331,3 +331,18 @@ async def test_public_routes_still_work_through_the_proxy(client, make):
     r = await client.get("/v1/me", headers={**u["headers"], "X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
     assert r.status_code == 200
     assert (await client.get("/", headers={"X-Forwarded-For": "203.0.113.5"})).status_code == 200
+
+
+async def test_the_service_worker_is_served_from_the_root_and_is_not_cached_forever(client):
+    r = await client.get("/sw.js")
+    assert r.status_code == 200 and "javascript" in r.headers["content-type"] and r.headers["cache-control"] == "no-cache"
+    src = r.text
+    assert "snapshot" not in src and "download" not in src and "/auth" not in src            # pictures, downloads and sign-in are never stored
+    assert "authorization" not in src.lower()                                            # nor are tokens
+    assert "clear-api-cache" in src
+
+
+async def test_the_manifest_makes_an_installable_app(client):
+    m = (await client.get("/img/site.webmanifest")).json()
+    assert m["display"] == "standalone" and m["start_url"] == "/" and m["scope"] == "/"
+    assert {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
