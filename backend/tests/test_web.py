@@ -244,3 +244,34 @@ async def test_a_page_with_its_own_content_policy_keeps_it(client, monkeypatch):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_), base_url="http://t") as c:
         assert (await c.get("/own-policy")).headers["content-security-policy"] == "default-src 'none'; media-src 'self'"
         assert (await c.get("/no-policy")).headers["content-security-policy"] == CSP
+
+
+# ------------------------------------------------------------------------------------------ brand files
+@pytest.mark.parametrize("path,kind", [("/img/favicon.svg", "image/svg+xml"), ("/img/logo.svg", "image/svg+xml"), ("/img/logo-mark.svg", "image/svg+xml"),
+                                       ("/img/logo-on-light.svg", "image/svg+xml"), ("/img/logo-on-dark.svg", "image/svg+xml"), ("/favicon.ico", "image/vnd.microsoft.icon"),
+                                       ("/img/favicon-32.png", "image/png"), ("/img/apple-touch-icon.png", "image/png"), ("/img/icon-512.png", "image/png"),
+                                       ("/img/site.webmanifest", "application/manifest+json")])
+async def test_brand_files_are_served(client, path, kind):
+    r = await client.get(path)
+    assert r.status_code == 200 and r.headers["content-type"].startswith(kind) and len(r.content) > 200
+
+
+async def test_the_logo_files_are_safe_and_self_contained(client):
+    import json
+    import re
+    for name in ("logo", "logo-mark", "logo-on-light", "logo-on-dark", "favicon"):
+        svg = (await client.get(f"/img/{name}.svg")).text
+        assert svg.startswith("<svg") and "<script" not in svg and "onload" not in svg.lower() and "<image" not in svg and "<foreignObject" not in svg
+        assert not re.findall(r'(?:href|src|url\()\s*=?\s*["\']?https?://', svg)                 # nothing loaded from elsewhere
+        assert "Jas iVision" in svg and "<text" not in svg or name in ("logo-mark", "favicon")      # lettering is outlines, so no font is needed
+    m = json.loads((await client.get("/img/site.webmanifest")).text)
+    assert m["name"] == "Jas iVision" and m["theme_color"] == "#128BE0" and {i["sizes"] for i in m["icons"]} == {"192x192", "512x512"}
+    ico = (await client.get("/favicon.ico")).content
+    assert ico[:4] == b"\x00\x00\x01\x00"                                                       # a real .ico file
+
+
+@pytest.mark.parametrize("path", ["/", "/staff/"])
+async def test_pages_point_at_the_icons(client, path):
+    html = (await client.get(path)).text
+    for want in ('href="/img/favicon.svg"', 'href="/favicon.ico"', 'href="/img/apple-touch-icon.png"', 'href="/img/site.webmanifest"', 'name="theme-color"'):
+        assert want in html

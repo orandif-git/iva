@@ -1,17 +1,17 @@
 /* Jas iVision web pages: shared by the customer app and the staff console. No external fonts or scripts. */
 :root{
   --bg:#F2F4F1; --surface:#FFFFFF; --surface2:#F7F9F7; --ink:#14201E; --muted:#5C6B68; --line:#DAE1DD;
-  --accent:#0F766E; --accent-ink:#FFFFFF; --accent-soft:#DDF1EE;
+  --accent:#0A6CC4; --accent-ink:#FFFFFF; --accent-soft:#DCEEFC;
   --ok:#15803D; --ok-soft:#DCF3E3; --warn:#A8530A; --warn-soft:#FBEBD3; --crit:#B42318; --crit-soft:#FBE0DD;
-  --in:#0F766E; --out:#C2790A;
+  --in:#0A6CC4; --out:#C2790A;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil",sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --r:10px;
 }
 @media (prefers-color-scheme:dark){
   :root{--bg:#0C1312;--surface:#141E1D;--surface2:#101918;--ink:#E5EEEC;--muted:#92A4A0;--line:#25332F;
-    --accent:#3CC4B4;--accent-ink:#06211E;--accent-soft:#12302D;--ok:#5BD58A;--ok-soft:#10301D;--warn:#F0A64A;--warn-soft:#3A2810;
-    --crit:#FF8A7D;--crit-soft:#3C1713;--in:#3CC4B4;--out:#F0A64A;color-scheme:dark}
+    --accent:#5BB8FF;--accent-ink:#04121F;--accent-soft:#10283F;--ok:#5BD58A;--ok-soft:#10301D;--warn:#F0A64A;--warn-soft:#3A2810;
+    --crit:#FF8A7D;--crit-soft:#3C1713;--in:#5BB8FF;--out:#F0A64A;color-scheme:dark}
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -31,8 +31,7 @@ button{cursor:pointer}
 .shell{min-height:100vh;display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr}
 .side{background:var(--surface);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-direction:column;gap:8px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700}
-.brand i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center}
-.brand svg{width:17px;height:17px;stroke:var(--accent-ink);fill:none;stroke-width:2.2}
+.brand img{display:block;width:34px;height:34px}
 .org{font-size:12px;color:var(--muted)}
 .nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -4px}
 .nav::-webkit-scrollbar{display:none}
@@ -137,3 +136,5 @@ a.btn{text-decoration:none}
 .noscript{padding:16px}
 .tagline{text-align:center;color:var(--muted);font-size:13px;margin:-10px 0 16px}
 .card>h1{margin-bottom:12px}
+.lockup{display:block;width:min(270px,76%);height:auto;margin:0 auto 18px}
+.auth .tagline{margin:-10px 0 14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px}
