@@ -31,8 +31,8 @@ const NAV = [["#/", "Overview"], ["#/customers", "Customers"]];
 function shell() {
   const out = h("button", { class: "btn sm" }, "Sign out");
   out.onclick = async () => { try { if (api.refreshToken) await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); state.me = null; location.hash = ""; signIn(); };
-  mount(app, h("div", { class: "shell" }, h("aside", { class: "side" }, h("div", { class: "brand" }, h("img", { src: "/img/logo-mark.svg", alt: "", width: 34, height: 34 }), "Staff"),
-    h("div", { class: "org" }, `${state.me.name} · ${state.me.role}`), h("nav", { class: "nav" }, NAV.map(([href, l]) => h("a", { href }, l)), h("span", {}, out))), h("main", { class: "main", id: "main" })));
+  mount(app, h("div", { class: "shell" }, h("aside", { class: "side" }, h("a", { class: "brand", href: "#/", "aria-label": BRAND.name }, h("img", { src: "/img/logo-compact.svg", alt: BRAND.name })),
+    h("div", { class: "org" }, `Staff · ${state.me.name} · ${state.me.role}`), h("nav", { class: "nav" }, NAV.map(([href, l]) => h("a", { href }, l)), h("span", {}, out))), h("main", { class: "main", id: "main" })));
 }
 const ROUTES = [[/^#\/?$/, overview], [/^#\/customers$/, customers], [/^#\/customers\/([\w-]+)$/, customer]];
 async function render() {

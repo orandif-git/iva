@@ -247,10 +247,14 @@ async def test_a_page_with_its_own_content_policy_keeps_it(client, monkeypatch):
 
 
 # ------------------------------------------------------------------------------------------ brand files
-@pytest.mark.parametrize("path,kind", [("/img/favicon.svg", "image/svg+xml"), ("/img/logo.svg", "image/svg+xml"), ("/img/logo-mark.svg", "image/svg+xml"),
-                                       ("/img/logo-on-light.svg", "image/svg+xml"), ("/img/logo-on-dark.svg", "image/svg+xml"), ("/favicon.ico", "image/vnd.microsoft.icon"),
-                                       ("/img/favicon-32.png", "image/png"), ("/img/apple-touch-icon.png", "image/png"), ("/img/icon-512.png", "image/png"),
-                                       ("/img/site.webmanifest", "application/manifest+json")])
+SVGS = ("logo", "logo-on-light", "logo-on-dark", "logo-compact", "logo-compact-on-dark", "logo-stacked", "logo-stacked-on-dark", "logo-black", "logo-white",
+        "logo-mark", "logo-mark-black", "logo-mark-white", "favicon", "og-image")
+PNGS = ("favicon-16", "favicon-32", "favicon-48", "apple-touch-icon", "icon-192", "icon-512", "icon-maskable-512", "og-image", "logo-on-light", "logo-on-dark",
+        "logo-compact", "logo-stacked", "logo-transparent", "logo-transparent-dark", "logo-black", "logo-white", "logo-mark-512")
+
+
+@pytest.mark.parametrize("path,kind", [(f"/img/{n}.svg", "image/svg+xml") for n in SVGS] + [(f"/img/{n}.png", "image/png") for n in PNGS]
+                         + [("/favicon.ico", "image/vnd.microsoft.icon"), ("/img/site.webmanifest", "application/manifest+json")])
 async def test_brand_files_are_served(client, path, kind):
     r = await client.get(path)
     assert r.status_code == 200 and r.headers["content-type"].startswith(kind) and len(r.content) > 200
@@ -259,15 +263,32 @@ async def test_brand_files_are_served(client, path, kind):
 async def test_the_logo_files_are_safe_and_self_contained(client):
     import json
     import re
-    for name in ("logo", "logo-mark", "logo-on-light", "logo-on-dark", "favicon"):
+    for name in SVGS:
         svg = (await client.get(f"/img/{name}.svg")).text
         assert svg.startswith("<svg") and "<script" not in svg and "onload" not in svg.lower() and "<image" not in svg and "<foreignObject" not in svg
         assert not re.findall(r'(?:href|src|url\()\s*=?\s*["\']?https?://', svg)                 # nothing loaded from elsewhere
-        assert "Jas iVision" in svg and "<text" not in svg or name in ("logo-mark", "favicon")      # lettering is outlines, so no font is needed
+        assert "Jas iVision" in svg and "<text" not in svg                                        # lettering is outlines, so no font is needed
+        assert len(svg) < 60_000                                                                  # light enough to load at once on a phone
     m = json.loads((await client.get("/img/site.webmanifest")).text)
     assert m["name"] == "Jas iVision" and m["theme_color"] == "#128BE0" and {i["sizes"] for i in m["icons"]} == {"192x192", "512x512"}
+    assert {i["purpose"] for i in m["icons"]} == {"any", "maskable"}                              # a safe-zone icon for Android, which crops icons into circles
     ico = (await client.get("/favicon.ico")).content
-    assert ico[:4] == b"\x00\x00\x01\x00"                                                       # a real .ico file
+    assert ico[:4] == b"\x00\x00\x01\x00" and int.from_bytes(ico[4:6], "little") == 3             # a real .ico file holding 16, 32 and 48 px pictures
+
+
+async def test_the_picture_files_have_the_sizes_their_names_promise(client):
+    import io
+    from PIL import Image
+    want = {"favicon-16": (16, 16), "favicon-32": (32, 32), "favicon-48": (48, 48), "apple-touch-icon": (180, 180), "icon-192": (192, 192),
+            "icon-512": (512, 512), "icon-maskable-512": (512, 512), "og-image": (1200, 630), "logo-mark-512": (512, 512)}
+    for name, size in want.items():
+        im = Image.open(io.BytesIO((await client.get(f"/img/{name}.png")).content))
+        assert im.size == size, name
+    assert Image.open(io.BytesIO((await client.get("/img/logo-on-light.png")).content)).width >= 1600      # big enough to print
+    t = Image.open(io.BytesIO((await client.get("/img/logo-transparent.png")).content)).convert("RGBA")
+    assert t.getpixel((2, 2))[3] == 0                                                                 # the transparent version really is transparent
+    ico = (await client.get("/favicon.ico")).content
+    assert sorted(ico[6 + 16 * i] for i in range(3)) == [16, 32, 48]
 
 
 @pytest.mark.parametrize("path", ["/", "/staff/"])

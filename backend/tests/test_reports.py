@@ -313,7 +313,9 @@ async def test_due_reports_are_queued_once_per_period(client, make, su, shop):
 
 async def test_a_scheduled_report_is_emailed_with_the_file_attached(client, make, su, shop, world):
     t, u, cam = shop
-    when = datetime.now(timezone.utc) + timedelta(days=1, hours=1)                                   # the moment the schedule fires in this test
+    # The schedule is set for 07:00 India time, so test at 08:00 India time tomorrow whatever the time of day it is now (a fixed offset from now
+    # failed whenever the test ran between midnight and 07:00 in India).
+    when = (datetime.now(IST) + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     await plate(su, t, cam, datetime.combine(when.astimezone(IST).date() - timedelta(days=1), time(9, 0), IST), "GJ14AW1013", "in")        # a read on the day it covers
     rid = await person(client, u, "boss@x.test")
     off = await person(client, u, "away@x.test")

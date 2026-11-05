@@ -17,8 +17,10 @@ def sparkle(cx, cy, r, fill):
             f'Q{_f(cx-k)} {_f(cy+k)} {_f(cx-r)} {_f(cy)}Q{_f(cx-k)} {_f(cy-k)} {_f(cx)} {_f(cy-r)}Z"/>')
 
 
-def lens(cx, cy, R, ring, glass, pupil, glint="#fff"):
+def lens(cx, cy, R, ring, glass, pupil, glint="#fff", mono=False):
     """A camera lens of radius R: outer ring, dark glass, an inner ring, and the AI sparkle as its pupil. Used for the 'o' in iVision."""
+    if mono:                                                        # one colour: an open ring, the sparkle, nothing else
+        return (f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(R*0.88)}" fill="none" stroke="{ring}" stroke-width="{_f(R*0.2)}"/>' + sparkle(cx, cy, R * 0.5, ring))
     return (f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(R)}" fill="{ring}"/><circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(R*0.78)}" fill="{glass}"/>'
             f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(R*0.54)}" fill="none" stroke="{pupil}" stroke-width="{_f(R*0.09)}" opacity=".7"/>'
             + sparkle(cx, cy, R * 0.47, pupil) +
@@ -34,7 +36,7 @@ def mark_body(uid, frame, globe_c, ai, halo, detail=True):
     inner = f'<path d="{_gd}" fill="{globe_c}" fill-rule="evenodd" stroke="{globe_c}" stroke-width="{4.5 if detail else 8}" stroke-linejoin="round"/>'
     inner += sparkle(GAP[0] + 4, GAP[1], 50 if detail else 46, ai)
     if detail:
-        inner += "".join(f'<circle cx="{x}" cy="{y}" r="11" fill="{ai}" stroke="{halo}" stroke-width="4"/>' for x, y in NODES)
+        inner += "".join(f'<circle cx="{x}" cy="{y}" r="11" fill="{ai}"' + (f' stroke="{halo}" stroke-width="4"' if halo else "") + "/>" for x, y in NODES)
     body = (br("M10 38V14Q10 10 14 10H38") + br("M82 10H106Q110 10 110 14V38") + br("M110 82V106Q110 110 106 110H82") + br("M38 110H14Q10 110 10 106V82")
             + f'<g transform="translate({_f(tx)} {_f(ty)}) scale({_f(s)})">{inner}</g>')
     return "", body

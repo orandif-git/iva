@@ -19,11 +19,13 @@ x1 = 312                                                       # the globe ends 
 ys, xs = np.where(blue[:, :x1])
 box = (xs.min() - 2, ys.min() - 2, xs.max() + 3, ys.max() + 3)
 print("globe box in the logo file:", box)
-alpha = Image.fromarray(((blue[:, :x1]) * 255).astype("uint8")).crop(box)
-K = 6                                                          # trace at 6x so curves are smooth
-big = alpha.resize((alpha.width * K, alpha.height * K), Image.LANCZOS).filter(ImageFilter.GaussianBlur(K * 1.1))
-bm = potrace.Bitmap(np.array(big) < 100)          # potrace traces the dark pixels, so invert: the globe must be the dark side
-plist = bm.trace(turdsize=60, alphamax=1.3, opticurve=True, opttolerance=3.0)
+# Use the anti-aliased coverage (not a hard black-and-white cut) so the thin tapered tips keep their weight.
+cov = (a[:, :x1, 3] / 255.0) * ((a[:, :x1, 2] > 150) & (a[:, :x1, 0] < 120))
+alpha = Image.fromarray((cov * 255).astype("uint8")).crop(box)
+K = int(__import__('os').environ.get('K', 8))                                                          # trace at 6x so curves are smooth
+big = alpha.resize((alpha.width * K, alpha.height * K), Image.LANCZOS).filter(ImageFilter.GaussianBlur(K * float(__import__('os').environ.get('BLUR', 1.6))))
+bm = potrace.Bitmap(np.array(big) < int(__import__('os').environ.get('THR', 124)))          # potracer draws the side where this is False, which is the globe (coverage at or above the threshold)
+plist = bm.trace(turdsize=60, alphamax=1.3, opticurve=True, opttolerance=float(__import__('os').environ.get('OPT', 5.0)))
 
 
 def d_of(plist):
@@ -42,5 +44,5 @@ def d_of(plist):
 
 w, h = alpha.size
 d = d_of(plist)
-pathlib.Path(__file__).with_name("jas_globe_path.txt").write_text(f"{w} {h}\n{d}\n")
+pathlib.Path(__import__("os").environ.get("OUTFILE", str(pathlib.Path(__file__).with_name("jas_globe_path.txt")))).write_text(f"{w} {h}\n{d}\n")
 print(f"traced {len(plist)} shapes, path {len(d)} chars, size {w}x{h}")

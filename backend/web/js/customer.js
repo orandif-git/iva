@@ -66,7 +66,7 @@ const NAV = [["#/", "Overview"], ["#/cameras", "Cameras"], ["#/recorders", "Reco
 function shell() {
   const main = h("main", { class: "main", id: "main" });
   mount(app, h("div", { class: "shell" },
-    h("aside", { class: "side" }, h("div", { class: "brand" }, h("img", { src: "/img/logo-mark.svg", alt: "", width: 34, height: 34 }), BRAND.name), h("div", { class: "org" }, state.me.tenant.name),
+    h("aside", { class: "side" }, h("a", { class: "brand", href: "#/", "aria-label": BRAND.name }, h("img", { src: "/img/logo-compact.svg", alt: BRAND.name })), h("div", { class: "org" }, state.me.tenant.name),
       h("nav", { class: "nav", "aria-label": "Main" }, NAV.map(([href, label]) => h("a", { href }, label)))), main));
   return main;
 }
