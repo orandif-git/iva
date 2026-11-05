@@ -68,7 +68,7 @@ def admin_ctx(*roles: str):
 
     async def dep(request: Request):
         claims = verify_token("platform", _bearer(request))
-        if claims.get("mfa") is not True:
+        if get_settings().staff_require_mfa and claims.get("mfa") is not True:
             raise ApiError(401, "mfa_required", "Complete multi-factor sign-in.")
         staff_id = _uuid(claims["sub"])
         async with db.admin_tx() as conn:

@@ -71,11 +71,18 @@ async def change_password(body: ChangePasswordIn, ctx: CustomerCtx = Depends(cus
         raise result
 
 
+@staff.get("/options")
+async def staff_options():
+    """Whether the staff sign-in page should ask for an authenticator code."""
+    from ..config import get_settings
+    return {"mfa_required": get_settings().staff_require_mfa}
+
+
 @staff.post("/login")
 async def staff_login(body: StaffLoginIn, request: Request, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.staff_login(conn, body.email, body.password, body.code, client_ip(request))
+        result = await auth.staff_login(conn, body.email, body.password, body.code or "", client_ip(request))
     return _raise_if_error(result)
 
 

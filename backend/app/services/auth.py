@@ -1,6 +1,9 @@
 """Sign-in for customers and staff.
 
-Customers: email and password. Staff: email, password AND a code from an authenticator app (the admin API requires `mfa` in the token).
+Customers: email and password. Staff: email, password AND a code from an authenticator app (the admin API requires `mfa` in the token),
+unless the server is set to GI_STAFF_REQUIRE_MFA=false: then a password is enough, the token says `mfa: false`, and its refresh token starts with
+`n_`. Turning two-step back on refuses those tokens at once (they cannot be upgraded); a refresh token without that prefix always came from a
+sign-in that had the code.
 Access tokens are short (15 minutes). A refresh token lasts longer, can be used once, and is swapped for a new one each time; presenting
 an old one again means it was copied, so the whole sign-in is revoked. Only hashes of refresh, invite and reset tokens are stored.
 
@@ -36,9 +39,9 @@ def token_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-async def _issue_refresh(conn, account_type: str, account_id, family=None, ttl: timedelta | None = None) -> str:
+async def _issue_refresh(conn, account_type: str, account_id, family=None, ttl: timedelta | None = None, mfa: bool = True) -> str:
     s = get_settings()
-    raw = secrets.token_urlsafe(32)
+    raw = ("" if mfa else "n_") + secrets.token_urlsafe(32)          # the prefix is part of the secret: it cannot be removed without invalidating the token
     ttl = ttl or (timedelta(days=s.customer_refresh_days) if account_type == "customer" else timedelta(hours=s.staff_refresh_hours))
     await conn.execute(
         """INSERT INTO platform.auth_tokens (kind, account_type, account_id, family, token_hash, expires_at)
@@ -55,7 +58,7 @@ async def _tokens(conn, account_type: str, account_id, family=None, **claims) ->
     aud = "customer" if account_type == "customer" else "platform"
     s = get_settings()
     return {"access_token": _access(aud, {"sub": str(account_id), **claims}), "token_type": "bearer", "expires_in": s.access_token_minutes * 60,
-            "refresh_token": await _issue_refresh(conn, account_type, account_id, family)}
+            "refresh_token": await _issue_refresh(conn, account_type, account_id, family, mfa=claims.get("mfa", True))}
 
 
 async def _record_failure(conn, table: str, ids: list) -> None:
@@ -115,17 +118,17 @@ async def staff_login(conn, email: str, password: str, code: str, ip: str | None
         raise ApiError(429, "too_many_attempts", "Too many attempts. Wait a few minutes and try again.")
     pw_ok = await passwords.verify_async(password, r["password_hash"] if r else None)
     step = None
-    if r and pw_ok and r["status"] == "active" and r["totp_secret_ciphertext"]:
+    if r and pw_ok and r["status"] == "active" and r["totp_secret_ciphertext"] and code:
         secret = vault().decrypt(bytes(r["totp_secret_ciphertext"]), f"totp:{r['id']}")
         step = totp.verify(secret, code, r["totp_last_step"])
-    if not (r and pw_ok and step and r["status"] == "active"):
+    if not (r and pw_ok and r["status"] == "active" and (step or not s.staff_require_mfa)):
         guard.failed(email)
         if r:
             await _record_failure(conn, "platform.staff_users", [r["id"]])
-        return _fail(msg="Wrong email, password or code.")
+        return _fail(msg="Wrong email, password or code." if s.staff_require_mfa else "That email and password do not match.")
     guard.succeeded(email)
-    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now(), totp_last_step=$2 WHERE id=$1", r["id"], step)
-    out = await _tokens(conn, "staff", r["id"], mfa=True)
+    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now(), totp_last_step=coalesce($2, totp_last_step) WHERE id=$1", r["id"], step)
+    out = await _tokens(conn, "staff", r["id"], mfa=bool(step))                  # a valid code gives a full token even when it is not required
     out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
     return out
 
@@ -150,7 +153,10 @@ async def refresh(conn, account_type: str, raw: str) -> dict | ApiError:
         u = await conn.fetchrow("SELECT id, status FROM platform.staff_users WHERE id=$1", row["account_id"])
         if not u or u["status"] != "active":
             raise ApiError(401, "invalid_token", "Sign in again.")
-        claims = {"mfa": True}
+        mfa_done = not raw.startswith("n_")
+        if get_settings().staff_require_mfa and not mfa_done:     # signed in without a code while that was allowed: sign in again, with one
+            return ApiError(401, "invalid_token", "Sign in again.")
+        claims = {"mfa": mfa_done}
     return await _tokens(conn, account_type, row["account_id"], family=row["family"], **claims)
 
 

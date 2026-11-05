@@ -343,3 +343,84 @@ def test_totp_matches_the_standard_test_vector():
     assert totp.verify(s, totp._code(s, 100), last_step=100, now=100 * 30) is None
     assert totp.verify(s, totp._code(s, 90), now=100 * 30) is None                                      # too old
     assert totp.verify(s, "12345", now=0) is None and totp.verify(s, "abcdef", now=0) is None
+
+
+# ------------------------------------------------------------------------- staff sign-in without an authenticator (GI_STAFF_REQUIRE_MFA=false)
+@pytest.fixture
+def mfa_off(monkeypatch):
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
+
+
+def claims_of(token):
+    from app.security import verify_token
+    return verify_token("platform", token)
+
+
+async def test_by_default_a_code_is_required_and_the_sign_in_page_is_told_so(client, su):
+    assert (await client.get("/admin/v1/auth/options")).json() == {"mfa_required": True}
+    _, email, _ = await staff_with_totp(su)
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 401            # no code: refused
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": "123456"})).status_code == 401
+
+
+async def test_with_two_step_off_staff_sign_in_with_a_password_alone(client, su, mfa_off):
+    assert (await client.get("/admin/v1/auth/options")).json() == {"mfa_required": False}
+    sid, email, secret = await staff_with_totp(su)
+    r = await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})            # no code at all
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert claims_of(j["access_token"])["mfa"] is False and j["refresh_token"].startswith("n_")      # marked as a password-only sign-in
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 200
+    ok = await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})
+    assert ok.status_code == 200 and ok.json()["refresh_token"].startswith("n_")                     # stays password-only when refreshed
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": "wrong password!"})).status_code == 401
+    assert (await client.post("/admin/v1/auth/login", json={"email": "nobody@gi.test", "password": PW})).status_code == 401
+
+
+async def test_a_staff_member_with_no_authenticator_can_sign_in_when_it_is_off_and_not_when_it_is_on(client, su, monkeypatch):
+    email = f"{uuid.uuid4().hex[:8]}@gi.test"
+    await su.execute("INSERT INTO platform.staff_users (email,name,role,password_hash) VALUES ($1,'No App','owner',$2)", email, passwords.hash_password(PW))
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 401           # on: refused
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 200            # off: allowed
+
+
+async def test_a_valid_code_still_gives_a_full_token_when_two_step_is_off(client, su, mfa_off):
+    _, email, secret = await staff_with_totp(su)
+    j = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret)})).json()
+    assert claims_of(j["access_token"])["mfa"] is True and not j["refresh_token"].startswith("n_")
+
+
+async def test_turning_two_step_back_on_refuses_what_a_password_only_sign_in_made(client, su, monkeypatch):
+    _, email, secret = await staff_with_totp(su)
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
+    weak = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).json()
+    full = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret, +1)})).json()
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", True)
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + weak["access_token"]})).status_code == 401       # the access token no longer works
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": weak["refresh_token"]})).status_code == 401           # and cannot be upgraded
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + full["access_token"]})).status_code == 200         # one made with a code still works
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": full["refresh_token"]})).status_code == 200
+
+
+async def test_the_prefix_cannot_be_added_or_removed_to_change_what_a_token_is(client, su, monkeypatch):
+    _, email, secret = await staff_with_totp(su)
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
+    weak = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).json()["refresh_token"]
+    monkeypatch.setattr(get_settings(), "staff_require_mfa", True)
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": weak[2:]})).status_code == 401              # prefix removed: a different (unknown) token
+    full = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret, +1)})).json()["refresh_token"]
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": "n_" + full})).status_code == 401           # prefix added: also unknown
+
+
+async def test_passwords_still_lock_accounts_when_two_step_is_off(client, su, mfa_off):
+    sid, email, _ = await staff_with_totp(su)
+    for _ in range(5):
+        assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": "wrong password!"})).status_code == 401
+    guard.reset()
+    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 429             # locked, even with the right password
+
+
+async def test_the_old_mfa_flag_in_a_token_is_still_honoured_when_two_step_is_off(client, make, mfa_off):
+    weak = await make.staff("owner", mfa=False)                      # a token without the multi-factor flag
+    assert (await client.get("/admin/v1/me", headers=weak["headers"])).status_code == 200

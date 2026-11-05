@@ -17,12 +17,14 @@ function signIn() {
   const email = h("input", { type: "email", autocomplete: "username", required: true, autofocus: true });
   const pw = h("input", { type: "password", autocomplete: "current-password", required: true });
   const code = h("input", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", pattern: "[0-9]{6}", maxlength: 6, required: true });
+  const codeField = field("Code from your authenticator app", code, "The 6 digits shown in the app. They change every 30 seconds.");
   const err = h("div"), btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
   const form = h("form", { onsubmit: busy(btn, async (e) => {
     e.preventDefault(); clear(err);
-    try { api.setTokens(await api.call("POST", "/admin/v1/auth/login", { email: email.value, password: pw.value, code: code.value })); pw.value = code.value = ""; boot(); }
+    try { api.setTokens(await api.call("POST", "/admin/v1/auth/login", { email: email.value, password: pw.value, ...(code.value ? { code: code.value } : {}) })); pw.value = code.value = ""; boot(); }
     catch (x) { err.append(note(x.message, "err")); code.value = ""; }
-  }) }, field("Email", email), field("Password", pw), field("Code from your authenticator app", code, "The 6 digits shown in the app. They change every 30 seconds."), err, btn);
+  }) }, field("Email", email), field("Password", pw), codeField, err, btn);
+  fetch("/admin/v1/auth/options").then((r) => r.json()).then((o) => { if (o.mfa_required === false) { codeField.classList.add("hide"); code.required = false; } }).catch(() => { /* keep asking for the code */ });
   mount(app, h("div", { class: "auth" }, h("div", { class: "box" }, lockup(), h("p", { class: "tagline" }, "Staff"), h("div", { class: "card" }, h("h1", {}, "Staff sign in"), form))));
 }
 

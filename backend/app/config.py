@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     customer_refresh_days: int = 30
     staff_refresh_hours: int = 12
+    staff_require_mfa: bool = True           # staff sign in with a password AND an authenticator code. False: password only (weaker; see DEPLOY.md)
     invite_days: int = 7
     reset_hours: int = 1
     lockout_failures: int = 5                # wrong passwords before an account is locked

@@ -150,6 +150,20 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    read -rs P; curl -s -X POST http://127.0.0.1:8000/admin/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"you@yourcompany.in\",\"password\":\"$P\",\"code\":\"123456\"}"
    ```
    Replace `123456` with the code your app shows. You get an `access_token`.
+### Signing in without an authenticator app (optional, weaker)
+
+By default staff need their password **and** a 6-digit code. To use the password alone, add `GI_STAFF_REQUIRE_MFA=false` to `.env` and restart `gi-api`:
+
+```bash
+grep -q '^GI_STAFF_REQUIRE_MFA=' /www/wwwroot/iva/backend/.env && sed -i 's|^GI_STAFF_REQUIRE_MFA=.*|GI_STAFF_REQUIRE_MFA=false|' /www/wwwroot/iva/backend/.env || echo 'GI_STAFF_REQUIRE_MFA=false' >> /www/wwwroot/iva/backend/.env; systemctl restart gi-api
+```
+
+The sign-in page then hides the code box by itself. Things to know:
+- **It is weaker.** The staff console can see every customer, invite users and view as a customer. With the code, a stolen or guessed password is not enough; without it, it is. Use a long, unique password (a few words together), and do not reuse it anywhere.
+- Limits stay: five wrong passwords lock the account for 15 minutes, and attempts per address are limited.
+- Tokens made while it is off are marked "password only". If you turn it back on (`GI_STAFF_REQUIRE_MFA=true`, or remove the line), those sessions stop working at once and must sign in again with a code, so an old password-only session can never be upgraded.
+- `scripts.create_staff --no-authenticator` creates an account without an authenticator key. An account that already has one keeps working with or without it.
+
 4. [ ] Invite a customer's first user: `POST /admin/v1/tenants/<tenant id>/users` with `{"email","name","role":"admin"}` returns a `link`. Send it to the person; they choose their own password there.
 
 ## 6c. The web pages

@@ -26,6 +26,7 @@ async def main() -> int:
     a.add_argument("--name", required=True)
     a.add_argument("--role", required=True, choices=ROLES)
     a.add_argument("--dsn", help="a database owner connection (default: the application's own)")
+    a.add_argument("--no-authenticator", action="store_true", help="do not create an authenticator key (for a server running with GI_STAFF_REQUIRE_MFA=false)")
     args = a.parse_args()
     email = args.email.strip().lower()
     pw = getpass.getpass("Password (at least 10 characters): ")
@@ -37,7 +38,7 @@ async def main() -> int:
     except Exception as e:
         print(getattr(e, "message", e), file=sys.stderr)
         return 1
-    secret = totp.new_secret()
+    secret = None if args.no_authenticator else totp.new_secret()
     dsn = args.dsn or get_settings().database_url
     c = await asyncpg.connect(dsn)
     try:
@@ -48,15 +49,18 @@ async def main() -> int:
                    ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role, status='active', password_hash=EXCLUDED.password_hash,
                                                       failed_logins=0, locked_until=NULL, totp_last_step=0 RETURNING id""",
                 email, args.name, args.role, await passwords.hash_async(pw))
-            await c.execute("UPDATE platform.staff_users SET totp_secret_ciphertext=$2, mfa_enabled=true WHERE id=$1", sid, vault().encrypt(secret, f"totp:{sid}"))
+            await c.execute("UPDATE platform.staff_users SET totp_secret_ciphertext=$2, mfa_enabled=$3 WHERE id=$1", sid, vault().encrypt(secret, f"totp:{sid}") if secret else None, bool(secret))
             await c.execute("UPDATE platform.auth_tokens SET revoked_at=now() WHERE account_type='staff' AND account_id=$1 AND revoked_at IS NULL", sid)
     finally:
         await c.close()
     print(f"\nStaff member ready: {email} ({args.role})\n")
-    print("Add this to your authenticator app (type the key in, or open the link on your phone):")
-    print("  key :", secret)
-    print("  link:", totp.uri(secret, email))
-    print("\nSign in with your email, password and the 6-digit code the app shows.")
+    if secret:
+        print("Add this to your authenticator app (type the key in, or open the link on your phone):")
+        print("  key :", secret)
+        print("  link:", totp.uri(secret, email))
+        print("\nSign in with your email, password and the 6-digit code the app shows.")
+    else:
+        print("No authenticator key was made. Sign in with your email and password (the server must have GI_STAFF_REQUIRE_MFA=false).")
     return 0
 
 

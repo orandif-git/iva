@@ -30,6 +30,8 @@ _PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     s = get_settings()
+    if not s.staff_require_mfa:
+        logging.getLogger("gateinsight").warning("Staff sign in with a password only (GI_STAFF_REQUIRE_MFA=false). Use a long, unique password and turn two-step back on when you can.")
     await db.init(s.database_url, s.db_pool_min, s.db_pool_max)
     tasks = [asyncio.create_task(sweeper.run_forever()), asyncio.create_task(maintenance.run_forever()), asyncio.create_task(delivery.run_forever()), asyncio.create_task(reports.run_forever()), asyncio.create_task(billing.run_forever())]
     try:

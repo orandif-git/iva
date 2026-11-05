@@ -371,7 +371,7 @@ class LoginIn(Strict):
 class StaffLoginIn(Strict):
     email: Email
     password: Secret
-    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=6, max_length=8)]
+    code: Annotated[str, StringConstraints(strip_whitespace=True, max_length=8)] | None = None      # needed unless the server runs without two-step sign-in
 
 
 class RefreshIn(Strict):
