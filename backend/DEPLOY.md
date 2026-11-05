@@ -138,6 +138,7 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
 1. [ ] Apply the database change once (not needed for a database created from the current `schema.sql`):
    ```bash
    cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/002_auth.sql"
+   su postgres -c "psql -d gateinsight -f migrations/003_recorder_name.sql"
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:

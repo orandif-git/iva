@@ -251,6 +251,7 @@ CREATE TABLE app.recorders (
   tenant_id          uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
   site_id            uuid REFERENCES app.sites(id) ON DELETE SET NULL,
   device_id          text NOT NULL UNIQUE,             -- 'SHARMA-001'
+  name               text,                             -- a friendly name the customer chose; shown instead of the id
   brand              app.recorder_brand NOT NULL,
   protocol           app.recorder_protocol NOT NULL,
   -- ISUP and similar protocols need the shared secret to verify the device, so it cannot be a one-way hash.

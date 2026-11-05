@@ -82,6 +82,7 @@ class RecorderOut(BaseModel):
     tenant_id: UUID
     site_id: UUID | None
     device_id: str
+    name: str | None = None
     brand: str
     protocol: str
     status: str
@@ -102,12 +103,18 @@ class RecorderCreateAdmin(Strict):
     brand: Brand
     protocol: Protocol | None = None        # default: hikvision -> isup, dahua -> auto_register. "other" needs gb28181.
     site_id: UUID | None = None
+    name: Name | None = None
 
 
 class RecorderCreateCustomer(Strict):
     brand: Brand
     protocol: Protocol | None = None
     site_id: UUID | None = None
+    name: Name | None = None
+
+
+class RecorderPatch(Strict):
+    name: Name | None = None                 # send null to clear the name and show the id again
 
 
 class RecorderCredentials(BaseModel):
@@ -122,6 +129,19 @@ class RecorderCredentials(BaseModel):
     server_id: str | None = None            # GB28181 only: the SIP server id the recorder must be given
     domain: str | None = None               # GB28181 only: the SIP domain (realm)
     viewer_user: str | None = None          # Dahua Auto Register only: the viewer-only user to create on the recorder (its password is the key)
+
+
+class RecorderConnection(BaseModel):
+    """What is typed into the recorder, minus the password: not secret, so it can be shown again at any time."""
+    recorder_id: UUID
+    device_id: str
+    brand: str
+    protocol: str | None = None
+    server: str
+    port: int
+    server_id: str | None = None
+    domain: str | None = None
+    viewer_user: str | None = None
 
 
 class RecorderStatus(BaseModel):

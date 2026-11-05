@@ -13,7 +13,7 @@ BRAND_PROTOCOL = {"hikvision": "isup", "dahua": "auto_register"}
 # Columns safe to return. The encrypted key is never selected into API responses.
 RECORDER_COLS = """r.id, r.tenant_id, r.site_id, r.device_id, r.brand::text AS brand, r.protocol::text AS protocol,
   r.status::text AS status, r.last_heartbeat_at, host(r.last_ip) AS last_ip, r.channel_count, r.preview_ok_at,
-  r.firmware, r.created_at"""
+  r.firmware, r.created_at, r.name"""
 
 _ID_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"        # no look-alikes, because customers type this on a recorder
 
@@ -70,7 +70,7 @@ def _new_device_id(protocol: str, slug: str) -> str:
     return f"{_prefix(slug)}-{''.join(secrets.choice(_ID_CHARS) for _ in range(4))}"
 
 
-async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, created_by, protocol: str | None = None) -> dict:
+async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, created_by, protocol: str | None = None, name: str | None = None) -> dict:
     protocol = resolve_protocol(brand, protocol)
     tenant = await conn.fetchrow("SELECT slug::text AS slug, status::text AS status FROM app.tenants WHERE id=$1", tenant_id)
     if not tenant:
@@ -86,9 +86,9 @@ async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, creat
         try:
             async with conn.transaction():                   # savepoint, so a clash does not abort the request
                 rid = await conn.fetchval(
-                    """INSERT INTO app.recorders (tenant_id, site_id, device_id, brand, protocol, key_ciphertext, key_kms_id, key_set_at, created_by)
-                       VALUES ($1,$2,$3,$4::app.recorder_brand,$5::app.recorder_protocol,$6,'local',now(),$7) RETURNING id""",
-                    tenant_id, site_id, device_id, brand, protocol, vault().encrypt(key, device_id), created_by,
+                    """INSERT INTO app.recorders (tenant_id, site_id, device_id, brand, protocol, key_ciphertext, key_kms_id, key_set_at, created_by, name)
+                       VALUES ($1,$2,$3,$4::app.recorder_brand,$5::app.recorder_protocol,$6,'local',now(),$7,$8) RETURNING id""",
+                    tenant_id, site_id, device_id, brand, protocol, vault().encrypt(key, device_id), created_by, name,
                 )
             break
         except asyncpg.UniqueViolationError:
@@ -99,6 +99,12 @@ async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, creat
     host, port = registrar_endpoint(protocol)
     return {"recorder_id": rid, "device_id": device_id, "brand": brand, "protocol": protocol,
             "server": host, "port": port, "key": key, **extras(protocol)}
+
+
+def connection_details(row) -> dict:
+    """Everything to type into the recorder except the password. `row` has id, device_id, brand and protocol."""
+    host, port = registrar_endpoint(row["protocol"])
+    return {"recorder_id": row["id"], "device_id": row["device_id"], "brand": row["brand"], "protocol": row["protocol"], "server": host, "port": port, **extras(row["protocol"])}
 
 
 async def rotate_key(conn, recorder_id: uuid.UUID) -> dict:

@@ -46,13 +46,15 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | GET | `/v1/recorders` | A R | List recorders with status |
-| POST | `/v1/recorders` | A | Start onboarding: body `{ brand, protocol?, site_id? }` (`protocol`: `gb28181`, `isup`, `auto_register`). Returns `{ recorder_id, server, port, device_id, key }` plus `server_id` and `domain` for GB28181. **The key is returned once.** |
+| POST | `/v1/recorders` | A | Start onboarding: body `{ brand, protocol?, site_id?, name? }` (`protocol`: `gb28181`, `isup`, `auto_register`). Returns `{ recorder_id, server, port, device_id, key }` plus `server_id` and `domain` for GB28181. **The key is returned once.** |
 | GET | `/v1/recorders/{id}` | A R | Detail and status |
 | GET | `/v1/recorders/{id}/status` | A | Poll for the connect screen: `{ status, checks: [reached, key_ok, channels_found, preview_ok] }` |
 | GET | `/v1/recorders/{id}/events` | A | Same as above as server-sent events, so the page updates itself |
 | GET | `/v1/recorders/{id}/channels` | A | Channels found, each with a snapshot URL |
 | POST | `/v1/recorders/{id}/rotate-key` | A | New key, shown once |
-| DELETE | `/v1/recorders/{id}` | A | Remove recorder and its cameras |
+| PATCH | `/v1/recorders/{id}` | A | Rename: `{ name }` (null clears it) |
+| GET | `/v1/recorders/{id}/connection` | A | The non-secret connection details (server, port, device id, viewer user); never the key |
+| DELETE | `/v1/recorders/{id}` | A | Remove the recorder, its cameras and those cameras' counts and plate reads (permanent) |
 
 ### Cameras and zones
 | Method | Route | Role | Purpose |

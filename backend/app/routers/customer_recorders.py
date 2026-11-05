@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
-from ..schemas import ChannelOut, RecorderCreateCustomer, RecorderCredentials, RecorderOut, RecorderStatus
+from ..schemas import ChannelOut, RecorderConnection, RecorderCreateCustomer, RecorderCredentials, RecorderOut, RecorderPatch, RecorderStatus
 from ..services import recorders as svc
 
 router = APIRouter(prefix="/v1", tags=["customer: recorders"])
@@ -27,7 +27,7 @@ async def list_recorders(ctx: CustomerCtx = Depends(customer_ctx())):
 
 @router.post("/recorders", response_model=RecorderCredentials, status_code=201)
 async def add_recorder(body: RecorderCreateCustomer, response: Response, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    out = await svc.create_recorder(ctx.conn, ctx.tenant_id, body.brand, body.site_id, ctx.user_id, body.protocol)
+    out = await svc.create_recorder(ctx.conn, ctx.tenant_id, body.brand, body.site_id, ctx.user_id, body.protocol, body.name)
     await ctx.audit("recorder.register", "recorder", out["recorder_id"], {"device_id": out["device_id"], "brand": body.brand, "protocol": out["protocol"]})
     response.headers["Cache-Control"] = "no-store"          # the response carries the key; nothing may cache it
     return out
@@ -43,6 +43,31 @@ async def _recorder(ctx: CustomerCtx, recorder_id: UUID):
 @router.get("/recorders/{recorder_id}", response_model=RecorderOut)
 async def get_recorder(recorder_id: UUID, ctx: CustomerCtx = Depends(customer_ctx())):
     return dict(await _recorder(ctx, recorder_id))
+
+
+@router.patch("/recorders/{recorder_id}", response_model=RecorderOut)
+async def rename_recorder(recorder_id: UUID, body: RecorderPatch, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
+    before = await _recorder(ctx, recorder_id)
+    await ctx.conn.execute("UPDATE app.recorders SET name=$2 WHERE id=$1", recorder_id, body.name)
+    await ctx.audit("recorder.rename", "recorder", recorder_id, {"device_id": before["device_id"], "name": body.name})
+    return dict(await _recorder(ctx, recorder_id))
+
+
+@router.delete("/recorders/{recorder_id}", status_code=204)
+async def delete_recorder(recorder_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
+    """Removes the recorder, its channels and its cameras, with those cameras' counts and plate reads (alerts and message logs stay).
+    The recorder is refused the next time it tries to register, and the gateway drops its connection at the next heartbeat."""
+    row = await _recorder(ctx, recorder_id)
+    cams = await ctx.conn.fetchval("SELECT count(*) FROM app.cameras WHERE recorder_id=$1", recorder_id)
+    await ctx.conn.execute("DELETE FROM app.recorders WHERE id=$1", recorder_id)
+    await ctx.audit("recorder.delete", "recorder", recorder_id, {"device_id": row["device_id"], "cameras_removed": cams})
+
+
+@router.get("/recorders/{recorder_id}/connection", response_model=RecorderConnection)
+async def recorder_connection(recorder_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
+    """The details to type into the recorder (address, port, id, viewer user), without the password. The password is shown only when it is made;
+    to get a new one use rotate-key."""
+    return svc.connection_details(await _recorder(ctx, recorder_id))
 
 
 @router.get("/recorders/{recorder_id}/status", response_model=RecorderStatus)

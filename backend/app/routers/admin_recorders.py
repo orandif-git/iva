@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
-from ..schemas import AdminRecorderOut, ReasonIn, RecorderCreateAdmin, RecorderCredentials
+from ..schemas import AdminRecorderOut, ReasonIn, RecorderConnection, RecorderCreateAdmin, RecorderCredentials, RecorderPatch
 from ..services import recorders as svc
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: recorders"])
@@ -34,10 +34,29 @@ async def list_recorders(
 
 @router.post("/recorders", response_model=RecorderCredentials, status_code=201)
 async def register_recorder(body: RecorderCreateAdmin, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
-    out = await svc.create_recorder(ctx.conn, body.tenant_id, body.brand, body.site_id, ctx.staff.id, body.protocol)
+    out = await svc.create_recorder(ctx.conn, body.tenant_id, body.brand, body.site_id, ctx.staff.id, body.protocol, body.name)
     await ctx.audit("recorder.register", tenant_id=body.tenant_id, target_type="recorder", target_id=out["recorder_id"],
                     after={"device_id": out["device_id"], "brand": body.brand, "protocol": out["protocol"]})     # the key is never written to the audit log
     return out
+
+
+@router.patch("/recorders/{recorder_id}")
+async def rename_recorder(recorder_id: UUID, body: RecorderPatch, ctx: AdminCtx = Depends(admin_ctx("owner", "technician", "support"))):
+    row = await ctx.conn.fetchrow("SELECT tenant_id, device_id FROM app.recorders WHERE id=$1", recorder_id)
+    if not row:
+        raise ApiError(404, "recorder_not_found", "Recorder not found.")
+    await ctx.conn.execute("UPDATE app.recorders SET name=$2 WHERE id=$1", recorder_id, body.name)
+    await ctx.audit("recorder.rename", tenant_id=row["tenant_id"], target_type="recorder", target_id=recorder_id, after={"device_id": row["device_id"], "name": body.name})
+    return {"id": recorder_id, "name": body.name}
+
+
+@router.get("/recorders/{recorder_id}/connection", response_model=RecorderConnection)
+async def recorder_connection(recorder_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
+    """The details to type into the recorder, without the password (which is shown only when it is made; rotate-key makes a new one)."""
+    row = await ctx.conn.fetchrow("SELECT id, device_id, brand::text AS brand, protocol::text AS protocol FROM app.recorders WHERE id=$1", recorder_id)
+    if not row:
+        raise ApiError(404, "recorder_not_found", "Recorder not found.")
+    return svc.connection_details(row)
 
 
 @router.post("/recorders/{recorder_id}/rotate-key", response_model=RecorderCredentials)
