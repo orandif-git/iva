@@ -8,4 +8,4 @@ Camera intelligence as a service: people footfall and vehicle number-plate readi
 - `backend/MESSAGING.md`: WhatsApp and email alert delivery, templates, video clips.
 - `mockups/`: interactive mock-ups of the customer app, the admin console and recorder registration (open the HTML files in a browser).
 
-Status: tested against stand-ins only (572 automated tests); not yet run against a real recorder. There is no customer sign-in yet.
+Status: tested against stand-ins only (553 automated tests passing, 1 skipped); not yet run against a real recorder. There is no customer sign-in yet.
