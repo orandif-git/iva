@@ -1,0 +1,59 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+
+from ..deps import AdminCtx, admin_ctx
+from ..errors import ApiError
+from ..schemas import AdminRecorderOut, ReasonIn, RecorderCreateAdmin, RecorderCredentials
+from ..services import recorders as svc
+
+router = APIRouter(prefix="/admin/v1", tags=["admin: recorders"])
+
+
+@router.get("/recorders", response_model=list[AdminRecorderOut])
+async def list_recorders(
+    status: str | None = Query(None, pattern="^(never|online|offline)$"),
+    tenant_id: UUID | None = None,
+    q: str | None = Query(None, max_length=80),
+    limit: int = Query(200, ge=1, le=500),
+    ctx: AdminCtx = Depends(admin_ctx()),
+):
+    where, args = [], []
+    if status:
+        args.append(status); where.append(f"r.status = ${len(args)}::app.link_status")
+    if tenant_id:
+        args.append(tenant_id); where.append(f"r.tenant_id = ${len(args)}")
+    if q:
+        args.append(f"%{q}%"); where.append(f"(r.device_id ILIKE ${len(args)} OR t.name ILIKE ${len(args)})")
+    args.append(limit)
+    rows = await ctx.conn.fetch(
+        f"SELECT {svc.RECORDER_COLS}, t.name AS tenant_name FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id"
+        + (" WHERE " + " AND ".join(where) if where else "") + f" ORDER BY r.created_at DESC LIMIT ${len(args)}", *args)
+    return [dict(r) for r in rows]
+
+
+@router.post("/recorders", response_model=RecorderCredentials, status_code=201)
+async def register_recorder(body: RecorderCreateAdmin, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+    out = await svc.create_recorder(ctx.conn, body.tenant_id, body.brand, body.site_id, ctx.staff.id, body.protocol)
+    await ctx.audit("recorder.register", tenant_id=body.tenant_id, target_type="recorder", target_id=out["recorder_id"],
+                    after={"device_id": out["device_id"], "brand": body.brand, "protocol": out["protocol"]})     # the key is never written to the audit log
+    return out
+
+
+@router.post("/recorders/{recorder_id}/rotate-key", response_model=RecorderCredentials)
+async def rotate(recorder_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+    tenant_id = await ctx.conn.fetchval("SELECT tenant_id FROM app.recorders WHERE id=$1", recorder_id)
+    if not tenant_id:
+        raise ApiError(404, "recorder_not_found", "Recorder not found.")
+    out = await svc.rotate_key(ctx.conn, recorder_id)
+    await ctx.audit("key.rotate", tenant_id=tenant_id, target_type="recorder", target_id=recorder_id, reason=body.reason, after={"device_id": out["device_id"]})
+    return out
+
+
+@router.delete("/recorders/{recorder_id}", status_code=204)
+async def delete_recorder(recorder_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    row = await ctx.conn.fetchrow("SELECT tenant_id, device_id FROM app.recorders WHERE id=$1", recorder_id)
+    if not row:
+        raise ApiError(404, "recorder_not_found", "Recorder not found.")
+    await ctx.conn.execute("DELETE FROM app.recorders WHERE id=$1", recorder_id)      # cameras and channels cascade
+    await ctx.audit("recorder.delete", tenant_id=row["tenant_id"], target_type="recorder", target_id=recorder_id, reason=reason, before={"device_id": row["device_id"]})

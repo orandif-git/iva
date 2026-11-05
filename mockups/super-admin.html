@@ -1,0 +1,865 @@
+<title>Gate Insight Platform Console</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: operator console. Left nav, sticky top bar with role switcher, content pages. Indigo accent marks "platform side" so it never looks like the customer app. */
+:root{
+  --bg:#F1F2F6; --surface:#FFFFFF; --surface2:#F6F7FA; --ink:#171B2C; --muted:#5E6579; --line:#DCDFE8;
+  --accent:#3A4BB0; --accent-ink:#FFFFFF; --accent-soft:#E3E6F8;
+  --ok:#15803D; --ok-soft:#DCF3E3; --warn:#A8530A; --warn-soft:#FBEBD3; --crit:#B42318; --crit-soft:#FBE0DD;
+  --nav:#161A2E; --nav-ink:#C9CEE6; --nav-on:#FFFFFF;
+  --font:'Schibsted Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1120; --surface:#171B2E; --surface2:#131728; --ink:#E7E9F5; --muted:#9AA1BB; --line:#2A3050;
+    --accent:#8E9BFF; --accent-ink:#0E1330; --accent-soft:#232A55;
+    --ok:#5BD58A; --ok-soft:#10301D; --warn:#F0A64A; --warn-soft:#3A2810; --crit:#FF8A7D; --crit-soft:#3C1713;
+    --nav:#0A0D1B; --nav-ink:#9AA1BB; --nav-on:#FFFFFF; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1120; --surface:#171B2E; --surface2:#131728; --ink:#E7E9F5; --muted:#9AA1BB; --line:#2A3050;
+  --accent:#8E9BFF; --accent-ink:#0E1330; --accent-soft:#232A55;
+  --ok:#5BD58A; --ok-soft:#10301D; --warn:#F0A64A; --warn-soft:#3A2810; --crit:#FF8A7D; --crit-soft:#3C1713;
+  --nav:#0A0D1B; --nav-ink:#9AA1BB; --nav-on:#FFFFFF; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;margin:0;
+  padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+h1,h2,h3{margin:0;font-weight:600;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:22px} h2{font-size:15px} h3{font-size:13px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+
+.shell{display:grid;grid-template-columns:222px minmax(0,1fr);min-height:100vh}
+.side{background:var(--nav);color:var(--nav-ink);padding:18px 12px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh;align-self:start}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px;color:var(--nav-on);font-weight:700}
+.brand i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center;flex:none}
+.brand svg{width:16px;height:16px;stroke:var(--accent-ink);fill:none;stroke-width:2.2}
+.brand small{display:block;font-size:10.5px;font-weight:600;letter-spacing:.12em;color:var(--nav-ink)}
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{display:flex;align-items:center;gap:10px;border:0;background:none;color:var(--nav-ink);padding:9px 10px;border-radius:8px;text-align:left;font-weight:500}
+nav button svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+nav button:hover{background:rgba(255,255,255,.06);color:var(--nav-on)}
+nav button[aria-current="page"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+nav button[hidden]{display:none}
+.side-foot{margin-top:auto;font-size:12px;display:flex;flex-direction:column;gap:6px}
+.side-foot button{border:1px solid rgba(255,255,255,.18);background:none;border-radius:8px;padding:6px 10px;color:var(--nav-ink);font-size:12px}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.imp{position:sticky;top:0;z-index:30;background:#B45309;color:#fff;padding:9px max(16px,env(safe-area-inset-right,0px)) 9px max(20px,env(safe-area-inset-left,0px));display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px}
+.imp[hidden]{display:none}
+.imp b{font-weight:700}
+.imp button{margin-left:auto;border:1px solid rgba(255,255,255,.7);background:rgba(0,0,0,.18);color:#fff;border-radius:7px;padding:4px 12px;font-weight:600}
+.topbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px max(20px,env(safe-area-inset-right,0px)) 12px max(20px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--line);background:var(--surface)}
+.search{flex:1;min-width:180px;max-width:420px}
+.search input{width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:8px;padding:7px 12px}
+.who{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.who label{font-size:12px;color:var(--muted)}
+.who select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 8px}
+.mfa{font-size:12px}
+.content{padding:20px max(20px,env(safe-area-inset-right,0px)) 56px max(20px,env(safe-area-inset-left,0px));min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.head p{margin:2px 0 0;color:var(--muted)}
+.crumb{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.crumb button{border:0;background:none;color:var(--accent);padding:0;font-weight:600}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.panel-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kpi span{font-size:12px;color:var(--muted);display:block}
+.kpi strong{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;display:block;line-height:1.25;margin-top:2px}
+.kpi small{font-size:12px;color:var(--muted)}
+.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))}
+.split{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start}
+@media(max-width:1000px){.split{grid-template-columns:minmax(0,1fr)}}
+
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:1px 9px;font-size:11.5px;font-weight:600;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.crit{background:var(--crit-soft);color:var(--crit)} .pill.acc{background:var(--accent-soft);color:var(--accent)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 13px;font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{border-color:var(--crit);color:var(--crit)}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn[disabled]{opacity:.42;cursor:not-allowed}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 12px;font-size:12.5px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tr.row{cursor:pointer} tr.row:hover td{background:var(--surface2)}
+td.r,th.r{text-align:right}
+.tn{font-weight:600}
+.sub{display:block;font-size:12px;color:var(--muted);font-weight:400}
+.meter{display:inline-block;width:60px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;vertical-align:middle;margin-right:6px}
+.meter i{display:block;height:100%;background:var(--accent)} .meter.full i{background:var(--warn)}
+
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.list li:last-child{border-bottom:0}
+.list .grow{flex:1;min-width:0}
+.list p{margin:0;font-size:12.5px;color:var(--muted)}
+.fi{width:8px;height:8px;border-radius:50%;margin-top:7px;flex:none;background:var(--accent)} .fi.crit{background:var(--crit)} .fi.warn{background:var(--warn)}
+
+.hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.hl div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface2)}
+.hl b{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;font-size:13px}
+.hl .pill{align-self:flex-start}
+.hl span{font-size:12px;color:var(--muted)}
+.chart text{fill:var(--muted);font-size:10.5px;font-family:var(--font)}
+.chart .gl{stroke:var(--line)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tabs button{border:0;background:none;padding:8px 14px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;margin:0;font-size:13px}
+dl.kv dt{color:var(--muted)} dl.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+
+.perm{font-size:12.5px}
+.perm td,.perm th{text-align:center;padding:7px 10px}
+.perm td:first-child,.perm th:first-child{text-align:left}
+.yes{color:var(--ok);font-weight:700}.no{color:var(--line)}
+
+/* modal */
+.ov{position:fixed;inset:0;background:rgba(8,10,22,.55);z-index:60;display:grid;place-items:center;padding:16px}
+.ov[hidden]{display:none}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;width:min(100%,480px);max-height:calc(100vh - 32px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+.modal p{margin:0;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;width:100%;min-width:0}
+.field textarea{min-height:70px;resize:vertical}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.cred{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface2)}
+.cred div{display:grid;grid-template-columns:100px minmax(0,1fr) auto;gap:8px;align-items:center}
+.cred span{color:var(--muted);font-size:12px} .cred code{font-family:var(--mono);font-size:13px;overflow-wrap:anywhere}
+.note{font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--warn-soft);color:var(--warn)}
+.err{color:var(--crit);font-size:12.5px;min-height:18px}
+.ban{background:var(--surface2);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--muted)}
+
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:7px 16px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg button[disabled]{opacity:.5;cursor:not-allowed}
+.fps-form{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+.fps-form .field{margin:0;min-width:120px}
+.fps-form input[type=number]{width:110px}
+.hint{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+.tag{font-size:11px;border-radius:99px;padding:0 8px;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.tag.own{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:calc(100% - 32px)}
+#toast.on{opacity:1;transform:translateX(-50%)}
+.page[hidden]{display:none}
+.cv{border:2px solid #B45309;border-radius:12px;overflow:hidden;background:var(--surface)}
+.cv-h{background:var(--warn-soft);color:var(--warn);padding:8px 14px;font-weight:600;font-size:13px}
+.cv-b{padding:16px}
+@media(max-width:820px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:10px 12px}
+  nav{flex-direction:row;overflow-x:auto;width:100%;order:3}
+  nav button{white-space:nowrap;padding:7px 10px}
+  .side-foot{display:none}
+}
+.code{font-family:var(--mono);font-size:12px;line-height:1.55;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}
+.code-in{width:100%;min-height:300px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.55;resize:vertical;white-space:pre;overflow:auto}
+.kvrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:6px;margin-bottom:6px}
+.kvrow input{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 10px;min-width:0;font-size:12.5px}
+.field input.pe,.field select.pe{width:100%}
+.sw{display:inline-flex;align-items:center;gap:8px;font-weight:600;white-space:nowrap}
+.sw input{width:18px;height:18px;accent-color:var(--accent)}
+@media(max-width:560px){.kvrow{grid-template-columns:minmax(0,1fr)}}
+</style>
+
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><i><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-8 5 6"/></svg></i><div>Gate Insight<small>PLATFORM ADMIN</small></div></div>
+    <nav id="nav" aria-label="Platform"></nav>
+    <div class="side-foot"><span>Region: ap-south-1 · v2.14</span><button id="themeBtn" type="button">Toggle theme</button></div>
+  </aside>
+  <div class="main">
+    <div class="imp" id="imp" hidden></div>
+    <div class="topbar">
+      <div class="search"><input type="text" id="gs" placeholder="Search tenants, recorders, device IDs" aria-label="Search"></div>
+      <div class="who"><label for="roleSel">Demo: sign in as</label><select id="roleSel"></select><span class="pill ok mfa" id="mfaPill">MFA verified</span></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<div class="ov" id="ov" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s)}, $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+function pad(n){return n<10?"0"+n:""+n}
+function inr(n){return "₹"+Math.round(n).toLocaleString("en-IN")}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2600)}
+
+/* ---------- roles ---------- */
+var ROLES={owner:{n:"Aman",l:"Owner"},support:{n:"Priya",l:"Support"},tech:{n:"Karthik",l:"Technician"},finance:{n:"Divya",l:"Finance"},analyst:{n:"Ravi",l:"Read-only analyst"}};
+var ACT={suspend:["owner"],impersonate:["owner","support"],register:["owner","tech"],rotate:["owner","tech"],restart:["owner","tech","support"],plan:["owner","finance"],createTenant:["owner","tech"],tenantFps:["owner","finance"],camFps:["owner","tech"],camSource:["owner","tech"],msgView:["owner","support","tech"],msgEdit:["owner"],msgTest:["owner","tech"],msgTenant:["owner","finance"]};
+var PAGE_ROLES={overview:["owner","support","tech","finance","analyst"],tenants:["owner","support","tech","finance","analyst"],recorders:["owner","support","tech","finance","analyst"],partners:["owner","finance"],billing:["owner","finance"],team:["owner"],audit:["owner","support"],messaging:["owner","support","tech","finance","analyst"]};
+var S={role:"owner",page:"overview",tid:null,tab:"overview",mtab:"log",lf:"all",pid:null,pd:null,ptpl:null,ppic:true,tf:"all",q:"",rf:"all",af:"all",imp:null,t0:Date.now()};
+function can(a){return ACT[a].indexOf(S.role)>-1}
+function ok(p){return !PAGE_ROLES[p]||PAGE_ROLES[p].indexOf(S.role)>-1}
+
+/* ---------- sample data ---------- */
+var PLAN={quick:{n:"Quick connect",p:799,c:180},full:{n:"Full speed 5 fps",p:1499,c:420}};
+var PARTNERS=[{id:"p1",n:"Kovai CCTV Solutions",city:"Coimbatore",rate:.15},{id:"p2",n:"Madurai Secure Systems",city:"Madurai",rate:.15},{id:"p3",n:"Direct (no partner)",city:"-",rate:0}];
+var TEN=[
+ {id:"t1",n:"Sharma Auto Components",city:"Sanand",st:"active",plan:"full",cams:6,lim:10,pt:"p1",td:0,fr:38.2,wa:1840,gb:212,since:"Mar 2026"},
+ {id:"t2",n:"Madurai Textiles",city:"Madurai",st:"active",plan:"full",cams:14,lim:20,pt:"p2",td:0,fr:96.4,wa:3120,gb:530,since:"Jan 2026"},
+ {id:"t3",n:"Tirunelveli Cold Storage",city:"Tirunelveli",st:"trial",plan:"quick",cams:3,lim:5,pt:"p2",td:5,fr:6.1,wa:210,gb:18,since:"Oct 2026"},
+ {id:"t4",n:"Salem Steel Traders",city:"Salem",st:"pastdue",plan:"full",cams:8,lim:10,pt:"p1",td:0,fr:51.7,wa:1210,gb:240,since:"Feb 2026"},
+ {id:"t5",n:"Coimbatore Pumps",city:"Coimbatore",st:"active",plan:"full",cams:22,lim:30,pt:"p1",td:0,fr:150.9,wa:4670,gb:910,since:"Dec 2025"},
+ {id:"t6",n:"Hosur Packaging",city:"Hosur",st:"suspended",plan:"quick",cams:5,lim:5,pt:"p3",td:0,fr:0,wa:0,gb:64,since:"Jun 2026"},
+ {id:"t7",n:"Trichy Mart Retail",city:"Trichy",st:"active",plan:"quick",cams:4,lim:5,pt:"p2",td:0,fr:12.8,wa:640,gb:70,since:"Aug 2026"},
+ {id:"t8",n:"Nagercoil Fish Exports",city:"Nagercoil",st:"trial",plan:"full",cams:2,lim:4,pt:"p3",td:2,fr:9.3,wa:120,gb:22,since:"Oct 2026"},
+ {id:"t9",n:"Erode Spinning Mills",city:"Erode",st:"active",plan:"full",cams:40,lim:50,pt:"p1",td:0,fr:284.0,wa:7900,gb:1800,since:"Nov 2025"},
+ {id:"t10",n:"Tuticorin Salt Works",city:"Tuticorin",st:"active",plan:"quick",cams:9,lim:10,pt:"p2",td:0,fr:30.5,wa:980,gb:150,since:"Jul 2026"}
+];
+var REC=[
+ {id:"SHARMA-001",br:"Hikvision",pr:"ISUP",t:"t1",st:"online",seen:"12 s ago",ch:8,ip:"49.205.118.40"},
+ {id:"MDU-TEX-001",br:"Dahua",pr:"Auto Register",t:"t2",st:"online",seen:"8 s ago",ch:16,ip:"117.211.4.92"},
+ {id:"MDU-TEX-002",br:"Hikvision",pr:"ISUP",t:"t2",st:"offline",seen:"47 min ago",ch:8,ip:"117.211.4.92"},
+ {id:"TVL-COLD-001",br:"Hikvision",pr:"ISUP",t:"t3",st:"online",seen:"20 s ago",ch:4,ip:"152.58.31.7"},
+ {id:"SLM-STEEL-001",br:"Dahua",pr:"Auto Register",t:"t4",st:"online",seen:"31 s ago",ch:8,ip:"106.51.77.130"},
+ {id:"CBE-PUMP-001",br:"Hikvision",pr:"ISUP",t:"t5",st:"online",seen:"5 s ago",ch:16,ip:"122.164.9.18"},
+ {id:"CBE-PUMP-002",br:"Hikvision",pr:"ISUP",t:"t5",st:"online",seen:"9 s ago",ch:16,ip:"122.164.9.18"},
+ {id:"HSR-PACK-001",br:"Dahua",pr:"Auto Register",t:"t6",st:"offline",seen:"6 days ago",ch:8,ip:"-"},
+ {id:"TRY-MART-001",br:"Dahua",pr:"Auto Register",t:"t7",st:"online",seen:"14 s ago",ch:4,ip:"223.185.40.66"},
+ {id:"NGL-FISH-001",br:"Hikvision",pr:"ISUP",t:"t8",st:"never",seen:"never connected",ch:0,ip:"-"},
+ {id:"ERD-SPIN-001",br:"Hikvision",pr:"ISUP",t:"t9",st:"online",seen:"3 s ago",ch:32,ip:"61.2.171.205"},
+ {id:"ERD-SPIN-002",br:"Hikvision",pr:"ISUP",t:"t9",st:"offline",seen:"2 h ago",ch:16,ip:"61.2.171.205"},
+ {id:"TUT-SALT-001",br:"Dahua",pr:"Auto Register",t:"t10",st:"online",seen:"22 s ago",ch:16,ip:"103.88.14.51"}
+];
+var NAMES=["Anbu","Meena","Selvam","Kavitha","Murugan","Lakshmi","Dinesh","Revathi"];
+var AUD=[
+ {t:"16:14:02",a:"Karthik",r:"Technician",ac:"recorder.register",tg:"NGL-FISH-001",tn:"Nagercoil Fish Exports",why:"New trial setup",ip:"103.21.4.9"},
+ {t:"15:48:37",a:"Priya",r:"Support",ac:"impersonate.start",tg:"Salem Steel Traders",tn:"Salem Steel Traders",why:"Customer reports missing plate reads",ip:"103.21.4.12"},
+ {t:"15:21:10",a:"Priya",r:"Support",ac:"impersonate.end",tg:"Salem Steel Traders",tn:"Salem Steel Traders",why:"Session ended after 12 min",ip:"103.21.4.12"},
+ {t:"14:02:55",a:"Divya",r:"Finance",ac:"plan.change",tg:"Trichy Mart Retail",tn:"Trichy Mart Retail",why:"Upgrade request by customer",ip:"103.21.4.30"},
+ {t:"12:40:19",a:"Aman",r:"Owner",ac:"tenant.suspend",tg:"Hosur Packaging",tn:"Hosur Packaging",why:"Unpaid for 45 days",ip:"103.21.4.2"},
+ {t:"11:15:44",a:"Karthik",r:"Technician",ac:"key.rotate",tg:"MDU-TEX-002",tn:"Madurai Textiles",why:"Technician left the customer",ip:"103.21.4.9"},
+ {t:"09:30:03",a:"Aman",r:"Owner",ac:"role.change",tg:"Ravi",tn:"-",why:"Set to read-only analyst",ip:"103.21.4.2"}
+];
+var SPARK=[2.1,1.6,1.3,1.2,1.4,2.2,3.8,5.6,7.9,9.4,10.2,10.8,11.1,10.6,10.9,11.4,10.2,8.8,7.1,5.3,4.4,3.6,2.9,2.4];
+var TEAM=[{n:"Aman",e:"aman@gateinsight.in",r:"owner",mfa:true,last:"Today 09:02"},{n:"Priya",e:"priya@gateinsight.in",r:"support",mfa:true,last:"Today 15:12"},{n:"Karthik",e:"karthik@gateinsight.in",r:"tech",mfa:true,last:"Today 16:10"},{n:"Divya",e:"divya@gateinsight.in",r:"finance",mfa:true,last:"Today 13:58"},{n:"Ravi",e:"ravi@gateinsight.in",r:"analyst",mfa:false,last:"Yesterday"}];
+var PERM=[["View tenants and recorders",1,1,1,1,1],["Create tenant",1,0,1,0,0],["Register recorder and issue key",1,0,1,0,0],["Rotate recorder key",1,0,1,0,0],["Restart stream",1,1,1,0,0],["View as customer (impersonate)",1,1,0,0,0],["Suspend or reactivate tenant",1,0,0,0,0],["Change plan",1,0,0,1,0],["Billing and usage",1,0,0,1,0],["Team and roles",1,0,0,0,0],["Set a tenant's frame rate",1,0,0,1,0],["Set a camera's frame rate and stream address",1,0,1,0,0],["Audit log",1,1,0,0,0]];
+
+/* Frame-rate policy: every tenant has one (default adaptive, 2 fps when empty and 5 fps when someone is there). A camera can override any part. */
+var POL={};
+TEN.forEach(function(t){POL[t.id]={mode:"adaptive",idle:2,active:5,fixed:5}});
+POL.t2={mode:"adaptive",idle:2,active:10,fixed:5};
+POL.t7={mode:"fixed",idle:2,active:5,fixed:4};
+var CAMNAMES=["Main gate","Entrance","Reception","Godown","Parking","Cash counter","Back door","Dock bay"];
+var WORKER_CAP=12;                       /* sample figure: what one worker sustains for one camera at 960x540 on the CPU */
+var CAMS={};
+TEN.forEach(function(t,ti){
+  CAMS[t.id]=[];
+  for(var i=0;i<Math.min(t.cams,6);i++)CAMS[t.id].push({id:t.id+"-c"+(i+1),n:CAMNAMES[i],uses:i%2?"Plates":"Footfall",ov:{mode:null,idle:null,active:null,fixed:null},
+    state:t.st==="suspended"?"offline":"streaming",fps:0,dropped:0,host:i<4?"10.20."+(ti+1)+"."+(10+i)+":554":null});
+});
+CAMS.t1[0].ov.active=15;CAMS.t1[1].ov.mode="fixed";CAMS.t1[1].ov.fixed=10;CAMS.t9[0].ov.active=8;CAMS.t3[1].state="reconnecting";
+function eff(t,c){var p=POL[t.id],o=c.ov,a=o.active!=null?o.active:p.active,i=Math.min(o.idle!=null?o.idle:p.idle,a);
+  return {mode:o.mode||p.mode,idle:i,active:a,fixed:o.fixed!=null?o.fixed:p.fixed,
+    from:{mode:o.mode?"camera":"tenant",idle:o.idle!=null?"camera":"tenant",active:o.active!=null?"camera":"tenant",fixed:o.fixed!=null?"camera":"tenant"}}}
+function capture(e){return e.mode==="fixed"?e.fixed:e.active}
+function avgFps(e,cap){var a=Math.min(e.active,cap||99),f=Math.min(e.fixed,cap||99);return e.mode==="fixed"?f:0.85*e.idle+0.15*a}     /* assumes the scene is busy 15% of the time */
+function hasOv(c){var o=c.ov;return o.mode!=null||o.idle!=null||o.active!=null||o.fixed!=null}
+function refreshHealth(t){(CAMS[t.id]||[]).forEach(function(c){
+  var e=eff(t,c);c.fps=c.state==="streaming"?Math.round(avgFps(e,WORKER_CAP)*10)/10:0;
+  c.dropped=c.state==="streaming"&&capture(e)>WORKER_CAP?(c.dropped||112):0})}
+TEN.forEach(refreshHealth);
+function tn(id){return TEN.filter(function(t){return t.id===id})[0]}
+function pn(id){return PARTNERS.filter(function(p){return p.id===id})[0]}
+function recsOf(id){return REC.filter(function(r){return r.t===id})}
+function mrr(t){return (t.st==="active"||t.st==="pastdue")?t.cams*PLAN[t.plan].p:0}
+function cost(t){return t.st==="suspended"?0:t.cams*PLAN[t.plan].c}
+function stPill(s){var m={active:["ok","Active"],trial:["acc","Trial"],pastdue:["warn","Past due"],suspended:["crit","Suspended"]}[s];return '<span class="pill '+m[0]+'">'+m[1]+'</span>'}
+function rPill(s){var m={online:["ok","Online"],offline:["crit","Offline"],never:["warn","Waiting for first connection"]}[s];return '<span class="pill '+m[0]+'"><span class="dot"></span>'+m[1]+'</span>'}
+function clock(){var d=new Date(new Date(2026,10,4,16,20,0).getTime()+Date.now()-S.t0);return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())}
+function logA(ac,tg,tnm,why){AUD.unshift({t:clock(),a:ROLES[S.role].n,r:ROLES[S.role].l,ac:ac,tg:tg,tn:tnm||"-",why:why||"-",ip:"103.21.4.2"})}
+function dis(a){return can(a)?"":' disabled title="Your role ('+ROLES[S.role].l+') cannot do this"'}
+
+/* ---------- shell ---------- */
+var NAV=[["overview","Overview",'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'],
+ ["tenants","Tenants",'<path d="M4 20V8l8-4 8 4v12"/><path d="M9 20v-6h6v6"/>'],
+ ["recorders","Recorders",'<rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M7 12h.01M11 12h6"/>'],
+ ["partners","Partners",'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M17 11a3 3 0 100-6M21 20c0-2.6-1.6-4.7-4-5.5"/>'],
+ ["billing","Billing and usage",'<path d="M4 7h16v11H4z"/><path d="M4 11h16M8 15h3"/>'],
+ ["team","Team and roles",'<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/>'],
+ ["messaging","Messaging",'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'],
+ ["audit","Audit log",'<path d="M6 3h8l4 4v14H6z"/><path d="M9 12h6M9 16h6"/>']];
+function renderNav(){
+  $("#nav").innerHTML=NAV.map(function(n){return '<button data-go="'+n[0]+'"'+(ok(n[0])?"":" hidden")+(S.page===n[0]||(S.page==="customer"&&n[0]==="tenants")?' aria-current="page"':"")+'><svg viewBox="0 0 24 24">'+n[2]+'</svg>'+n[1]+'</button>'}).join("");
+  $("#mfaPill").className="pill "+(S.role==="analyst"?"warn":"ok")+" mfa";$("#mfaPill").textContent=S.role==="analyst"?"MFA not enabled":"MFA verified";
+}
+function renderImp(){
+  var b=$("#imp");
+  if(!S.imp){b.hidden=true;return}
+  var left=Math.max(0,Math.round((S.imp.exp-Date.now())/1000));
+  b.hidden=false;b.innerHTML='<span>Viewing as <b>'+esc(tn(S.imp.tid).n)+'</b> · by '+esc(ROLES[S.imp.role].n)+' ('+ROLES[S.imp.role].l+') · read-only · reason: '+esc(S.imp.why)+'</span><span class="mono">expires in '+pad(Math.floor(left/60))+":"+pad(left%60)+'</span><button id="endImp">End session</button>';
+  if(left<=0)endImp();
+}
+function endImp(){
+  if(!S.imp)return;var t=tn(S.imp.tid);var mins=Math.max(1,Math.round((Date.now()-S.imp.start)/60000));
+  AUD.unshift({t:clock(),a:ROLES[S.imp.role].n,r:ROLES[S.imp.role].l,ac:"impersonate.end",tg:t.n,tn:t.n,why:"Session ended after "+mins+" min",ip:"103.21.4.2"});
+  S.imp=null;S.page="tenants";S.tid=t.id;render();toast("Customer session ended and logged")
+}
+setInterval(function(){if(S.imp)renderImp()},1000);
+
+/* ---------- pages ---------- */
+function pOverview(){
+  var act=TEN.filter(function(t){return t.st==="active"}).length,tri=TEN.filter(function(t){return t.st==="trial"}).length,pd=TEN.filter(function(t){return t.st==="pastdue"}).length;
+  var live=TEN.reduce(function(a,t){return a+(t.st==="suspended"?0:t.cams)},0),lic=TEN.reduce(function(a,t){return a+(t.st==="suspended"?0:t.lim)},0);
+  var on=REC.filter(function(r){return r.st==="online"}).length,off=REC.filter(function(r){return r.st==="offline"}).length,nv=REC.filter(function(r){return r.st==="never"}).length;
+  var M=TEN.reduce(function(a,t){return a+mrr(t)},0);
+  var att=[];
+  REC.filter(function(r){return r.st==="offline"}).forEach(function(r){att.push({k:"crit",h:r.id+" offline",p:tn(r.t).n+" · last seen "+r.seen,go:"recorders"})});
+  TEN.filter(function(t){return t.st==="pastdue"}).forEach(function(t){att.push({k:"warn",h:t.n+" payment overdue",p:inr(mrr(t))+" per month at risk",go:"tenants",tid:t.id})});
+  TEN.filter(function(t){return t.st==="trial"&&t.td<=5}).forEach(function(t){att.push({k:"warn",h:t.n+" trial ends in "+t.td+" days",p:"Follow up with "+pn(t.pt).n,go:"tenants",tid:t.id})});
+  REC.filter(function(r){return r.st==="never"}).forEach(function(r){att.push({k:"warn",h:r.id+" never connected",p:tn(r.t).n+" · registration issued, waiting for the customer",go:"recorders"})});
+  var W=720,H=180,L=34,R=8,T=10,B=22,mx=12,iw=W-L-R,ih=H-T-B,pts=SPARK.map(function(v,i){return [L+i*iw/23,T+ih-v/mx*ih]});
+  var line=pts.map(function(p,i){return (i?"L":"M")+p[0].toFixed(1)+","+p[1].toFixed(1)}).join(" "),area=line+" L"+pts[23][0]+","+(T+ih)+" L"+pts[0][0]+","+(T+ih)+" Z";
+  var grid="";[0,4,8,12].forEach(function(v){var y=T+ih-v/mx*ih;grid+='<line class="gl" x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'"/><text x="'+(L-5)+'" y="'+(y+3.5)+'" text-anchor="end">'+v+'M</text>'});
+  [0,6,12,18,23].forEach(function(h){grid+='<text x="'+(L+h*iw/23)+'" y="'+(H-6)+'" text-anchor="middle">'+pad(h)+':00</text>'});
+  var tot=on+off+nv;
+  return '<div class="head"><div><h1>Platform overview</h1><p>Everything across all customers, right now.</p></div><span class="pill ok"><span class="dot"></span>All core services running</span></div>'
+  +'<div class="grid kpis"><div class="kpi"><span>Customers</span><strong>'+TEN.length+'</strong><small>'+act+' active · '+tri+' trial · '+pd+' past due</small></div>'
+  +'<div class="kpi"><span>Cameras in use</span><strong>'+live+'</strong><small>of '+lic+' licensed</small></div>'
+  +'<div class="kpi"><span>Recorders online</span><strong>'+on+' / '+tot+'</strong><small>'+off+' offline · '+nv+' waiting</small></div>'
+  +(can("plan")||S.role==="owner"?'<div class="kpi"><span>Monthly revenue (MRR)</span><strong>'+inr(M)+'</strong><small>sample pricing</small></div>':'<div class="kpi"><span>Alerts sent today</span><strong>2,846</strong><small>WhatsApp 2,310 · email 536</small></div>')
+  +'<div class="kpi"><span>Failed deliveries</span><strong>34</strong><small>1.2% of messages today</small></div></div>'
+  +'<div class="grid split" style="margin-bottom:14px"><div class="panel"><div class="panel-h"><h2>Frames analysed per hour, last 24 h</h2><span class="muted">millions</span></div><svg class="chart" viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Frames analysed per hour">'+grid+'<path d="'+area+'" fill="var(--accent)" opacity=".14"/><path d="'+line+'" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="'+pts[23][0]+'" cy="'+pts[23][1]+'" r="3.5" fill="var(--accent)"/></svg></div>'
+  +'<div class="panel"><div class="panel-h"><h2>Needs attention</h2><span class="pill acc">'+att.length+'</span></div><ul class="list">'+att.slice(0,6).map(function(a){return '<li><span class="fi '+a.k+'"></span><div class="grow"><b>'+esc(a.h)+'</b><p>'+esc(a.p)+'</p></div><button class="btn sm" data-go="'+a.go+'"'+(a.tid?' data-tid="'+a.tid+'"':"")+'>Open</button></li>'}).join("")+'</ul></div></div>'
+  +'<div class="panel"><div class="panel-h"><h2>System health</h2></div><div class="hl">'
+  +[["Registrar (ISUP / Auto Register)","ok","Running","412 sessions open"],["Media relay","ok","Running","138 streams, 5 fps"],["AI workers","warn","61% CPU","14 of 16 busy"],["Job queue","warn","1,240 waiting","Normal under 2,000"],["Database","ok","Running","p95 query 18 ms"],["WhatsApp API","warn","98.8% delivered","34 failures today"]]
+  .map(function(h){return '<div><b>'+h[0]+'<span class="pill '+h[1]+'">'+h[2]+'</span></b><span>'+h[3]+'</span></div>'}).join("")+'</div></div>';
+}
+
+function pTenants(){
+  var list=TEN.filter(function(t){
+    if(S.tf!=="all"&&t.st!==S.tf)return false;
+    var q=S.q.toLowerCase();return !q||t.n.toLowerCase().indexOf(q)>-1||t.city.toLowerCase().indexOf(q)>-1});
+  var chips=[["all","All"],["active","Active"],["trial","Trial"],["pastdue","Past due"],["suspended","Suspended"]];
+  return '<div class="head"><div><h1>Tenants</h1><p>Every customer organisation on the platform.</p></div><button class="btn primary" id="newTenant"'+dis("createTenant")+'>New tenant</button></div>'
+  +'<div class="panel"><div class="bar"><div class="chips" id="tf">'+chips.map(function(c){return '<button class="chip" data-tf="'+c[0]+'" aria-pressed="'+(S.tf===c[0])+'">'+c[1]+'</button>'}).join("")+'</div><span class="muted">'+list.length+' shown</span></div>'
+  +'<div class="tbl-wrap"><table><thead><tr><th>Tenant</th><th>Status</th><th>Plan</th><th>Cameras</th><th>Recorders</th><th>Partner</th><th class="r">MRR</th><th></th></tr></thead><tbody>'
+  +list.map(function(t){var rs=recsOf(t.id),on=rs.filter(function(r){return r.st==="online"}).length,pc=Math.round(t.cams/t.lim*100);
+    return '<tr class="row" data-tid="'+t.id+'"><td><span class="tn">'+esc(t.n)+'</span><span class="sub">'+t.city+' · since '+t.since+'</span></td><td>'+stPill(t.st)+(t.st==="trial"?'<span class="sub">'+t.td+' days left</span>':"")+'</td><td>'+PLAN[t.plan].n+'</td>'
+    +'<td><span class="meter'+(pc>=90?" full":"")+'"><i style="width:'+pc+'%"></i></span><span class="num">'+t.cams+' / '+t.lim+'</span></td><td class="num">'+on+' / '+rs.length+' online</td><td>'+pn(t.pt).n+'</td><td class="r num">'+(mrr(t)?inr(mrr(t)):"-")+'</td>'
+    +'<td><button class="btn sm" data-view="'+t.id+'"'+dis("impersonate")+'>View as customer</button></td></tr>'}).join("")
+  +'</tbody></table></div></div>';
+}
+
+function pTenant(){
+  var t=tn(S.tid),rs=recsOf(t.id),tabs=[["overview","Overview"],["recorders","Recorders ("+rs.length+")"],["users","Users"],["usage","Usage and cost"],["framerate","Frame rate"],["messaging","Messaging"],["audit","Audit"]],b="";
+  if(S.tab==="overview"){
+    b='<div class="grid two"><div class="panel"><div class="panel-h"><h2>Account</h2></div><dl class="kv"><dt>Status</dt><dd>'+stPill(t.st)+'</dd><dt>Plan</dt><dd>'+PLAN[t.plan].n+' · '+inr(PLAN[t.plan].p)+' per camera per month</dd><dt>Cameras</dt><dd>'+t.cams+' in use of '+t.lim+' licensed</dd><dt>Partner</dt><dd>'+pn(t.pt).n+'</dd><dt>Location</dt><dd>'+t.city+', Tamil Nadu</dd><dt>Customer since</dt><dd>'+t.since+'</dd><dt>Data retention</dt><dd>30 days (events), 7 days (snapshots)</dd></dl></div>'
+    +'<div class="panel"><div class="panel-h"><h2>Limits and features</h2></div><dl class="kv"><dt>Use cases</dt><dd>Footfall'+(t.plan==="full"?", number plates":"")+'</dd><dt>Frame rate</dt><dd>'+(t.plan==="full"?"5 fps (recorder registration)":"Snapshots (cloud connect)")+'</dd><dt>WhatsApp alerts</dt><dd>Enabled</dd><dt>Excel reports</dt><dd>Daily 07:00</dd><dt>Plate review queue</dt><dd>'+(t.plan==="full"?"On":"Not available")+'</dd></dl></div></div>';
+  }
+  if(S.tab==="recorders"){b=recTable(rs,true)}
+  if(S.tab==="users"){
+    var k=parseInt(t.id.slice(1),10);
+    b='<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last active</th></tr></thead><tbody>'+[0,1,2].map(function(i){var nm=NAMES[(k+i*3)%NAMES.length];return '<tr><td class="tn">'+nm+'</td><td class="mono">'+nm.toLowerCase()+'@'+t.n.split(" ")[0].toLowerCase()+'.in</td><td>'+(i===0?'<span class="pill acc">Admin</span>':'<span class="pill">Regular</span>')+'</td><td>'+["Today","Today","3 days ago"][i]+'</td></tr>'}).join("")+'</tbody></table></div></div>';
+  }
+  if(S.tab==="usage"){
+    var rv=mrr(t),cs=cost(t),mg=rv?Math.round((rv-cs)/rv*100):0;
+    b='<div class="grid kpis"><div class="kpi"><span>Frames analysed (30 days)</span><strong>'+t.fr+'M</strong></div><div class="kpi"><span>WhatsApp alerts</span><strong>'+t.wa.toLocaleString("en-IN")+'</strong></div><div class="kpi"><span>Storage</span><strong>'+t.gb+' GB</strong></div>'
+    +'<div class="kpi"><span>Revenue / cost</span><strong>'+inr(rv)+'</strong><small>cost '+inr(cs)+(rv?' · margin '+mg+'%':'')+'</small></div></div><div class="panel"><p class="muted" style="margin:0">Cost covers compute, storage and WhatsApp fees. Figures are sample values to show how per-tenant margin is tracked.</p></div>';
+  }
+  if(S.tab==="framerate")b=fpsTab(t);
+  if(S.tab==="messaging")b=tenantMsg(t);
+  if(S.tab==="audit"){var rows=AUD.filter(function(a){return a.tn===t.n});b=auditTable(rows,"No admin actions on this tenant yet.")}
+  return '<div class="crumb"><button data-go="tenants">Tenants</button> / '+esc(t.n)+'</div>'
+  +'<div class="head"><div><h1>'+esc(t.n)+'</h1><p>'+stPill(t.st)+' <span class="muted">· '+t.city+' · '+pn(t.pt).n+'</span></p></div><div class="chips">'
+  +'<button class="btn primary" data-view="'+t.id+'"'+dis("impersonate")+'>View as customer</button>'
+  +'<button class="btn" id="planBtn"'+dis("plan")+'>Change plan</button>'
+  +(t.st==="suspended"?'<button class="btn" id="susBtn"'+dis("suspend")+'>Reactivate</button>':'<button class="btn danger" id="susBtn"'+dis("suspend")+'>Suspend</button>')+'</div></div>'
+  +'<div class="tabs" role="tablist">'+tabs.map(function(x){return '<button role="tab" data-tab="'+x[0]+'" aria-selected="'+(S.tab===x[0])+'">'+x[1]+'</button>'}).join("")+'</div>'+b;
+}
+
+function numField(id,label,val,min,max){return '<div class="field"><label for="'+id+'">'+label+'</label><input type="number" id="'+id+'" min="'+min+'" max="'+max+'" value="'+val+'"></div>'}
+function costLine(d){var avg=avgFps(d),rel=avg/5;
+  return 'About <b>'+avg.toFixed(1)+'</b> frames analysed per second per camera on average, <b>'+rel.toFixed(1)+'×</b> the compute of a constant 5 fps. This assumes the scene is busy 15% of the time (sample estimate).'}
+function fpsTab(t){
+  var p=POL[t.id],d=S.draft||p,cs=CAMS[t.id]||[],h;
+  h='<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h2>Frame rate for all cameras of this tenant</h2><span class="hint" style="margin:0">Cameras can override any part. Default: adaptive.</span></div><div class="fps-form">'
+   +'<div class="field"><label>Mode</label><div class="seg" role="group" aria-label="Mode"><button type="button" data-tmode="adaptive" aria-pressed="'+(d.mode==="adaptive")+'"'+dis("tenantFps")+'>Adaptive</button><button type="button" data-tmode="fixed" aria-pressed="'+(d.mode==="fixed")+'"'+dis("tenantFps")+'>Fixed</button></div></div>'
+   +(d.mode==="adaptive"?numField("tIdle","Idle rate (1 to 10 fps)",d.idle,1,10)+numField("tActive","Active rate (1 to 25 fps)",d.active,1,25):numField("tFixed","Fixed rate (1 to 25 fps)",d.fixed,1,25))
+   +'<button class="btn primary" id="saveTenantFps"'+dis("tenantFps")+'>Save for the tenant</button></div>'
+   +'<p class="hint" id="costHint">'+costLine(d)+'</p>'
+   +'<p class="hint">Adaptive analyses slowly while nothing is in view and speeds up as soon as a person or vehicle appears, then slows again after 3 seconds. Changes reach running workers within about 30 seconds.</p></div>';
+  h+='<div class="panel"><div class="panel-h"><h2>Cameras</h2><span class="hint" style="margin:0">Health is reported by the analysis worker every 15 seconds.</span></div><div class="tbl-wrap"><table><thead><tr><th>Camera</th><th>Uses</th><th>Stream</th><th>Runs at</th><th>Source</th><th></th></tr></thead><tbody>';
+  if(!cs.length)h+='<tr><td colspan="6" class="muted">No cameras set up yet.</td></tr>';
+  cs.forEach(function(c){
+    var e=eff(t,c),behind=c.dropped>0,rate=e.mode==="fixed"?'Fixed '+e.fixed+' fps':'Adaptive '+e.idle+' to '+e.active+' fps';
+    var pill={streaming:["ok","Streaming"],reconnecting:["warn","Reconnecting"],offline:["crit","Offline"]}[c.state];
+    h+='<tr><td><span class="tn">'+esc(c.n)+'</span></td><td>'+c.uses+'</td>'
+     +'<td><div class="stack"><span class="pill '+pill[0]+'"><span class="dot"></span>'+pill[1]+'</span>'
+     +(c.state==="streaming"?'<span class="sub">analysing '+c.fps.toFixed(1)+' fps'+(c.fps>0?' on average':'')+'</span>':'')
+     +(behind?'<span class="pill warn" title="One worker cannot analyse this camera as fast as it is set. Pictures are dropped so the picture stays current.">Falling behind · '+c.dropped+' pictures dropped</span>':'')+'</div></td>'
+     +'<td><div class="stack"><span>'+rate+'</span><span class="tag'+(hasOv(c)?' own':'')+'">'+(hasOv(c)?'camera override':'follows tenant')+'</span></div></td>'
+     +'<td>'+(c.host?'<span class="mono">'+esc(c.host)+'</span><span class="sub">address saved, encrypted</span>':'<span class="muted">Not set</span>')+'</td>'
+     +'<td><div class="chips"><button class="btn sm" data-camfps="'+c.id+'"'+dis("camFps")+'>Frame rate</button><button class="btn sm" data-camsrc="'+c.id+'"'+dis("camSource")+'>Stream address</button>'
+     +(hasOv(c)?'<button class="btn sm" data-camreset="'+c.id+'"'+dis("camFps")+'>Reset</button>':'')+'</div></td></tr>'});
+  return h+'</tbody></table></div></div>';
+}
+function recTable(rows,inTenant){
+  return '<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Device ID</th>'+(inTenant?"":"<th>Tenant</th>")+'<th>Brand</th><th>Status</th><th>Last heartbeat</th><th class="r">Channels</th><th>Source IP</th><th></th></tr></thead><tbody>'
+  +(rows.length?rows.map(function(r){return '<tr><td class="mono tn">'+r.id+'</td>'+(inTenant?"":'<td>'+esc(tn(r.t).n)+'</td>')+'<td>'+r.br+'<span class="sub">'+r.pr+'</span></td><td>'+rPill(r.st)+'</td><td>'+r.seen+'</td><td class="r num">'+r.ch+'</td><td class="mono">'+r.ip+'</td>'
+    +'<td><div class="chips">'+(r.st==="never"?'<button class="btn sm" data-sim="'+r.id+'"'+dis("register")+'>Simulate connect</button>':'<button class="btn sm" data-restart="'+r.id+'"'+dis("restart")+'>Restart stream</button>')+'<button class="btn sm" data-rot="'+r.id+'"'+dis("rotate")+'>Rotate key</button></div></td></tr>'}).join(""):'<tr><td colspan="8" class="muted">No recorders registered for this tenant.</td></tr>')
+  +'</tbody></table></div></div>';
+}
+function pRecorders(){
+  var rows=REC.filter(function(r){
+    if(S.rf!=="all"&&r.st!==S.rf)return false;var q=S.q.toLowerCase();return !q||r.id.toLowerCase().indexOf(q)>-1||tn(r.t).n.toLowerCase().indexOf(q)>-1});
+  var cs=[["all","All"],["online","Online"],["offline","Offline"],["never","Waiting"]];
+  return '<div class="head"><div><h1>Recorders</h1><p>Every recorder that registers with your server, and who it belongs to.</p></div><button class="btn primary" id="regBtn"'+dis("register")+'>Register recorder</button></div>'
+  +'<div class="bar"><div class="chips">'+cs.map(function(c){return '<button class="chip" data-rf="'+c[0]+'" aria-pressed="'+(S.rf===c[0])+'">'+c[1]+'</button>'}).join("")+'</div><span class="muted">'+rows.length+' shown</span></div>'+recTable(rows,false);
+}
+function pPartners(){
+  return '<div class="head"><div><h1>Partners</h1><p>Installers and resellers. Each sees only their own customers.</p></div><button class="btn primary" id="newPartner">Invite partner</button></div>'
+  +'<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Partner</th><th>City</th><th class="r">Customers</th><th class="r">Cameras</th><th class="r">MRR</th><th class="r">Commission</th><th class="r">Payable this month</th></tr></thead><tbody>'
+  +PARTNERS.map(function(p){var ts=TEN.filter(function(t){return t.pt===p.id}),m=ts.reduce(function(a,t){return a+mrr(t)},0),c=ts.reduce(function(a,t){return a+t.cams},0);
+    return '<tr><td class="tn">'+p.n+'</td><td>'+p.city+'</td><td class="r num">'+ts.length+'</td><td class="r num">'+c+'</td><td class="r num">'+inr(m)+'</td><td class="r num">'+Math.round(p.rate*100)+'%</td><td class="r num">'+inr(m*p.rate)+'</td></tr>'}).join("")+'</tbody></table></div></div>';
+}
+function pBilling(){
+  var rv=TEN.reduce(function(a,t){return a+mrr(t)},0),cs=TEN.reduce(function(a,t){return a+cost(t)},0);
+  return '<div class="head"><div><h1>Billing and usage</h1><p>Revenue, cost and margin per tenant. Sample figures.</p></div></div>'
+  +'<div class="grid kpis"><div class="kpi"><span>MRR</span><strong>'+inr(rv)+'</strong></div><div class="kpi"><span>Estimated cost</span><strong>'+inr(cs)+'</strong><small>compute, storage, WhatsApp</small></div><div class="kpi"><span>Gross margin</span><strong>'+Math.round((rv-cs)/rv*100)+'%</strong></div><div class="kpi"><span>Overdue</span><strong>'+inr(TEN.filter(function(t){return t.st==="pastdue"}).reduce(function(a,t){return a+mrr(t)},0))+'</strong></div></div>'
+  +'<div class="grid split"><div class="panel"><div class="panel-h"><h2>By tenant</h2></div><div class="tbl-wrap"><table><thead><tr><th>Tenant</th><th>Plan</th><th class="r">Cameras</th><th class="r">Revenue</th><th class="r">Cost</th><th class="r">Margin</th></tr></thead><tbody>'
+  +TEN.filter(function(t){return mrr(t)>0}).sort(function(a,b){return mrr(b)-mrr(a)}).map(function(t){var m=mrr(t),c=cost(t),g=Math.round((m-c)/m*100);return '<tr><td class="tn">'+esc(t.n)+(t.st==="pastdue"?' <span class="pill warn">Past due</span>':"")+'</td><td>'+PLAN[t.plan].n+'</td><td class="r num">'+t.cams+'</td><td class="r num">'+inr(m)+'</td><td class="r num">'+inr(c)+'</td><td class="r num">'+g+'%</td></tr>'}).join("")+'</tbody></table></div></div>'
+  +'<div class="panel"><div class="panel-h"><h2>Plans (sample)</h2></div><ul class="list">'+Object.keys(PLAN).map(function(k){return '<li><div class="grow"><b>'+PLAN[k].n+'</b><p>'+(k==="quick"?"Cloud serial number and code. Snapshots every few seconds.":"Recorder registration. Real 5 fps, plate reading.")+'</p></div><span class="num"><b>'+inr(PLAN[k].p)+'</b><span class="muted"> / camera / month</span></span></li>'}).join("")+'<li><div class="grow"><b>Plate reading add-on</b><p>Per gate camera, on Full speed plans.</p></div><span class="num"><b>'+inr(500)+'</b></span></li></ul></div></div>';
+}
+function pTeam(){
+  var rk=["owner","support","tech","finance","analyst"];
+  return '<div class="head"><div><h1>Team and roles</h1><p>Platform staff, kept separate from customer users.</p></div><button class="btn primary" id="inviteStaff">Invite staff</button></div>'
+  +'<div class="panel" style="margin-bottom:14px"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>MFA</th><th>Last sign-in</th></tr></thead><tbody>'
+  +TEAM.map(function(u){return '<tr><td class="tn">'+u.n+'</td><td class="mono">'+u.e+'</td><td><span class="pill acc">'+ROLES[u.r].l+'</span></td><td>'+(u.mfa?'<span class="pill ok">Enabled</span>':'<span class="pill crit">Not enabled</span>')+'</td><td>'+u.last+'</td></tr>'}).join("")+'</tbody></table></div></div>'
+  +'<div class="panel"><div class="panel-h"><h2>What each role can do</h2><span class="muted">Switch the "sign in as" role at the top to see these enforced.</span></div><div class="tbl-wrap"><table class="perm"><thead><tr><th>Action</th>'+rk.map(function(k){return '<th>'+ROLES[k].l+'</th>'}).join("")+'</tr></thead><tbody>'
+  +PERM.map(function(p){return '<tr><td>'+p[0]+'</td>'+[1,2,3,4,5].map(function(i){return '<td>'+(p[i]?'<span class="yes">✓</span>':'<span class="no">–</span>')+'</td>'}).join("")+'</tr>'}).join("")+'</tbody></table></div></div>';
+}
+function auditTable(rows,empty){
+  return '<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Reason</th><th>IP</th></tr></thead><tbody>'
+  +(rows.length?rows.map(function(a){return '<tr><td class="mono">'+a.t+'</td><td>'+a.a+'<span class="sub">'+a.r+'</span></td><td><span class="pill '+(a.ac.indexOf("suspend")>-1||a.ac.indexOf("rotate")>-1?"warn":a.ac.indexOf("impersonate")>-1?"acc":"")+'">'+a.ac+'</span></td><td>'+esc(a.tg)+'</td><td style="white-space:normal;min-width:180px">'+esc(a.why)+'</td><td class="mono">'+a.ip+'</td></tr>'}).join(""):'<tr><td colspan="6" class="muted">'+empty+'</td></tr>')+'</tbody></table></div></div>';
+}
+function pAudit(){
+  var cs=[["all","All"],["impersonate","Customer access"],["recorder","Recorders"],["tenant","Tenants"],["plan","Billing"],["role","Team"]];
+  var rows=AUD.filter(function(a){return S.af==="all"||a.ac.indexOf(S.af)===0||(S.af==="tenant"&&a.ac.indexOf("tenant")===0)||(S.af==="recorder"&&a.ac.indexOf("key")===0)});
+  return '<div class="head"><div><h1>Audit log</h1><p>Append-only. Entries cannot be edited or deleted, by anyone.</p></div><span class="pill acc">Retained 2 years</span></div>'
+  +'<div class="bar"><div class="chips">'+cs.map(function(c){return '<button class="chip" data-af="'+c[0]+'" aria-pressed="'+(S.af===c[0])+'">'+c[1]+'</button>'}).join("")+'</div><span class="muted">'+rows.length+' entries</span></div>'+auditTable(rows,"No entries.");
+}
+function pCustomer(){
+  var t=tn(S.imp?S.imp.tid:S.tid),rs=recsOf(t.id),cams=[];
+  for(var i=0;i<Math.min(t.cams,6);i++)cams.push(i);
+  var onl=rs.filter(function(r){return r.st==="online"}).length;
+  return '<div class="crumb">Customer app preview · everything below is exactly what '+esc(t.n)+' sees</div>'
+  +'<div class="cv"><div class="cv-h">Read-only while viewing as customer. Changes are blocked and every page you open is logged.</div><div class="cv-b">'
+  +'<div class="head" style="margin-bottom:12px"><div><h1>Today at '+esc(t.n)+'</h1><p>Entrance footfall and gate vehicles</p></div><button class="btn primary" disabled title="Blocked in read-only session">Add camera</button></div>'
+  +'<div class="grid kpis"><div class="kpi"><span>People entered</span><strong>'+Math.round(t.cams*58).toLocaleString("en-IN")+'</strong></div><div class="kpi"><span>Vehicles logged</span><strong>'+(t.plan==="full"?t.cams*7:"-")+'</strong></div><div class="kpi"><span>Cameras online</span><strong>'+(onl?t.cams:0)+' / '+t.cams+'</strong></div><div class="kpi"><span>Open alerts</span><strong>'+(t.st==="pastdue"?3:1)+'</strong></div></div>'
+  +'<div class="panel"><div class="panel-h"><h2>Cameras</h2></div><ul class="list">'+cams.map(function(i){return '<li><span class="fi"></span><div class="grow"><b>Camera '+(i+1)+'</b><p>'+(["Entrance","Gate","Reception","Godown","Parking","Cash counter"][i])+' · '+(t.plan==="full"?"5 fps":"snapshots")+'</p></div><span class="pill ok">Live</span></li>'}).join("")+'</ul></div></div></div>';
+}
+
+/* ---------- modal ---------- */
+function openModal(h,after){$("#modal").innerHTML=h;$("#ov").hidden=false;var f=$("#modal input,#modal textarea,#modal select");if(f)f.focus();if(after)after()}
+function closeModal(){$("#ov").hidden=true;$("#modal").innerHTML=""}
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!$("#ov").hidden)closeModal()});
+$("#ov").addEventListener("mousedown",function(e){if(e.target===$("#ov"))closeModal()});
+function rnd(n){var c="abcdefghjkmnpqrstuvwxyz23456789",s="";for(var i=0;i<n;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
+function credHTML(id,key,br){
+  var port=br==="Dahua"?"9500":"7660",rows=[["Server","connect.gateinsight.in"],["Port",port],["Device ID",id],["Key",key]];
+  return '<div class="cred">'+rows.map(function(r){return '<div><span>'+r[0]+'</span><code>'+r[1]+'</code><button class="btn sm" data-cp="'+r[1]+'">Copy</button></div>'}).join("")+'</div><div class="note">The key is shown only now. After you close this window it is kept only in encrypted form, so a lost key means issuing a new one.</div>'
+}
+function mReason(title,desc,btn,extra,onok,danger){
+  openModal('<h2>'+title+'</h2><p>'+desc+'</p>'+(extra||"")+'<div class="field"><label for="why">Reason (saved in the audit log)</label><textarea id="why" placeholder="e.g. Customer called about missing plate reads"></textarea></div><div class="err" id="err"></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn '+(danger?"danger":"primary")+'" id="mok">'+btn+'</button></div>');
+  $("#mok").onclick=function(){var w=$("#why").value.trim();if(w.length<5){$("#err").textContent="Enter a reason of at least 5 characters.";return}onok(w)};
+}
+
+/* ---------- actions ---------- */
+function startView(tid){
+  if(!can("impersonate"))return;var t=tn(tid);
+  mReason("View "+esc(t.n)+" as customer","You will see their app exactly as they do. The session is read-only, expires on its own, and the customer can see it in their own log.","Start session",
+   '<div class="field"><label for="dur">Duration</label><select id="dur"><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="60">60 minutes</option></select></div><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ntf" checked> Notify the customer admin by email</label>',
+   function(w){var d=+$("#dur").value;S.imp={tid:tid,role:S.role,why:w,start:Date.now(),exp:Date.now()+d*60000};
+     logA("impersonate.start",t.n,t.n,w);closeModal();S.page="customer";render();toast("Read-only session started")});
+}
+/* ---------- Messaging: providers, templates, delivery log ---------- */
+var MSGEN={};TEN.forEach(function(t){MSGEN[t.id]={wa:t.st!=="suspended",em:t.st!=="suspended",cap:t.plan==="quick"?1000:null}});
+MSGEN.t4.cap=1500;MSGEN.t1.cap=2000;TEN.forEach(function(t){MSGEN[t.id].clips=t.st!=="suspended"&&t.plan=="full"});
+var KV=["recipient.phone","recipient.phone_digits","recipient.name","recipient.email","template.name","template.language","media.url","media.type","media.is_image","media.is_video","link.url","link.token","message.id","alert.title","alert.body","alert.camera","alert.time"];
+var FORBID=["host","content-length","transfer-encoding","connection","upgrade","te","trailer","proxy-authorization"];
+var TBODY="Security alert from Gate Insight.\n\nEvent: {{1}}\nLocation: {{2}}\nTime: {{3}}\nDetails: {{4}}\n\nTap the button below to see the full evidence.";
+var TBODY_TXT="Gate Insight notice.\n\nEvent: {{1}}\nLocation: {{2}}\nTime: {{3}}\nDetails: {{4}}\n\nPlease check on site or contact support.";
+var TPLS=[
+ {id:"tp1",key:"alert_image",pt:"gi_alert_image",media:"image",btn:true,st:"approved",body:TBODY,use:"Blocked vehicle and plate alerts that have a picture",samples:["Blocked vehicle TN72AB1234","Main Gate","05 Nov, 10:30 AM","Seen entering"]},
+ {id:"tp2",key:"alert_link",pt:"gi_alert_link",media:"none",btn:true,st:"approved",body:TBODY,use:"Used when the picture template is not approved, or the picture is missing",samples:["Blocked vehicle TN72AB1234","Main Gate","05 Nov, 10:30 AM","Seen entering"]},
+ {id:"tp3",key:"alert_text",pt:"gi_alert_text",media:"none",btn:false,st:"submitted",body:TBODY_TXT,use:"Camera and recorder offline, overstay, crowding",samples:["Camera offline","Main Gate","05 Nov, 10:30 AM","No video for 5 minutes"]},
+ {id:"tp4",key:"alert_clip",pt:"gi_alert_clip",media:"video",btn:true,st:"approved",body:TBODY,use:"Blocked vehicle alerts that have a short video clip",samples:["Blocked vehicle TN72AB1234","Main Gate","05 Nov, 10:30 AM","Seen entering"]}];
+var BODY1='{\n  "to": "{{recipient.phone_digits}}",\n  "reference": "{{message.id}}",\n  "template": {\n    "name": "{{template.name}}",\n    "language": "{{template.language}}",\n    "components": [\n      { "$if": "media.is_image", "then": { "type": "header", "parameters": [{ "type": "image", "image": { "link": "{{media.url}}" } }] } },\n      { "$if": "media.is_video", "then": { "type": "header", "parameters": [{ "type": "video", "video": { "link": "{{media.url}}" } }] } },\n      { "type": "body", "parameters": [{ "$each": "vars", "do": { "type": "text", "text": "{{item}}" } }] },\n      { "$if": "link.token", "then": { "type": "button", "sub_type": "url", "index": "0", "parameters": [{ "type": "text", "text": "{{link.token}}" }] } }\n    ]\n  }\n}';
+var PROV=[
+ {id:"pv1",ch:"whatsapp",name:"Our BSP (production)",kind:"http",active:true,rate:5,secrets:["api_key","webhook_secret"],
+  f:{method:"POST",url:"https://api.your-bsp.example/v1/messages",headers:[["Authorization","Bearer {{secret.api_key}}"],["Content-Type","application/json"]],body:BODY1,ok:"200, 201, 202",idPath:"messages.0.id",errPath:"error.message",cost:85,
+     hook:{type:"hmac_sha256",header:"X-Signature",secret:"webhook_secret",prefix:"sha256=",events:"events",idPath:"id",statusPath:"status",map:"sent = sent\ndelivered = delivered\nread = read\nfailed = failed",errPath:"reason"}}},
+ {id:"pv2",ch:"whatsapp",name:"Backup BSP (not in use)",kind:"http",active:false,rate:3,secrets:["token"],
+  f:{method:"POST",url:"https://backup-bsp.example/api/send",headers:[["X-Token","{{secret.token}}"]],body:'{\n  "phone": "{{recipient.phone_digits}}",\n  "template": "{{template.name}}",\n  "params": [{ "$each": "vars", "do": "{{item}}" }]\n}',ok:"200",idPath:"id",errPath:"message",cost:90,
+     hook:{type:"header_equals",header:"X-Hook-Token",secret:"token",prefix:"",events:"",idPath:"id",statusPath:"state",map:"DELIVERED = delivered\nFAILED = failed",errPath:""}}},
+ {id:"pv3",ch:"email",name:"Company mail server",kind:"smtp",active:true,rate:5,secrets:["password"],
+  s:{host:"smtp.gateinsight.in",port:587,security:"starttls",username:"alerts@gateinsight.in",from_email:"alerts@gateinsight.in",from_name:"Gate Insight"}}];
+function mkRow(min,tid,ch,rcpt,tpl,st,att,err,fb){return {m:min,tid:tid,ch:ch,r:rcpt,tpl:tpl,st:st,att:att,err:err||"",fb:!!fb}}
+var NLOG=[
+ mkRow(2,"t1","whatsapp","+91 98••••3210","alert_image","read",1),
+ mkRow(3,"t2","whatsapp","+91 90••••1177","alert_text","queued",2,"No approved WhatsApp template yet. Submit the templates for approval in the admin console."),
+ mkRow(5,"t5","whatsapp","+91 94••••8821","alert_image","delivered",1),
+ mkRow(9,"t9","whatsapp","+91 99••••4040","alert_image","sent",1),
+ mkRow(14,"t4","whatsapp","+91 87••••2290","alert_image","failed",1,"number is not on WhatsApp"),
+ mkRow(14,"t4","email","k.rajan@salemsteel.example","email","sent",1,"",true),
+ mkRow(21,"t3","whatsapp","+91 96••••5521","alert_link","suppressed",0,"Quiet hours."),
+ mkRow(33,"t7","whatsapp","+91 98••••7003","alert_text","queued",3,"The provider answered HTTP 503."),
+ mkRow(41,"t10","email","stores@tutsalt.example","email","delivered",1),
+ mkRow(55,"t2","whatsapp","+91 90••••1177","alert_image","delivered",1),
+ mkRow(70,"t6","whatsapp","+91 97••••6612","alert_text","suppressed",0,"WhatsApp messages are switched off for this account."),
+ mkRow(88,"t1","whatsapp","+91 98••••3210","alert_link","read",1),
+ mkRow(120,"t8","whatsapp","+91 91••••0090","alert_text","suppressed",0,"The monthly WhatsApp message limit has been reached.")];
+var STP={queued:["warn","Waiting"],sent:["acc","Sent"],delivered:["ok","Delivered"],read:["ok","Read"],failed:["crit","Failed"],suppressed:["","Not sent"],cancelled:["","Cancelled"]};
+function stpill(s){return '<span class="pill '+STP[s][0]+'">'+STP[s][1]+'</span>'}
+function tpl(k){return TPLS.filter(function(t){return t.key===k})[0]}
+function prov(id){return PROV.filter(function(p){return p.id===id})[0]}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+
+/* ---- the same safe filling the server does: values go into string values only ---- */
+function lookupV(n,ctx){if(n.indexOf("secret.")===0)return "••••";var m=/^vars\.(\d+)$/.exec(n);if(m)return ctx.vars[m[1]-1]||"";return ctx.values[n]!=null?ctx.values[n]:""}
+function fillS(s,ctx,enc){return s.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g,function(_,n){var v=lookupV(n,ctx);return enc?encodeURIComponent(v):v})}
+function rnode(x,ctx){
+  if(typeof x==="string")return fillS(x,ctx);
+  if(Array.isArray(x)){var out=[];x.forEach(function(v){
+    if(v&&typeof v==="object"&&"$each"in v){(ctx.vars||[]).forEach(function(it,i){var c2={values:Object.assign({},ctx.values,{item:it,index:String(i+1)}),vars:ctx.vars};out.push(rnode(v["do"],c2))})}
+    else if(v&&typeof v==="object"&&"$if"in v){var on=v["$if"]==="vars"?ctx.vars.length>0:!!lookupV(v["$if"],ctx);if(on)out.push(rnode(v.then,ctx))}
+    else out.push(rnode(v,ctx))});return out}
+  if(x&&typeof x==="object"){var o={};Object.keys(x).forEach(function(k){o[k]=rnode(x[k],ctx)});return o}
+  return x}
+function checkNames(s,secrets,loop,where,probs){
+  var rest=s.replace(/\{\{\s*[a-zA-Z0-9_.]+\s*\}\}/g,"");
+  if(rest.indexOf("{{")>-1||rest.indexOf("}}")>-1)probs.push(where+": a {{ or }} is not closed properly.");
+  (s.match(/\{\{\s*[a-zA-Z0-9_.]+\s*\}\}/g)||[]).forEach(function(m){
+    var n=m.replace(/[{}\s]/g,"");
+    var okv=KV.indexOf(n)>-1||/^vars\.[1-9]\d?$/.test(n)||(loop&&(n==="item"||n==="index"))||(n.indexOf("secret.")===0&&secrets.indexOf(n.slice(7))>-1);
+    if(!okv)probs.push(where+": unknown variable {{"+n+"}}"+(n.indexOf("secret.")===0?" (add that secret first)":"")+".")})}
+function checkNode(x,where,secrets,loop,probs){
+  if(typeof x==="string")checkNames(x,secrets,loop,where,probs);
+  else if(Array.isArray(x))x.forEach(function(v,i){
+    if(v&&typeof v==="object"&&"$each"in v){if(v["$each"]!=="vars"||!("do"in v))probs.push(where+"["+i+"]: $each needs the list name \"vars\" and a \"do\" part.");else checkNode(v["do"],where+"["+i+"].do",secrets,true,probs)}
+    else if(v&&typeof v==="object"&&"$if"in v){if(!("then"in v))probs.push(where+"["+i+"]: $if needs a \"then\" part.");else checkNode(v.then,where+"["+i+"].then",secrets,loop,probs)}
+    else checkNode(v,where+"["+i+"]",secrets,loop,probs)});
+  else if(x&&typeof x==="object")Object.keys(x).forEach(function(k){if(/\{\{/.test(k))probs.push(where+": field names cannot contain variables.");checkNode(x[k],where+"."+k,secrets,loop,probs)})}
+function checkProv(p){
+  var probs=[],f=p.f;
+  if(p.kind==="smtp"){var s=p.s;if(!s.host||/[ \/@]/.test(s.host))probs.push("host: enter a server name such as smtp.example.com.");if(!(s.port>=1&&s.port<=65535))probs.push("port: enter a number such as 587.");
+    if(s.security==="none")probs.push("security: 'none' sends passwords in clear text and is not allowed.");if(s.from_email.indexOf("@")<1)probs.push("from address: enter a full email address.");return probs}
+  var u=f.url.trim();
+  if(!/^https:\/\//i.test(u))probs.push("url: only https:// addresses are allowed.");
+  else{var m=/^https:\/\/([^\/?#]*)/i.exec(u),auth=m[1];
+    if(auth.indexOf("@")>-1)probs.push("url: put credentials in a header, not in the address.");
+    var pm=/:(\d+)$/.exec(auth);if(pm&&["443","8443"].indexOf(pm[1])<0)probs.push("url: only port 443 or 8443 is allowed.");
+    if(/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(auth.replace(/:\d+$/,"")))probs.push("url: private and internal addresses are refused.")}
+  checkNames(u,p.secrets,false,"url",probs);
+  f.headers.forEach(function(h){var k=h[0].trim();if(!k)return;
+    if(!/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/.test(k)||FORBID.indexOf(k.toLowerCase())>-1)probs.push("header '"+k+"' is not allowed.");
+    checkNames(h[1],p.secrets,false,"header "+k,probs)});
+  try{checkNode(JSON.parse(f.body),"body",p.secrets,false,probs)}catch(e){probs.push("body: not valid JSON ("+String(e.message).replace(/^JSON\.parse: /,"").slice(0,80)+").")}
+  if(!/^\s*\d{3}(\s*,\s*\d{3})*\s*$/.test(f.ok))probs.push("success statuses: list HTTP status numbers separated by commas, such as 200, 201.");
+  if(f.hook.header&&p.secrets.indexOf(f.hook.secret)<0)probs.push("delivery reports: choose one of the stored secrets to verify them with.");
+  return probs}
+function sampleCtx(t,pic){var tok="Ab3dEf9Qx2LmPz7K";
+  return {values:{"recipient.phone":"+919876543210","recipient.phone_digits":"919876543210","recipient.name":"Ravi","recipient.email":"ravi@example.com","template.name":t.pt,"template.language":"en",
+    "media.url":(t.media==="image"&&pic)?"https://app.gateinsight.in/e/"+tok+"/image.jpg":(t.media==="video"&&pic)?"https://app.gateinsight.in/e/"+tok+"/clip.mp4":"","media.type":(pic&&t.media!=="none")?t.media:"","media.is_image":(pic&&t.media==="image")?"1":"","media.is_video":(pic&&t.media==="video")?"1":"","link.url":pic?"https://app.gateinsight.in/e/"+tok:"","link.token":(t.btn&&pic)?tok:"","message.id":"7c1e4b52-0d3a-4c8e-9f21-5a6b8d90e1f3",
+    "alert.title":t.samples[0],"alert.body":t.samples[3],"alert.camera":t.samples[1],"alert.time":t.samples[2]},vars:t.samples}}
+function previewHTML(p){
+  if(p.kind==="smtp"){var s=p.s;return '<pre class="code">From: '+esc(s.from_name)+' &lt;'+esc(s.from_email)+'&gt;\nTo: Ravi &lt;ravi@example.com&gt;\nSubject: [Gate Insight] Blocked vehicle TN72AB1234\n\nHello Ravi,\n\nEvent: Blocked vehicle TN72AB1234\nLocation: Main Gate\nTime: 05 Nov, 10:30 AM\nDetails: Seen entering\n\nSee the evidence: https://app.gateinsight.in/e/Ab3dEf9Qx2LmPz7K\n(the link expires in 72 hours)</pre>'}
+  var t=tpl(S.ptpl||"alert_image"),pic=S.ppic!==false,probs=checkProv(p);
+  if(probs.length)return '<div class="note" style="background:var(--crit-soft);color:var(--crit)"><b>Fix before saving</b><ul style="margin:6px 0 0;padding-left:18px">'+probs.map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul></div>';
+  var ctx=sampleCtx(t,pic),f=p.f,body="";
+  try{body=JSON.stringify(rnode(JSON.parse(f.body),ctx),null,2)}catch(e){body=""}
+  var hd=f.headers.filter(function(h){return h[0].trim()}).map(function(h){return esc(h[0])+": "+esc(fillS(h[1],ctx))}).join("\n");
+  return '<div class="note" style="background:var(--ok-soft);color:var(--ok)">The recipe is valid. This is exactly what would be sent.</div><pre class="code">'+esc(f.method)+' '+esc(fillS(f.url,ctx,true))+'\n'+hd+'\n\n'+esc(body)+'</pre>'}
+
+/* ---- pages ---- */
+function pMessaging(){
+  var tabs=[["log","Delivery log"],["prov","Providers"],["tpl","Message templates"]];
+  var b="";
+  if(S.mtab==="log")b=mLog();else if(S.mtab==="prov")b=can("msgView")?(S.pid?mEditor():mProviders()):mNoAccess();else b=can("msgView")?mTemplates():mNoAccess();
+  return '<div class="head"><div><h1>Messaging</h1><p>How WhatsApp and email alerts leave the platform: the provider, the approved templates, and what was delivered.</p></div></div>'
+   +'<div class="tabs" role="tablist">'+tabs.map(function(x){return '<button role="tab" data-mtab="'+x[0]+'" aria-selected="'+(S.mtab===x[0])+'">'+x[1]+'</button>'}).join("")+'</div>'+b}
+function mNoAccess(){return '<div class="ban">Your role ('+ROLES[S.role].l+') can see the delivery log but not provider or template settings.</div>'}
+function mLog(){
+  var rows=NLOG.filter(function(r){return S.lf==="all"||r.st===S.lf});
+  var cnt=function(st,ch){return NLOG.filter(function(r){return r.st===st&&(!ch||r.ch===ch)}).length};
+  var okc=NLOG.filter(function(r){return r.st==="delivered"||r.st==="read"||r.st==="sent"}).length;
+  var cs=[["all","All"],["delivered","Delivered"],["read","Read"],["sent","Sent"],["queued","Waiting"],["failed","Failed"],["suppressed","Not sent"]];
+  return '<div class="grid kpis"><div class="kpi"><span>Sent, last 24 hours</span><strong>'+(okc*61+4)+'</strong><small>WhatsApp and email</small></div>'
+   +'<div class="kpi"><span>Delivered or read</span><strong>96%</strong><small>of WhatsApp messages sent</small></div>'
+   +'<div class="kpi"><span>Waiting to send</span><strong>'+cnt("queued")+'</strong><small>retrying or waiting for a fix</small></div>'
+   +'<div class="kpi"><span>Failed</span><strong>'+cnt("failed")+'</strong><small>'+NLOG.filter(function(r){return r.fb}).length+' repeated by email</small></div></div>'
+   +'<div class="bar"><div class="chips">'+cs.map(function(c){return '<button class="chip" data-lf="'+c[0]+'" aria-pressed="'+(S.lf===c[0])+'">'+c[1]+'</button>'}).join("")+'</div><span class="muted">Sample rows</span></div>'
+   +'<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>When</th><th>Tenant</th><th>To</th><th>Template</th><th>Status</th><th class="r">Tries</th><th>Detail</th></tr></thead><tbody>'
+   +(rows.length?rows.map(function(r){return '<tr><td>'+(r.m<60?r.m+' min ago':Math.round(r.m/60)+' h ago')+'</td><td class="tn">'+esc(tn(r.tid).n)+'</td><td><span class="mono">'+esc(r.r)+'</span><span class="sub">'+(r.ch==="whatsapp"?"WhatsApp":"Email")+(r.fb?" · repeated after WhatsApp failed":"")+'</span></td><td class="mono">'+r.tpl+'</td><td>'+stpill(r.st)+'</td><td class="r num">'+r.att+'</td><td style="white-space:normal;min-width:200px;color:var(--muted)">'+esc(r.err)+'</td></tr>'}).join(""):'<tr><td colspan="7" class="muted">Nothing with this status.</td></tr>')
+   +'</tbody></table></div></div><p class="hint">Messages that wait are retried after 30 seconds, 2, 10 and 30 minutes, then 2 hours; after the fifth try they fail. A failed WhatsApp message is repeated as an email when the person has an address.</p>'}
+function mProviders(){
+  var one=function(ch,label){return '<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h2>'+label+'</h2><span class="hint" style="margin:0">One provider is active at a time.</span></div><ul class="list">'
+   +PROV.filter(function(p){return p.ch===ch}).map(function(p){return '<li><span class="fi'+(p.active?'':' warn')+'"></span><div class="grow"><b>'+esc(p.name)+'</b> '+(p.active?'<span class="pill ok">Active</span>':'<span class="pill">Not in use</span>')
+     +'<p>'+(p.kind==="smtp"?'Mail server '+esc(p.s.host)+':'+p.s.port:esc(p.f.method)+' '+esc(p.f.url.replace(/^https:\/\//,"")))+' · '+p.rate+' per second · '+p.secrets.length+' secret'+(p.secrets.length===1?"":"s")+' stored</p></div><button class="btn sm" data-prov="'+p.id+'">'+(can("msgEdit")?"Open":"View")+'</button></li>'}).join("")+'</ul></div>'};
+  return one("whatsapp","WhatsApp")+one("email","Email")+'<div class="ban">Add a provider by opening an existing one and using <b>Duplicate</b>. A new provider starts switched off, so nothing changes until you test it and activate it.</div>'}
+function fld(id,label,val,extra){return '<div class="field"><label for="'+id+'">'+label+'</label><input type="text" class="pe" id="'+id+'" value="'+esc(val)+'" '+(extra||"")+(can("msgEdit")?"":" disabled")+'></div>'}
+function mEditor(){
+  var p=S.pd,ro=!can("msgEdit"),dsb=ro?" disabled":"",h='';
+  h+='<div class="crumb"><button data-pback>Providers</button> / '+esc(p.name)+'</div>';
+  h+='<div class="bar"><div class="chips"><span class="pill '+(p.active?'ok':'')+'">'+(p.active?"Active":"Not in use")+'</span><span class="pill acc">'+(p.ch==="whatsapp"?"WhatsApp":"Email")+' · '+(p.kind==="smtp"?"mail server":"web request")+'</span></div>'
+   +'<div class="chips"><button class="btn" id="pDup"'+dsb+'>Duplicate</button><button class="btn" id="pTest"'+(can("msgTest")?"":" disabled")+'>Send a test</button><button class="btn '+(p.active?'':'primary')+'" id="pAct"'+dsb+'>'+(p.active?"Switch off":"Activate")+'</button><button class="btn primary" id="pSave"'+dsb+'>Save changes</button></div></div>';
+  h+='<div class="grid split"><div class="grid">';
+  h+='<div class="panel"><div class="panel-h"><h2>Provider</h2></div><div class="fps-form">'+fld("pe-name","Name",p.name,'style="min-width:260px"')+fld("pe-rate","Messages per second",p.rate,'inputmode="decimal" style="width:120px"')+'</div></div>';
+  if(p.kind==="smtp"){var s=p.s;
+    h+='<div class="panel"><div class="panel-h"><h2>Mail server</h2></div><div class="fps-form">'+fld("ps-host","Server",s.host)+fld("ps-port","Port",s.port,'style="width:90px"')
+     +'<div class="field"><label for="ps-sec">Security</label><select class="pe" id="ps-sec"'+dsb+'><option value="starttls"'+(s.security==="starttls"?" selected":"")+'>STARTTLS (587)</option><option value="ssl"'+(s.security==="ssl"?" selected":"")+'>SSL (465)</option><option value="none"'+(s.security==="none"?" selected":"")+'>None (not allowed)</option></select></div></div>'
+     +'<div class="fps-form" style="margin-top:12px">'+fld("ps-user","User name",s.username)+fld("ps-from","From address",s.from_email)+fld("ps-name","From name",s.from_name)+'</div></div>'}
+  else{var f=p.f;
+    h+='<div class="panel"><div class="panel-h"><h2>Request</h2><span class="hint" style="margin:0">Like a request in Postman.</span></div>'
+     +'<div style="display:flex;gap:8px;flex-wrap:wrap"><select class="pe" id="pe-method" style="border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px"'+dsb+'><option'+(f.method==="POST"?" selected":"")+'>POST</option><option'+(f.method==="PUT"?" selected":"")+'>PUT</option></select>'
+     +'<input type="text" class="pe mono" id="pe-url" value="'+esc(f.url)+'" aria-label="Address" style="flex:1;min-width:200px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px"'+dsb+'></div>'
+     +'<h3 style="margin:14px 0 6px">Headers</h3>'+f.headers.map(function(r,i){return '<div class="kvrow"><input type="text" class="pe mono" id="ph-k'+i+'" value="'+esc(r[0])+'" aria-label="Header name" placeholder="Name"'+dsb+'><input type="text" class="pe mono" id="ph-v'+i+'" value="'+esc(r[1])+'" aria-label="Header value" placeholder="Value"'+dsb+'><button class="btn sm" data-hdel="'+i+'" aria-label="Remove header"'+dsb+'>Remove</button></div>'}).join("")
+     +'<button class="btn sm" id="hAdd" style="margin-top:6px"'+dsb+'>Add header</button>'
+     +'<h3 style="margin:14px 0 6px">Body (JSON)</h3><textarea class="pe mono code-in" id="pe-body" spellcheck="false" aria-label="Body"'+dsb+'>'+esc(f.body)+'</textarea>'
+     +'<p class="hint">Put <span class="mono">{{recipient.phone_digits}}</span>, <span class="mono">{{vars.1}}</span> and the other variables inside quotes. <span class="mono">$each</span> repeats a part for every template variable; <span class="mono">$if</span> keeps a part only when the value exists (a picture, a button).</p></div>';
+    h+='<div class="panel"><div class="panel-h"><h2>Secrets</h2></div><ul class="list">'+(p.secrets.length?p.secrets.map(function(k){return '<li><div class="grow"><span class="mono">'+esc(k)+'</span><p>Stored encrypted. Use as <span class="mono">{{secret.'+esc(k)+'}}</span></p></div><span class="mono muted">••••••••</span><button class="btn sm" data-sreplace="'+esc(k)+'"'+dsb+'>Replace</button><button class="btn sm" data-sdel="'+esc(k)+'"'+dsb+'>Remove</button></li>'}).join(""):'<li class="muted">None yet.</li>')+'</ul>'
+     +'<button class="btn sm" id="sAdd" style="margin-top:8px"'+dsb+'>Add secret</button><p class="hint">A saved value is never shown again, not even to the owner. Replace it to change it.</p></div>';
+    h+='<div class="panel"><div class="panel-h"><h2>Reading the answer</h2></div><div class="fps-form">'+fld("pr-ok","Counts as sent when status is",f.ok,'style="width:160px"')+fld("pr-id","Message id is at",f.idPath,'class="mono"')+fld("pr-err","Error text is at",f.errPath)+fld("pr-cost","Cost per message (paise)",f.cost,'style="width:110px"')+'</div>'
+     +'<p class="hint">Paths use dots, for example <span class="mono">messages.0.id</span>. A 429, 408 or 5xx answer, or no answer, is retried; any other failure is final.</p></div>';
+    var k=f.hook;
+    h+='<div class="panel"><div class="panel-h"><h2>Delivery reports from the provider</h2></div><p class="hint" style="margin-top:0">Give the provider this address to call when a message is delivered, read or fails:</p><div class="cred" style="margin-bottom:12px"><div style="grid-template-columns:1fr auto"><code>https://api.gateinsight.in/hooks/messaging/'+p.id+'</code><button class="btn sm" data-cp="https://api.gateinsight.in/hooks/messaging/'+p.id+'">Copy</button></div></div>'
+     +'<div class="fps-form"><div class="field"><label for="pk-type">How the provider proves it is them</label><select class="pe" id="pk-type"'+dsb+'><option value="hmac_sha256"'+(k.type==="hmac_sha256"?" selected":"")+'>Signature (HMAC SHA-256)</option><option value="header_equals"'+(k.type==="header_equals"?" selected":"")+'>Shared secret in a header</option></select></div>'
+     +fld("pk-header","Header name",k.header)+'<div class="field"><label for="pk-secret">Secret used</label><select class="pe" id="pk-secret"'+dsb+'>'+p.secrets.map(function(s){return '<option'+(k.secret===s?" selected":"")+'>'+esc(s)+'</option>'}).join("")+'</select></div></div>'
+     +'<div class="fps-form" style="margin-top:12px">'+fld("pk-events","List of events at (optional)",k.events)+fld("pk-id","Message id at",k.idPath)+fld("pk-status","Status at",k.statusPath)+fld("pk-err","Reason at (optional)",k.errPath)+'</div>'
+     +'<div class="field" style="margin-top:12px"><label for="pk-map">Their word = our status (sent, delivered, read, failed), one per line</label><textarea class="pe mono" id="pk-map" style="min-height:90px"'+dsb+'>'+esc(k.map)+'</textarea></div></div>'}
+  h+='</div><div class="grid" style="align-content:start"><div class="panel" style="position:sticky;top:12px"><div class="panel-h"><h2>Preview</h2></div>';
+  if(p.kind==="http"){h+='<div class="fps-form" style="margin-bottom:10px"><div class="field"><label for="pv-tpl">Template</label><select id="pv-tpl" class="pe">'+TPLS.map(function(t){return '<option value="'+t.key+'"'+(S.ptpl===t.key||(!S.ptpl&&t.key==="alert_image")?" selected":"")+'>'+t.pt+'</option>'}).join("")+'</select></div>'
+     +'<div class="field"><label for="pv-pic">Alert has a picture or clip</label><select id="pv-pic" class="pe"><option value="1"'+(S.ppic!==false?" selected":"")+'>Yes</option><option value="0"'+(S.ppic===false?" selected":"")+'>No</option></select></div></div>'}
+  h+='<div id="pvbox">'+previewHTML(p)+'</div><p class="hint">Secrets show as ••••. Sample values, not a real person.</p></div></div></div>';
+  return h}
+function mTemplates(){
+  var wait=TPLS.filter(function(t){return t.st!=="approved"&&t.key!=="alert_clip"});
+  return '<div class="head" style="margin-bottom:12px"><div><h2>Message templates</h2><p>WhatsApp only sends pre-approved wording. Submit each one to your provider, then record the outcome here. Only approved templates are ever used.</p></div><button class="btn" id="tDefaults"'+(can("msgEdit")?"":" disabled")+'>Add the standard templates</button></div>'
+   +(wait.length?'<div class="note" style="margin-bottom:12px">'+wait.map(function(t){return '<b>'+t.pt+'</b> is '+t.st+'.'}).join(" ")+' Alerts that need it wait and retry until it is approved'+(tpl("alert_image").st==="approved"?"":"; until then a plain link message is used instead of the picture message")+'.</div>':'')
+   +'<div class="panel"><div class="tbl-wrap"><table><thead><tr><th>Template</th><th>Header</th><th>Button</th><th>Used for</th><th>Status</th><th></th></tr></thead><tbody>'
+   +TPLS.map(function(t){var m={approved:["ok","Approved"],submitted:["acc","Submitted"],draft:["","Draft"],rejected:["crit","Rejected"],paused:["warn","Paused"]}[t.st];
+     return '<tr><td><span class="mono tn">'+t.pt+'</span><span class="sub">Utility · English</span></td><td>'+({none:"None",image:"Picture",video:"Video clip"}[t.media])+'</td><td>'+(t.btn?"View evidence":"None")+'</td><td style="white-space:normal;min-width:220px">'+t.use+'</td><td><span class="pill '+m[0]+'">'+m[1]+'</span></td>'
+     +'<td><div class="chips"><button class="btn sm" data-tsheet="'+t.id+'">Submission sheet</button><button class="btn sm" data-tstat="'+t.id+'"'+(can("msgEdit")?"":" disabled")+'>Record status</button></div></td></tr>'}).join("")+'</tbody></table></div></div>'
+   +'<div class="grid two" style="margin-top:14px"><div class="panel"><div class="panel-h"><h2>Wording for the three standard messages</h2></div><pre class="code">'+esc(TBODY)+'</pre><p class="hint">Picture and link templates. The camera offline wording is shorter and has no button.</p></div>'
+   +'<div class="panel"><div class="panel-h"><h2>Rules WhatsApp enforces</h2></div><ul class="list"><li><div class="grow">Numbered variables {{1}}, {{2}} in order, each with a sample.</div></li><li><div class="grow">A variable cannot be the very first or last thing in the body.</div></li><li><div class="grow">Alerts the customer asked for are Utility. No offers or promotional words.</div></li><li><div class="grow">The header type (picture, video, none) is fixed when approved. To change wording, create a new template.</div></li></ul></div></div>'}
+function tenantMsg(t){
+  var m=MSGEN[t.id],used=t.wa,cap=m.cap,pc=cap?Math.min(100,Math.round(used/cap*100)):0;
+  return '<div class="grid two"><div class="panel"><div class="panel-h"><h2>Messaging for this tenant</h2></div>'
+   +'<ul class="list"><li><div class="grow"><b>Video clips with alerts</b><p>About 9 seconds of video on blocked vehicle alerts. Clips use storage, so this is a cost control. Off means the still picture only.</p></div><label class="sw"><input type="checkbox" id="mClip"'+(m.clips?" checked":"")+(can("msgTenant")?"":" disabled")+'><span>'+(m.clips?"On":"Off")+'</span></label></li><li><div class="grow"><b>WhatsApp alerts</b><p>When off, alerts are still recorded and shown in the app, but nothing is sent.</p></div><label class="sw"><input type="checkbox" id="mWa"'+(m.wa?" checked":"")+(can("msgTenant")?"":" disabled")+'><span>'+(m.wa?"On":"Off")+'</span></label></li>'
+   +'<li><div class="grow"><b>Email alerts</b></div><label class="sw"><input type="checkbox" id="mEm"'+(m.em?" checked":"")+(can("msgTenant")?"":" disabled")+'><span>'+(m.em?"On":"Off")+'</span></label></li></ul>'
+   +'<div class="fps-form" style="margin-top:12px"><div class="field"><label for="mCap">WhatsApp messages allowed per month</label><input type="number" id="mCap" min="0" placeholder="No limit" value="'+(cap==null?"":cap)+'"'+(can("msgTenant")?"":" disabled")+'></div><button class="btn primary" id="mSave"'+dis("msgTenant")+'>Save</button></div>'
+   +'<p class="hint">Once the limit is reached, further WhatsApp alerts are recorded and marked "not sent" with the reason. The customer sees it in their message log.</p></div>'
+   +'<div class="panel"><div class="panel-h"><h2>This month</h2></div><div class="kpi" style="border:0;padding:0"><span>WhatsApp messages sent</span><strong>'+used.toLocaleString("en-IN")+'</strong><small>'+(cap?('of '+cap.toLocaleString("en-IN")+' allowed'):'no limit set')+'</small></div>'
+   +(cap?'<div class="meter" style="width:100%;margin-top:10px"><i style="width:'+pc+'%;'+(pc>=100?'background:var(--crit)':'')+'"></i></div>':'')
+   +(cap&&used>=cap?'<p class="note" style="margin-top:12px">Limit reached. New WhatsApp alerts for this tenant are not being sent.</p>':'')+'</div></div>'}
+
+function render(){
+  if(!ok(S.page)&&S.page!=="customer"&&S.page!=="tenant"){S.page="overview"}
+  renderNav();renderImp();
+  var c=$("#content"),h="";
+  if(S.page==="overview")h=pOverview();
+  else if(S.page==="tenants"){h=S.tid?pTenant():pTenants()}
+  else if(S.page==="recorders")h=pRecorders();
+  else if(S.page==="partners")h=pPartners();
+  else if(S.page==="billing")h=pBilling();
+  else if(S.page==="team")h=pTeam();
+  else if(S.page==="audit")h=pAudit();
+  else if(S.page==="messaging")h=pMessaging();
+  else if(S.page==="customer")h=pCustomer();
+  c.innerHTML=h;
+  try{history.replaceState(null,"","#"+(S.page==="customer"?"tenants":S.page))}catch(e){}
+  window.scrollTo(0,0);
+}
+function go(p,tid){S.page=p;S.tid=tid||null;S.tab="overview";S.draft=null;S.pid=null;S.pd=null;render()}
+/* ---- messaging: events ---- */
+function readDraft(){
+  var p=S.pd;if(!p)return;var g=function(id){var e=$("#"+id);return e?e.value:null};
+  if(g("pe-name")!==null)p.name=g("pe-name");
+  if(g("pe-rate")!==null){var r=parseFloat(g("pe-rate"));if(r>0)p.rate=r}
+  if(p.kind==="smtp"){var s=p.s;if(g("ps-host")!==null){s.host=g("ps-host").trim();s.port=parseInt(g("ps-port"),10)||0;s.security=g("ps-sec");s.username=g("ps-user");s.from_email=g("ps-from").trim();s.from_name=g("ps-name")}return}
+  var f=p.f;if(g("pe-url")===null)return;
+  f.method=g("pe-method");f.url=g("pe-url");f.body=g("pe-body");
+  var hs=[],i=0;while($("#ph-k"+i)){hs.push([$("#ph-k"+i).value,$("#ph-v"+i).value]);i++}f.headers=hs;
+  f.ok=g("pr-ok");f.idPath=g("pr-id");f.errPath=g("pr-err");f.cost=parseInt(g("pr-cost"),10)||0;
+  var k=f.hook;k.type=g("pk-type");k.header=g("pk-header");k.secret=g("pk-secret")||k.secret;k.events=g("pk-events");k.idPath=g("pk-id");k.statusPath=g("pk-status");k.errPath=g("pk-err");k.map=g("pk-map")}
+function repPreview(){var b=$("#pvbox");if(b&&S.pd)b.innerHTML=previewHTML(S.pd)}
+document.addEventListener("input",function(e){
+  if(!e.target.classList||!e.target.classList.contains("pe"))return;
+  if(e.target.id==="pv-tpl"){S.ptpl=e.target.value;repPreview();return}
+  if(e.target.id==="pv-pic"){S.ppic=e.target.value==="1";repPreview();return}
+  readDraft();repPreview()});
+document.addEventListener("change",function(e){
+  if(e.target.id==="mWa"||e.target.id==="mEm"||e.target.id==="mClip"){e.target.nextElementSibling.textContent=e.target.checked?"On":"Off"}});
+document.addEventListener("click",function(e){
+  var el,id=e.target.id;
+  if((el=e.target.closest("[data-mtab]"))){S.mtab=el.getAttribute("data-mtab");S.pid=null;S.pd=null;render();return}
+  if((el=e.target.closest("[data-lf]"))){S.lf=el.getAttribute("data-lf");render();return}
+  if((el=e.target.closest("[data-prov]"))){var p=prov(el.getAttribute("data-prov"));S.pid=p.id;S.pd=clone(p);S.pnew=false;render();return}
+  if(e.target.closest("[data-pback]")){S.pid=null;S.pd=null;render();return}
+  if((el=e.target.closest("[data-hdel]"))){readDraft();S.pd.f.headers.splice(+el.getAttribute("data-hdel"),1);render();return}
+  if(id==="hAdd"){readDraft();S.pd.f.headers.push(["",""]);render();return}
+  if(id==="sAdd"){readDraft();
+    openModal('<h2>Add a secret</h2><p>Use it in a header or the body as {{secret.name}}. The value is encrypted when you save and cannot be read back.</p><div class="field"><label for="sn">Name</label><input type="text" id="sn" class="mono" placeholder="api_key" autocomplete="off"></div><div class="field"><label for="sv">Value</label><input type="password" id="sv" autocomplete="off"></div><div class="err" id="err"></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Add</button></div>');
+    $("#mok").onclick=function(){var n=$("#sn").value.trim();if(!/^[a-z][a-z0-9_]{0,39}$/.test(n)){$("#err").textContent="Use lowercase letters, numbers and underscores, starting with a letter.";return}
+      if(S.pd.secrets.indexOf(n)>-1){$("#err").textContent="That name already exists. Use Replace.";return}if(!$("#sv").value){$("#err").textContent="Enter the value.";return}
+      S.pd.secrets.push(n);closeModal();render();toast("Secret added. Save changes to store it.")};return}
+  if((el=e.target.closest("[data-sreplace]"))){var k=el.getAttribute("data-sreplace");readDraft();
+    openModal('<h2>Replace '+esc(k)+'</h2><p>The old value is discarded. The new one is encrypted when you save.</p><div class="field"><label for="sv">New value</label><input type="password" id="sv" autocomplete="off"></div><div class="err" id="err"></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Replace</button></div>');
+    $("#mok").onclick=function(){if(!$("#sv").value){$("#err").textContent="Enter the value.";return}closeModal();toast("Replaced. Save changes to store it.")};return}
+  if((el=e.target.closest("[data-sdel]"))){var k2=el.getAttribute("data-sdel");readDraft();
+    if(JSON.stringify(S.pd.f||{}).indexOf("secret."+k2)>-1){toast("{{secret."+k2+"}} is still used in the recipe. Remove it there first.");return}
+    S.pd.secrets.splice(S.pd.secrets.indexOf(k2),1);render();return}
+  if(id==="pDup"){var c=clone(S.pd);c.id="pv"+(PROV.length+1);c.name=c.name+" (copy)";c.active=false;c.secrets=[];S.pid=c.id;S.pd=c;S.pnew=true;render();toast("Copied without its secrets. Add them, then save.");return}
+  if(id==="pSave"){readDraft();var pr=checkProv(S.pd);if(pr.length){toast(pr[0]);return}
+    mReason("Save "+esc(S.pd.name),"Changes apply to new messages straight away"+(S.pd.active?". This provider is active.":"."),"Save","",function(w){
+      var i=PROV.map(function(x){return x.id}).indexOf(S.pd.id);if(i<0)PROV.push(clone(S.pd));else PROV[i]=clone(S.pd);
+      logA(S.pnew?"messaging.provider.create":"messaging.provider.update",S.pd.name,"-",w);S.pnew=false;closeModal();render();toast("Saved")});return}
+  if(id==="pAct"){readDraft();var q=S.pd;
+    if(q.active){mReason("Switch off "+esc(q.name),"Until another "+(q.ch==="whatsapp"?"WhatsApp":"email")+" provider is active, messages wait in the queue and are retried. Nothing is lost.","Switch off","",function(w){q.active=false;var i=PROV.map(function(x){return x.id}).indexOf(q.id);if(i>-1)PROV[i].active=false;logA("messaging.provider.deactivate",q.name,"-",w);closeModal();render();toast("Switched off")},true);return}
+    var pr2=checkProv(q);if(pr2.length){toast(pr2[0]);return}
+    if(S.pnew){toast("Save the new provider first.");return}
+    mReason("Activate "+esc(q.name),"It replaces the current "+(q.ch==="whatsapp"?"WhatsApp":"email")+" provider for every customer. Send a test first.","Activate","",function(w){
+      PROV.forEach(function(x){if(x.ch===q.ch)x.active=(x.id===q.id)});q.active=true;logA("messaging.provider.activate",q.name,"-",w);closeModal();render();toast(q.name+" is now active")});return}
+  if(id==="pTest"){readDraft();var q2=S.pd;
+    openModal('<h2>Send a test</h2><p>'+(q2.kind==="smtp"?"Sends a real test email.":"Sends one real WhatsApp message through this recipe, using the template you pick.")+'</p><div class="field"><label for="tTo">'+(q2.kind==="smtp"?"Email address":"Mobile number with country code")+'</label><input type="text" id="tTo" placeholder="'+(q2.kind==="smtp"?"you@example.com":"+919876543210")+'" autocomplete="off"></div>'
+     +(q2.kind==="smtp"?"":'<div class="field"><label for="tTpl">Template</label><select id="tTpl">'+TPLS.filter(function(t){return t.key!=="alert_clip"}).map(function(t){return '<option value="'+t.key+'">'+t.pt+(t.st==="approved"?"":" (not approved yet)")+'</option>'}).join("")+'</select></div>')
+     +'<div class="err" id="err"></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Send</button></div>');
+    $("#mok").onclick=function(){var to=$("#tTo").value.trim(),pr3=checkProv(q2);
+      if(pr3.length){$("#err").textContent="Fix the recipe first: "+pr3[0];return}
+      if(q2.kind==="smtp"?to.indexOf("@")<1:!/^\+[1-9]\d{7,14}$/.test(to)){$("#err").textContent=q2.kind==="smtp"?"Enter a full email address.":"Enter the number like +919876543210.";return}
+      var tp=q2.kind==="smtp"?"email":$("#tTpl").value;NLOG.unshift(mkRow(0,"t1",q2.ch,to.length>8?to.slice(0,5)+"••••"+to.slice(-4):to,tp,"sent",1));logA("messaging.provider.test",q2.name,"-","Test message");closeModal();toast("Test sent. In this mock-up nothing leaves your browser.")};return}
+  if(id==="tDefaults"){toast("All four standard templates are already in the list.");return}
+  if((el=e.target.closest("[data-tsheet]"))){var t=TPLS.filter(function(x){return x.id===el.getAttribute("data-tsheet")})[0];
+    openModal('<h2>Submit '+t.pt+'</h2><p>Type these into your provider\'s template form exactly as shown.</p><dl class="kv"><dt>Name</dt><dd class="mono">'+t.pt+'</dd><dt>Language</dt><dd>English</dd><dt>Category</dt><dd>UTILITY</dd><dt>Header</dt><dd>'+({none:"None",image:"IMAGE (give any picture as the sample)",video:"VIDEO"}[t.media])+'</dd></dl><h3>Body</h3><pre class="code">'+esc(t.body)+'</pre><h3>Samples for {{1}} to {{4}}</h3><pre class="code">'+t.samples.map(esc).join("\n")+'</pre>'
+     +(t.btn?'<h3>Button</h3><dl class="kv"><dt>Type</dt><dd>URL</dd><dt>Text</dt><dd>View evidence</dd><dt>Address</dt><dd class="mono">https://app.gateinsight.in/e/{{1}}</dd><dt>Sample</dt><dd class="mono">Ab3dEf</dd></dl>':'')
+     +'<div class="mbtns"><button class="btn primary" data-close>Close</button></div>');return}
+  if((el=e.target.closest("[data-tstat]"))){var t2=TPLS.filter(function(x){return x.id===el.getAttribute("data-tstat")})[0];
+    mReason("Status of "+t2.pt,"Record what your provider says. Only Approved templates are used to send.","Save",'<div class="field"><label for="tSt">Status</label><select id="tSt">'+["draft","submitted","approved","rejected","paused"].map(function(s){return '<option value="'+s+'"'+(t2.st===s?" selected":"")+'>'+s.charAt(0).toUpperCase()+s.slice(1)+'</option>'}).join("")+'</select></div>',function(w){
+      t2.st=$("#tSt").value;logA("messaging.template.status",t2.pt,"-",w);closeModal();render();toast(t2.pt+" is now "+t2.st)});return}
+  if(id==="mSave"){var tt=tn(S.tid),m=MSGEN[tt.id],v=$("#mCap").value.trim(),cap=v===""?null:Number(v);
+    if(cap!==null&&!(Number.isInteger(cap)&&cap>=0)){toast("Enter a whole number, or leave it empty for no limit.");return}
+    var n={wa:$("#mWa").checked,em:$("#mEm").checked,clips:$("#mClip").checked,cap:cap};if(JSON.stringify(n)===JSON.stringify(m)){toast("These are already the tenant's settings.");return}
+    mReason("Messaging for "+esc(tt.n),"WhatsApp "+(n.wa?"on":"off")+", email "+(n.em?"on":"off")+", clips "+(n.clips?"on":"off")+", "+(cap===null?"no monthly limit":"limit "+cap+" WhatsApp messages a month")+".","Save","",function(w){MSGEN[tt.id]=n;logA("messaging.tenant.update",tt.n,tt.n,w);closeModal();render();toast("Saved")});return}
+});
+
+
+document.addEventListener("click",function(e){
+  var el;
+  if((el=e.target.closest("[data-close]"))){closeModal();return}
+  if((el=e.target.closest("[data-cp]"))){var v=el.getAttribute("data-cp"),f=function(){toast("Copied")};try{navigator.clipboard.writeText(v).then(f,f)}catch(x){f()}return}
+  if(e.target.id==="endImp"){endImp();return}
+  if((el=e.target.closest("[data-view]"))){e.stopPropagation();startView(el.getAttribute("data-view"));return}
+  if((el=e.target.closest("[data-go]"))){go(el.getAttribute("data-go"),el.getAttribute("data-tid"));return}
+  if((el=e.target.closest("[data-tf]"))){S.tf=el.getAttribute("data-tf");render();return}
+  if((el=e.target.closest("[data-rf]"))){S.rf=el.getAttribute("data-rf");render();return}
+  if((el=e.target.closest("[data-af]"))){S.af=el.getAttribute("data-af");render();return}
+  if((el=e.target.closest("[data-tab]"))){S.tab=el.getAttribute("data-tab");S.draft=null;render();return}
+  if((el=e.target.closest("[data-sim]"))){var r=REC.filter(function(x){return x.id===el.getAttribute("data-sim")})[0];r.st="online";r.seen="just now";r.ch=8;r.ip="152.58.99.14";logA("recorder.first_connect",r.id,tn(r.t).n,"Registration received");toast(r.id+" connected, 8 channels found");render();return}
+  if((el=e.target.closest("[data-restart]"))){var id=el.getAttribute("data-restart");logA("stream.restart",id,tn(REC.filter(function(x){return x.id===id})[0].t).n,"Manual restart");toast("Stream restart queued for "+id);return}
+  if((el=e.target.closest("[data-rot]"))){
+    var rid=el.getAttribute("data-rot"),rr=REC.filter(function(x){return x.id===rid})[0];
+    mReason("Rotate key for "+rid,"The current key stops working. The customer must enter the new key on the recorder, so only do this if the old key may be exposed.","Rotate key","",function(w){var k=rnd(4)+"-"+rnd(4);logA("key.rotate",rid,tn(rr.t).n,w);openModal('<h2>New key for '+rid+'</h2>'+credHTML(rid,k,rr.br)+'<div class="mbtns"><button class="btn primary" data-close>Done</button></div>');render()});return}
+  if((el=e.target.closest("tr.row"))){go("tenants",el.getAttribute("data-tid"));return}
+});
+document.addEventListener("click",function(e){
+  var id=e.target.id;
+  if(id==="susBtn"){var t=tn(S.tid),sus=t.st!=="suspended";
+    mReason((sus?"Suspend ":"Reactivate ")+esc(t.n),sus?"Cameras stop being analysed and the customer cannot sign in. Data is kept.":"Analysis resumes and the customer can sign in again.",sus?"Suspend":"Reactivate","",function(w){t.st=sus?"suspended":"active";logA(sus?"tenant.suspend":"tenant.reactivate",t.n,t.n,w);closeModal();render();toast(t.n+(sus?" suspended":" reactivated"))},sus)}
+  if(id==="planBtn"){var t2=tn(S.tid);
+    mReason("Change plan for "+esc(t2.n),"The new price applies from the next billing date.","Save plan",'<div class="field"><label for="pl">Plan</label><select id="pl"><option value="quick"'+(t2.plan==="quick"?" selected":"")+'>Quick connect · '+inr(799)+'</option><option value="full"'+(t2.plan==="full"?" selected":"")+'>Full speed 5 fps · '+inr(1499)+'</option></select></div>',function(w){t2.plan=$("#pl").value;logA("plan.change",t2.n,t2.n,w);closeModal();render();toast("Plan updated")})}
+  if(id==="newTenant"){
+    openModal('<h2>New tenant</h2><div class="field"><label for="nn">Organisation name</label><input type="text" id="nn" placeholder="e.g. Karur Textile Mills"></div><div class="field"><label for="nc">City</label><input type="text" id="nc"></div><div class="field"><label for="np">Partner</label><select id="np">'+PARTNERS.map(function(p){return '<option value="'+p.id+'">'+p.n+'</option>'}).join("")+'</select></div><div class="field"><label for="npl">Plan</label><select id="npl"><option value="quick">Quick connect</option><option value="full">Full speed 5 fps</option></select></div><div class="err" id="err"></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Create with 14-day trial</button></div>');
+    $("#mok").onclick=function(){var n=$("#nn").value.trim();if(!n){$("#err").textContent="Enter the organisation name.";return}
+      var t={id:"t"+(TEN.length+1),n:n,city:$("#nc").value.trim()||"-",st:"trial",plan:$("#npl").value,cams:0,lim:5,pt:$("#np").value,td:14,fr:0,wa:0,gb:0,since:"Nov 2026"};TEN.unshift(t);logA("tenant.create",n,n,"New trial");closeModal();go("tenants",t.id);toast("Tenant created, invitation emailed")}}
+  if(id==="regBtn"){
+    openModal('<h2>Register a recorder</h2><p>This creates the device ID and key the customer types into their recorder.</p><div class="field"><label for="rt">Tenant</label><select id="rt">'+TEN.filter(function(t){return t.st!=="suspended"}).map(function(t){return '<option value="'+t.id+'">'+esc(t.n)+'</option>'}).join("")+'</select></div><div class="field"><label for="rb">Recorder brand</label><select id="rb"><option>Hikvision</option><option>Dahua</option></select></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Generate credentials</button></div>');
+    $("#mok").onclick=function(){var t=tn($("#rt").value),br=$("#rb").value,n=recsOf(t.id).length+1,pre=t.n.split(" ")[0].toUpperCase().slice(0,6),id=pre+"-"+("00"+n).slice(-3),key=rnd(4)+"-"+rnd(4);
+      REC.push({id:id,br:br,pr:br==="Dahua"?"Auto Register":"ISUP",t:t.id,st:"never",seen:"never connected",ch:0,ip:"-"});logA("recorder.register",id,t.n,"New recorder");
+      openModal('<h2>Credentials for '+esc(t.n)+'</h2><p>Send these to the customer, or fill them in on their recorder.</p>'+credHTML(id,key,br)+'<div class="ban">Status will change to Online here as soon as the recorder connects.</div><div class="mbtns"><button class="btn primary" data-close>Done</button></div>');render()}}
+  if(id==="newPartner"||id==="inviteStaff"){toast("Invitation form opens here: email, role, MFA required on first sign-in.")}
+});
+function findCam(id){var t=TEN.filter(function(x){return CAMS[x.id]&&CAMS[x.id].some(function(c){return c.id===id})})[0];return {t:t,c:CAMS[t.id].filter(function(c){return c.id===id})[0]}}
+function readNum(id){var v=$(id).value.trim();return v===""?null:Number(v)}
+document.addEventListener("click",function(e){
+  var el,t=S.tid?tn(S.tid):null;
+  if((el=e.target.closest("[data-tmode]"))&&can("tenantFps")){S.draft=Object.assign({},S.draft||POL[t.id],{mode:el.getAttribute("data-tmode")});render();return}
+  if(e.target.id==="saveTenantFps"){
+    var d=Object.assign({},S.draft||POL[t.id]);
+    if(d.mode==="adaptive"){d.idle=Number($("#tIdle").value);d.active=Number($("#tActive").value)}else d.fixed=Number($("#tFixed").value);
+    var bad=[[d.idle,1,10],[d.active,1,25],[d.fixed,1,25]].some(function(r){return !(Number.isInteger(r[0])&&r[0]>=r[1]&&r[0]<=r[2])});
+    if(bad){toast("Use whole numbers: idle 1 to 10, active and fixed 1 to 25.");return}
+    if(d.idle>d.active){toast("The idle rate cannot be faster than the active rate.");return}
+    if(JSON.stringify(d)===JSON.stringify(POL[t.id])){toast("These are already the tenant's settings.");return}
+    mReason("Change frame rate for "+esc(t.n),"Applies to every camera that does not override it. Compute cost grows in direct proportion to the rate.","Save","<p class='muted' style='margin:0'>"+costLine(d)+"</p>",function(w){
+      var before=Object.assign({},POL[t.id]);POL[t.id]=d;S.draft=null;logA("framerate.tenant.update",t.n,t.n,w);refreshHealth(t);closeModal();render();toast("Saved. Running workers pick it up within about 30 seconds.")});return}
+  if((el=e.target.closest("[data-camfps]"))){
+    var f=findCam(el.getAttribute("data-camfps")),c=f.c,tp=POL[f.t.id],o=c.ov;
+    var inp=function(id,label,v,ph,max){return '<div class="field"><label for="'+id+'">'+label+'</label><input type="number" id="'+id+'" min="1" max="'+max+'" value="'+(v==null?"":v)+'" placeholder="Tenant: '+ph+'"></div>'};
+    mReason("Frame rate for "+esc(c.n),"Leave a box empty to follow the tenant. Only what you fill in becomes an override.","Save",
+      '<div class="field"><label for="cMode">Mode</label><select id="cMode"><option value="">Follow tenant ('+tp.mode+')</option><option value="adaptive"'+(o.mode==="adaptive"?" selected":"")+'>Adaptive</option><option value="fixed"'+(o.mode==="fixed"?" selected":"")+'>Fixed</option></select></div>'
+      +'<div class="fps-form">'+inp("cIdle","Idle (1 to 10)",o.idle,tp.idle,10)+inp("cActive","Active (1 to 25)",o.active,tp.active,25)+inp("cFixed","Fixed (1 to 25)",o.fixed,tp.fixed,25)+'</div>',
+      function(w){
+        var n={mode:$("#cMode").value||null,idle:readNum("#cIdle"),active:readNum("#cActive"),fixed:readNum("#cFixed")};
+        var rng={idle:[1,10],active:[1,25],fixed:[1,25]};
+        for(var k in rng){if(n[k]!==null&&!(Number.isInteger(n[k])&&n[k]>=rng[k][0]&&n[k]<=rng[k][1])){$("#err").textContent="Use a whole number from "+rng[k][0]+" to "+rng[k][1]+" for "+k+".";return}}
+        var ea=n.active!=null?n.active:tp.active,ei=n.idle!=null?n.idle:tp.idle;
+        if(ei>ea){$("#err").textContent="The idle rate cannot be faster than the active rate.";return}
+        if(JSON.stringify(n)===JSON.stringify(o)){$("#err").textContent="Nothing has changed.";return}
+        c.ov=n;logA("framerate.camera.update",c.n,f.t.n,w);refreshHealth(f.t);closeModal();render();toast("Saved for "+c.n+".")});return}
+  if((el=e.target.closest("[data-camreset]"))){
+    var g=findCam(el.getAttribute("data-camreset"));
+    mReason("Reset "+esc(g.c.n),"Removes every override. The camera follows the tenant's frame rate again.","Reset","",function(w){g.c.ov={mode:null,idle:null,active:null,fixed:null};logA("framerate.camera.reset",g.c.n,g.t.n,w);refreshHealth(g.t);closeModal();render();toast("Reset. "+g.c.n+" follows the tenant.")});return}
+  if((el=e.target.closest("[data-camsrc]"))){
+    var h=findCam(el.getAttribute("data-camsrc"));
+    mReason("Stream address for "+esc(h.c.n),"The address the analysis worker pulls, with the camera's user name and password. It is stored encrypted and never shown again, only the host.","Save address",
+      '<div class="field"><label for="srcUrl">RTSP address</label><input type="text" id="srcUrl" class="mono" autocomplete="off" placeholder="rtsp://user:password@10.20.0.14:554/Streaming/Channels/102"></div>',function(w){
+        var u=$("#srcUrl").value.trim(),m=/^rtsps?:\/\/(?:[^@\s\/]+@)?([^\/\s:]+)(?::(\d{1,5}))?(?:\/\S*)?$/i.exec(u);
+        if(!m){$("#err").textContent="Use an address like rtsp://user:password@host:554/path with no spaces.";return}
+        h.c.host=m[1]+(m[2]?":"+m[2]:"");logA("camera.source.set",h.c.n,h.t.n,w);closeModal();render();toast("Address saved, encrypted. Only the host is shown.")});return}
+});
+document.addEventListener("input",function(e){
+  if(["tIdle","tActive","tFixed"].indexOf(e.target.id)>-1&&S.tid){
+    var d=Object.assign({},S.draft||POL[S.tid]);d.idle=Number($("#tIdle")?$("#tIdle").value:d.idle);d.active=Number($("#tActive")?$("#tActive").value:d.active);d.fixed=Number($("#tFixed")?$("#tFixed").value:d.fixed);
+    S.draft=d;var hint=$("#costHint");if(hint)hint.innerHTML=costLine(d)}
+});
+document.addEventListener("input",function(e){if(e.target.id==="gs"){S.q=e.target.value;if(S.page!=="tenants"&&S.page!=="recorders"){S.page="tenants";S.tid=null}render();var g=$("#gs");g.focus()}});
+function fillRoles(){$("#roleSel").innerHTML=Object.keys(ROLES).map(function(k){return '<option value="'+k+'"'+(S.role===k?" selected":"")+'>'+ROLES[k].n+' · '+ROLES[k].l+'</option>'}).join("")}
+$("#roleSel").onchange=function(){S.role=this.value;if(S.imp&&!can("impersonate"))S.imp=null;render()};
+$("#themeBtn").onclick=function(){var r=document.documentElement,d=r.getAttribute("data-theme")==="dark"||(!r.getAttribute("data-theme")&&matchMedia("(prefers-color-scheme: dark)").matches);r.setAttribute("data-theme",d?"light":"dark")};
+fillRoles();
+var h0=location.hash.slice(1);if(PAGE_ROLES[h0])S.page=h0;
+render();
+})();
+</script>

@@ -1,0 +1,392 @@
+<title>Recorder Registration Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one centred column. Step 2 pairs "your app" on the left with a simulated recorder screen on the right. */
+:root{
+  --bg:#F2F4F1; --surface:#FFFFFF; --surface2:#F7F9F7; --ink:#14201E; --muted:#5C6B68; --line:#DAE1DD;
+  --accent:#0F766E; --accent-ink:#FFFFFF; --accent-soft:#DDF1EE;
+  --ok:#15803D; --ok-soft:#DCF3E3; --warn:#A8530A; --warn-soft:#FBEBD3; --crit:#B42318; --crit-soft:#FBE0DD;
+  --font:'Schibsted Grotesk','Noto Sans Tamil',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1312; --surface:#141E1D; --surface2:#101918; --ink:#E5EEEC; --muted:#92A4A0; --line:#25332F;
+    --accent:#3CC4B4; --accent-ink:#06211E; --accent-soft:#12302D;
+    --ok:#5BD58A; --ok-soft:#10301D; --warn:#F0A64A; --warn-soft:#3A2810; --crit:#FF8A7D; --crit-soft:#3C1713; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1312; --surface:#141E1D; --surface2:#101918; --ink:#E5EEEC; --muted:#92A4A0; --line:#25332F;
+  --accent:#3CC4B4; --accent-ink:#06211E; --accent-soft:#12302D;
+  --ok:#5BD58A; --ok-soft:#10301D; --warn:#F0A64A; --warn-soft:#3A2810; --crit:#FF8A7D; --crit-soft:#3C1713; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.55;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px}
+h1,h2,h3{margin:0;font-weight:600;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:26px;line-height:1.25} h2{font-size:19px} h3{font-size:14px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.brand{display:flex;gap:10px;align-items:center;font-weight:700}
+.brand i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center}
+.brand svg{width:17px;height:17px;stroke:var(--accent-ink);fill:none;stroke-width:2.2}
+.tools{display:flex;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:5px 14px;font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:600}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:18px}
+
+.steps{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:8px;padding:6px 14px 6px 8px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:13px;color:var(--muted)}
+.step b{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;background:var(--surface2)}
+.step.on{border-color:var(--accent);color:var(--ink);font-weight:600}
+.step.on b{background:var(--accent);color:var(--accent-ink)}
+.step.done b{background:var(--ok);color:#fff}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.lead{color:var(--muted);margin:6px 0 0}
+.grid{display:grid;gap:16px}
+.cols{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);align-items:start}
+@media(max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 18px;font-weight:500}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.big{padding:13px 24px;font-size:16px;border-radius:12px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.nav{display:flex;justify-content:space-between;gap:10px;margin-top:20px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:2px 10px;font-size:12.5px;font-weight:600;background:var(--surface2);color:var(--muted)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.crit{background:var(--crit-soft);color:var(--crit)} .pill.warn{background:var(--warn-soft);color:var(--warn)}
+
+/* brand picker */
+.brands{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:18px}
+.brandbtn{display:flex;flex-direction:column;gap:6px;text-align:left;border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:16px}
+.brandbtn:hover{border-color:var(--muted)}
+.brandbtn[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.brandbtn b{font-size:18px}
+.brandbtn span{font-size:13px;color:var(--muted)}
+.rec-pic{height:46px;border-radius:6px;background:linear-gradient(#2b3432,#1c2321);display:flex;align-items:center;gap:8px;padding:0 10px;margin-bottom:6px}
+.rec-pic i{width:7px;height:7px;border-radius:50%;background:#37d67a}
+.rec-pic u{flex:1;height:5px;border-radius:3px;background:#46524f;text-decoration:none}
+
+/* values card */
+.vals{display:flex;flex-direction:column;gap:10px;margin:16px 0}
+.val{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface2)}
+.val small{grid-column:1/-1;color:var(--muted);font-size:12.5px;font-weight:500}
+.val code{font-family:var(--mono);font-size:17px;font-weight:600;overflow-wrap:anywhere}
+.val button{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 12px;font-size:13px}
+.val.ok{border-color:var(--ok);background:var(--ok-soft)}
+.path{font-size:13.5px;background:var(--accent-soft);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.path b{font-weight:600}
+.check{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.check li{display:flex;gap:10px;align-items:center;color:var(--muted)}
+.check .ic{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;flex:none;font-size:12px;font-weight:700}
+.check li.run{color:var(--ink)} .check li.run .ic{border-color:var(--accent);border-top-color:transparent;animation:spin 1s linear infinite}
+.check li.done{color:var(--ink)} .check li.done .ic{background:var(--ok);border-color:var(--ok);color:#fff}
+.check li.fail{color:var(--crit)} .check li.fail .ic{background:var(--crit);border-color:var(--crit);color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.check li.run .ic{animation:none}}
+
+/* simulated recorder */
+.rec{border:1px solid #0d1211;border-radius:10px;overflow:hidden;background:#EDEFEE;color:#1a1f1e;font-family:Arial,Helvetica,sans-serif;font-size:13px}
+.rec-top{background:#1d2523;color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+.rec-top b{letter-spacing:.04em}
+.rec-bc{padding:8px 12px;background:#dfe3e1;font-size:12px;color:#444}
+.rec-body{display:grid;grid-template-columns:120px minmax(0,1fr)}
+.rec-side{background:#d0d6d3;padding:8px 0;font-size:12px}
+.rec-side div{padding:7px 12px;color:#333}
+.rec-side div.on{background:#fff;font-weight:700;color:#0a4f48}
+.rec-main{padding:14px;display:flex;flex-direction:column;gap:9px}
+.rec-main label{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center;font-size:12.5px}
+.rec-main input[type=text],.rec-main select{width:100%;border:1px solid #9aa5a1;border-radius:3px;padding:5px 7px;font:inherit;background:#fff;color:#111;min-width:0}
+.rec-main input.bad{border-color:#c0261b;background:#fff0ee}
+.rec-main input.good{border-color:#1a8a3f}
+.rec-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rec-btn{background:#2b7f76;color:#fff;border:0;border-radius:3px;padding:6px 18px;font:inherit;font-weight:700}
+.rec-btn:hover{background:#236a62}
+.rec-status{margin-top:4px;padding:7px 9px;border-radius:3px;background:#fff;border:1px solid #c5ccc9;font-size:12.5px}
+.rec-status b.off{color:#c0261b} .rec-status b.on{color:#1a8a3f} .rec-status b.wait{color:#b36b00}
+@media(max-width:520px){.rec-body{grid-template-columns:minmax(0,1fr)}.rec-side{display:none}.rec-main label{grid-template-columns:minmax(0,1fr)}}
+.demo-bar{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.demo-bar small{color:var(--muted);font-size:12.5px}
+
+/* cameras */
+.chs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:16px}
+.ch{border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.ch.on{border-color:var(--accent)}
+.ch svg{display:block;width:100%;aspect-ratio:16/9;background:#2c3532}
+.ch-b{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.ch-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ch-h label{display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer}
+.ch input[type=text],.ch select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;min-width:0}
+.ch select[disabled],.ch input[disabled]{opacity:.5}
+.sum{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line)}
+
+/* done */
+.finish{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;align-items:center}
+@media(max-width:760px){.finish{grid-template-columns:minmax(0,1fr)}}
+.big-ok{width:56px;height:56px;border-radius:50%;background:var(--ok);display:grid;place-items:center;margin-bottom:12px}
+.big-ok svg{width:30px;height:30px;stroke:#fff;fill:none;stroke-width:3}
+.next{list-style:none;padding:0;margin:16px 0 0;display:flex;flex-direction:column;gap:10px}
+.next li{display:flex;gap:10px}
+.next b{display:block}
+.next span{color:var(--muted);font-size:13.5px}
+.phone{width:min(100%,300px);margin:0 auto;border:8px solid #1b2422;border-radius:30px;background:#E9E2D6;overflow:hidden}
+.phone-h{background:#0B6B5E;color:#fff;padding:10px 12px;font-size:13px;font-weight:600}
+.phone-b{padding:12px 10px;display:flex;flex-direction:column;gap:8px;min-height:330px}
+.bubble{background:#fff;color:#1a1a1a;border-radius:8px;border-top-left-radius:2px;padding:8px 9px;font-size:12.5px;max-width:95%;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+.bubble small{display:block;color:#7a7a7a;text-align:right;font-size:10px;margin-top:3px}
+
+.help{margin-top:16px;border:1px dashed var(--line);border-radius:12px;padding:14px 16px;display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.help input{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;width:170px}
+.help .row{display:flex;gap:8px;flex-wrap:wrap}
+
+details.log{margin-top:22px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+details.log summary{cursor:pointer;padding:12px 16px;font-weight:600}
+.log pre{margin:0;padding:12px 16px;border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;line-height:1.7;background:#0e1514;color:#bfe9df;border-radius:0 0 12px 12px;overflow-x:auto;min-height:60px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:50;max-width:calc(100% - 32px)}
+#toast.on{opacity:1;transform:translateX(-50%)}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><i><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-8 5 6"/></svg></i>Gate Insight</div>
+    <div class="tools">
+      <button class="btn" id="themeBtn" style="padding:5px 12px;font-size:13px">Theme</button>
+    </div>
+  </div>
+  <div class="banner" id="banner"></div>
+  <div class="steps" id="steps"></div>
+  <div id="view"></div>
+  <details class="log" id="logBox"><summary id="logSum"></summary><pre id="logPre"></pre></details>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s)};
+function pad(n){return n<10?"0"+n:""+n}
+function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2600)}
+
+/* ---------- copy ---------- */
+var T={
+ en:{banner:"Interactive mockup with sample data. Try the whole flow: pick a brand, then press “Fill the recorder for me” to watch the recorder connect.",
+  steps:["Recorder","Connect","Cameras","Done"],
+  s1h:"Connect your recorder",s1p:"It takes about 2 minutes. You type 4 values into your recorder. No router changes, no IP address, no VPN.",
+  s1q:"Which brand is your recorder?",s1help:"Look at the front panel or the label on the recorder.",
+  b_hik:"Hikvision",b_hik_s:"Also sold as Prama, Secureye",b_dah:"Dahua",b_dah_s:"Also sold as CP Plus, Imou",b_not:"Not sure",b_not_s:"We will help you find out",
+  next:"Next",back:"Back",
+  s2h:"Type these 4 values into your recorder",s2p:"We prepared them for you. Copy each one, or read them out.",
+  where:"On the recorder, open",
+  lbl_server:"Server address",lbl_port:"Port",lbl_id:"Device ID",lbl_key:"Key",lbl_pass:"Password",copy:"Copy",copied:"Copied",
+  c0:"Waiting for your recorder",c1:"Recorder reached us",c2:"Key checked",c3:"Cameras found",c4:"Picture received",
+  waitnote:"After you press Save on the recorder, this page updates by itself.",
+  connected:"Recorder connected",cont:"Choose cameras",
+  recTitle:"Your recorder's screen (demo)",fill:"Fill the recorder for me",fillNote:"Demo button. On the real recorder you type the values.",
+  enable:"Enable",mode:"Mode",save:"Save",status:"Status",st_off:"Offline",st_dis:"Not enabled",st_conn:"Connecting…",st_on:"Online",
+  err_val:"Offline. Check the highlighted value and press Save again.",err_en:"Tick Enable first, then press Save.",
+  s3h:"Choose the cameras to watch",s3p:"We found {n} cameras on your recorder. Tick the ones you want and say what each should do.",
+  uc_none:"Choose use",uc_foot:"Count people",uc_plate:"Read number plates",uc_both:"Both",camname:"Name",
+  sel:"{n} selected",price:"Sample price: ₹{p} per month",start:"Start monitoring",
+  s4h:"You are live",s4p:"Your recorder is connected and {n} cameras are being watched.",
+  n1:"In about 15 minutes",n1s:"Your first counts and plates will appear.",n2:"On WhatsApp",n2s:"You will get alerts and a daily summary here.",n3:"After 24 hours",n3s:"We send a short accuracy check with sample pictures.",
+  wa_h:"Gate Insight",wa1:"Namaste! Your recorder is connected. {n} cameras are now being watched: {names}.",wa2:"First count in about 15 minutes. Reply HELP anytime.",
+  again:"Connect another recorder",
+  helpT:"Stuck? We can do this with you on a call.",helpPh:"Your phone number",helpBtn:"Call me",helpOk:"Thanks. We will call you within 15 minutes (demo).",
+  notsure:"No problem. Send a photo of the recorder's label on WhatsApp and we will tell you the brand and the steps.",
+  logSum:"Behind the scenes: what your server does",
+  cams:["Entrance","Gate","Reception","Godown","Parking","Cash counter","Back door","Camera 8"]},
+ ta:{banner:"மாதிரி டெமோ (மாதிரி தரவு). பிராண்டைத் தேர்ந்தெடுத்து, “ரெக்கார்டரில் நிரப்பு” என்பதை அழுத்தி இணைப்பைப் பாருங்கள்.",
+  steps:["ரெக்கார்டர்","இணைப்பு","கேமராக்கள்","முடிந்தது"],
+  s1h:"உங்கள் ரெக்கார்டரை இணைக்கவும்",s1p:"சுமார் 2 நிமிடங்கள் ஆகும். உங்கள் ரெக்கார்டரில் 4 விவரங்களை உள்ளிட வேண்டும். ரவுட்டர் மாற்றம், ஐபி முகவரி, வி.பி.என் எதுவும் தேவையில்லை.",
+  s1q:"உங்கள் ரெக்கார்டர் எந்த பிராண்ட்?",s1help:"ரெக்கார்டரின் முன்புறம் அல்லது லேபிளைப் பாருங்கள்.",
+  b_hik:"ஹிக்விஷன்",b_hik_s:"பிரமா, செக்யூரே என்றும் விற்கப்படுகிறது",b_dah:"தஹுவா",b_dah_s:"சிபி பிளஸ், இமோ என்றும் விற்கப்படுகிறது",b_not:"தெரியவில்லை",b_not_s:"கண்டுபிடிக்க உதவுவோம்",
+  next:"அடுத்து",back:"பின்செல்",
+  s2h:"இந்த 4 விவரங்களை உங்கள் ரெக்கார்டரில் உள்ளிடவும்",s2p:"உங்களுக்காக தயாராக வைத்துள்ளோம். ஒவ்வொன்றையும் நகலெடுக்கவும் அல்லது படித்துச் சொல்லவும்.",
+  where:"ரெக்கார்டரில் திறக்கவும்",
+  lbl_server:"சர்வர் முகவரி",lbl_port:"போர்ட்",lbl_id:"சாதன ஐடி",lbl_key:"கீ",lbl_pass:"கடவுச்சொல்",copy:"நகலெடு",copied:"நகலெடுத்தது",
+  c0:"உங்கள் ரெக்கார்டருக்காக காத்திருக்கிறோம்",c1:"ரெக்கார்டர் எங்களை அடைந்தது",c2:"கீ சரிபார்க்கப்பட்டது",c3:"கேமராக்கள் கிடைத்தன",c4:"படம் கிடைத்தது",
+  waitnote:"ரெக்கார்டரில் Save அழுத்திய பிறகு இந்தப் பக்கம் தானாகவே மாறும்.",
+  connected:"ரெக்கார்டர் இணைக்கப்பட்டது",cont:"கேமராக்களைத் தேர்ந்தெடுக்கவும்",
+  recTitle:"உங்கள் ரெக்கார்டர் திரை (டெமோ)",fill:"ரெக்கார்டரில் நிரப்பு",fillNote:"இது டெமோ பொத்தான். உண்மையான ரெக்கார்டரில் நீங்களே உள்ளிடுவீர்கள்.",
+  enable:"Enable",mode:"Mode",save:"Save",status:"நிலை",st_off:"ஆஃப்லைன்",st_dis:"இயக்கப்படவில்லை",st_conn:"இணைக்கிறது…",st_on:"ஆன்லைன்",
+  err_val:"ஆஃப்லைன். சிவப்பில் உள்ள மதிப்பைச் சரிபார்த்து மீண்டும் Save அழுத்தவும்.",err_en:"முதலில் Enable டிக் செய்து, பிறகு Save அழுத்தவும்.",
+  s3h:"கண்காணிக்க வேண்டிய கேமராக்களைத் தேர்ந்தெடுக்கவும்",s3p:"உங்கள் ரெக்கார்டரில் {n} கேமராக்கள் கிடைத்தன. தேவையானவற்றைத் தேர்ந்தெடுத்து, ஒவ்வொன்றும் என்ன செய்ய வேண்டும் என்று சொல்லுங்கள்.",
+  uc_none:"பயன்பாட்டைத் தேர்க",uc_foot:"ஆட்களை எண்ணு",uc_plate:"வாகன எண் பலகை வாசி",uc_both:"இரண்டும்",camname:"பெயர்",
+  sel:"{n} தேர்ந்தெடுக்கப்பட்டது",price:"மாதிரி விலை: மாதம் ₹{p}",start:"கண்காணிப்பைத் தொடங்கு",
+  s4h:"நீங்கள் இயங்கத் தொடங்கிவிட்டீர்கள்",s4p:"உங்கள் ரெக்கார்டர் இணைக்கப்பட்டது. {n} கேமராக்கள் கண்காணிக்கப்படுகின்றன.",
+  n1:"சுமார் 15 நிமிடங்களில்",n1s:"முதல் எண்ணிக்கையும் வாகன எண்களும் தெரியும்.",n2:"வாட்ஸ்அப்பில்",n2s:"எச்சரிக்கைகளும் தினசரி சுருக்கமும் இங்கே வரும்.",n3:"24 மணி நேரத்திற்குப் பிறகு",n3s:"மாதிரி படங்களுடன் துல்லிய சரிபார்ப்பை அனுப்புவோம்.",
+  wa_h:"Gate Insight",wa1:"வணக்கம்! உங்கள் ரெக்கார்டர் இணைக்கப்பட்டது. {n} கேமராக்கள் கண்காணிக்கப்படுகின்றன: {names}.",wa2:"சுமார் 15 நிமிடத்தில் முதல் எண்ணிக்கை வரும். உதவிக்கு HELP என்று அனுப்புங்கள்.",
+  again:"மற்றொரு ரெக்கார்டரை இணைக்கவும்",
+  helpT:"சிக்கலா? அழைப்பில் உங்களுடன் சேர்ந்து செய்கிறோம்.",helpPh:"உங்கள் தொலைபேசி எண்",helpBtn:"என்னை அழைக்கவும்",helpOk:"நன்றி. 15 நிமிடங்களில் அழைப்போம் (டெமோ).",
+  notsure:"பரவாயில்லை. ரெக்கார்டர் லேபிளின் படத்தை வாட்ஸ்அப்பில் அனுப்புங்கள். பிராண்டையும் படிகளையும் சொல்வோம்.",
+  logSum:"திரைக்குப் பின்னால்: உங்கள் சர்வர் என்ன செய்கிறது",
+  cams:["நுழைவாயில்","கேட்","வரவேற்பு","கிடங்கு","பார்க்கிங்","பணப் பெட்டி","பின் கதவு","கேமரா 8"]}
+};
+var BR={
+ hik:{n:"Hikvision",proto:"ISUP",port:"7660",path:["Configuration","Network","Advanced Settings","Platform Access"],lab:["lbl_server","lbl_port","lbl_id","lbl_key"],rlab:["Server Address","Port","Device ID","Encryption Key"],side:["Basic","TCP/IP","Port","DDNS","Platform Access","Email"],sideOn:4},
+ dah:{n:"Dahua",proto:"Auto Register",port:"9500",path:["Setup","Network","Register"],lab:["lbl_server","lbl_port","lbl_id","lbl_pass"],rlab:["Server Address","Port","Device ID","Password"],side:["TCP/IP","Port","DDNS","Register","Email","UPnP"],sideOn:3}
+};
+var S={lang:"en",step:1,brand:null,sel:{},rec:{en:false,v:["","","",""],status:"off",err:-1,msg:""},steps:{c:[0,0,0,0,0]},connected:false,log:[],busy:false,ch:[]};
+var VALUES=["connect.gateinsight.in","7660","SHARMA-001","k7P4-x92m"];
+function t(k,o){var s=T[S.lang][k];if(s===undefined)s=T.en[k];if(o)for(var x in o)s=s.replace("{"+x+"}",o[x]);return s}
+function vals(){var b=BR[S.brand];var v=VALUES.slice();v[1]=b.port;return v}
+
+/* ---------- log ---------- */
+function L(m){var d=new Date();S.log.push("["+pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())+"] "+m);$("#logPre").textContent=S.log.join("\n");$("#logPre").scrollTop=1e5}
+
+/* ---------- scenes ---------- */
+function scene(i){
+  var base='<svg viewBox="0 0 240 135" preserveAspectRatio="xMidYMid slice"><rect width="240" height="135" fill="#2C3532"/>';
+  var k=i%4;
+  if(k===0)return base+'<rect x="75" y="0" width="90" height="10" fill="#222a28"/><line x1="30" y1="68" x2="210" y2="68" stroke="#FFC83D" stroke-width="2" stroke-dasharray="6 4"/><ellipse cx="80" cy="40" rx="9" ry="5" fill="#C9D3CF"/><ellipse cx="150" cy="95" rx="9" ry="5" fill="#C9D3CF"/><ellipse cx="120" cy="110" rx="9" ry="5" fill="#C9D3CF"/></svg>';
+  if(k===1)return base+'<polygon points="95,12 150,12 235,135 10,135" fill="#3d4743"/><rect x="72" y="42" width="96" height="70" rx="4" fill="#7C8C88"/><rect x="82" y="48" width="76" height="24" rx="3" fill="#2a3331"/><rect x="95" y="92" width="50" height="14" fill="#F5C400" stroke="#111" stroke-width="1.5"/></svg>';
+  if(k===2)return base+'<rect x="20" y="30" width="60" height="70" fill="#47524e"/><rect x="100" y="30" width="60" height="70" fill="#47524e"/><rect x="175" y="45" width="45" height="55" fill="#3a4540"/><ellipse cx="90" cy="115" rx="9" ry="5" fill="#C9D3CF"/></svg>';
+  return base+'<rect x="15" y="20" width="210" height="14" fill="#47524e"/><rect x="15" y="50" width="210" height="14" fill="#47524e"/><rect x="15" y="80" width="210" height="14" fill="#47524e"/><rect x="40" y="105" width="30" height="20" fill="#7C8C88"/></svg>';
+}
+
+/* ---------- render ---------- */
+function renderSteps(){
+  var a=T[S.lang].steps;
+  $("#steps").innerHTML=a.map(function(n,i){var c=i+1===S.step?"on":i+1<S.step?"done":"";return '<div class="step '+c+'"><b>'+(i+1<S.step?"✓":i+1)+'</b>'+n+'</div>'}).join("");
+  $("#banner").textContent=t("banner");$("#logSum").textContent=t("logSum");
+}
+function helpBox(){
+  return '<div class="help"><b>'+t("helpT")+'</b><div class="row"><input type="text" id="hp" inputmode="tel" placeholder="'+t("helpPh")+'" aria-label="'+t("helpPh")+'"><button class="btn" id="hpBtn">'+t("helpBtn")+'</button></div></div>';
+}
+function render(){
+  renderSteps();var v=$("#view"),h="";
+  if(S.step===1){
+    h='<div class="card"><h1>'+t("s1h")+'</h1><p class="lead">'+t("s1p")+'</p><h2 style="margin-top:22px">'+t("s1q")+'</h2><p class="lead" style="margin-top:2px">'+t("s1help")+'</p><div class="brands">'
+    +[["hik","b_hik","b_hik_s"],["dah","b_dah","b_dah_s"],["not","b_not","b_not_s"]].map(function(b){
+      return '<button class="brandbtn" data-brand="'+b[0]+'" aria-pressed="'+(S.brand===b[0])+'"><div class="rec-pic"><i></i><u></u><u style="flex:.4"></u></div><b>'+t(b[1])+'</b><span>'+t(b[2])+'</span></button>'}).join("")
+    +'</div>'+(S.brand==="not"?'<p class="path" style="margin-top:14px">'+t("notsure")+'</p>':'')
+    +'<div class="nav"><span></span><button class="btn primary big" id="n1"'+((S.brand&&S.brand!=="not")?"":" disabled")+'>'+t("next")+'</button></div></div>'+helpBox();
+  }
+  if(S.step===2){
+    var b=BR[S.brand],vv=vals(),i;
+    h='<div class="grid cols"><div class="card"><h2>'+t("s2h")+'</h2><p class="lead">'+t("s2p")+'</p>'
+    +'<div class="path" style="margin-top:14px">'+t("where")+': <b>'+b.path.join(" → ")+'</b><br><span class="muted" style="color:var(--muted)">'+(S.brand==="hik"?"Mode: ISUP":"Auto Register: Enable")+'</span></div><div class="vals">';
+    for(i=0;i<4;i++)h+='<div class="val" id="val'+i+'"><small>'+(i+1)+'. '+t(b.lab[i])+'</small><code>'+vv[i]+'</code><button data-copy="'+i+'">'+t("copy")+'</button></div>';
+    h+='</div><ul class="check" id="chk">'+[0,1,2,3,4].map(function(k){return '<li id="ck'+k+'" class="'+ckClass(k)+'"><span class="ic">'+(S.steps.c[k]===2?"✓":S.steps.c[k]===3?"!":"")+'</span>'+t("c"+k)+'</li>'}).join("")+'</ul>'
+    +'<p class="lead" style="font-size:13.5px;margin-top:12px" id="waitnote">'+(S.connected?"":t("waitnote"))+'</p>'
+    +'<div class="nav"><button class="btn" id="b2">'+t("back")+'</button><button class="btn primary big" id="n2"'+(S.connected?"":" disabled")+'>'+(S.connected?t("cont"):t("cont"))+'</button></div></div>'
+    +'<div><div class="demo-bar"><b>'+t("recTitle")+'</b><button class="btn" id="fillBtn" style="padding:6px 12px;font-size:13px">'+t("fill")+'</button><small style="width:100%">'+t("fillNote")+'</small></div>'+recorderHTML()+'</div></div>'+helpBox();
+  }
+  if(S.step===3){
+    var cs=T[S.lang].cams;
+    h='<div class="card"><h2>'+t("s3h")+'</h2><p class="lead">'+t("s3p",{n:S.ch.length})+'</p><div class="chs">'
+    +S.ch.map(function(c,i){return '<div class="ch'+(c.on?" on":"")+'" id="ch'+i+'">'+scene(i)+'<div class="ch-b"><div class="ch-h"><label><input type="checkbox" data-ch="'+i+'"'+(c.on?" checked":"")+'> Camera '+(i+1)+'</label>'+(c.on?'<span class="pill ok">✓</span>':'')+'</div>'
+      +'<input type="text" data-name="'+i+'" value="'+c.name+'" aria-label="'+t("camname")+'"'+(c.on?"":" disabled")+'><select data-uc="'+i+'" aria-label="use"'+(c.on?"":" disabled")+'>'
+      +[["none","uc_none"],["foot","uc_foot"],["plate","uc_plate"],["both","uc_both"]].map(function(o){return '<option value="'+o[0]+'"'+(c.uc===o[0]?" selected":"")+'>'+t(o[1])+'</option>'}).join("")+'</select></div></div>'}).join("")
+    +'</div><div class="sum"><div><b id="selN"></b> · <span class="muted" style="color:var(--muted)" id="selP"></span></div></div>'
+    +'<div class="nav"><button class="btn" id="b3">'+t("back")+'</button><button class="btn primary big" id="n3">'+t("start")+'</button></div></div>';
+  }
+  if(S.step===4){
+    var on=S.ch.filter(function(c){return c.on&&c.uc!=="none"}),names=on.map(function(c){return c.name}).join(", ");
+    h='<div class="card"><div class="finish"><div><div class="big-ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></div><h1>'+t("s4h")+'</h1><p class="lead">'+t("s4p",{n:on.length})+'</p>'
+    +'<ul class="next"><li><span class="pill">1</span><div><b>'+t("n1")+'</b><span>'+t("n1s")+'</span></div></li><li><span class="pill">2</span><div><b>'+t("n2")+'</b><span>'+t("n2s")+'</span></div></li><li><span class="pill">3</span><div><b>'+t("n3")+'</b><span>'+t("n3s")+'</span></div></li></ul>'
+    +'<div class="nav" style="justify-content:flex-start"><button class="btn" id="again">'+t("again")+'</button></div></div>'
+    +'<div class="phone"><div class="phone-h">'+t("wa_h")+'</div><div class="phone-b"><div class="bubble">'+t("wa1",{n:on.length,names:names||"-"})+'<small>'+nowT()+'</small></div><div class="bubble">'+t("wa2")+'<small>'+nowT()+'</small></div></div></div></div></div>';
+  }
+  v.innerHTML=h;bind();
+  if(S.step===3)updateSum();
+}
+function nowT(){var d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())}
+function ckClass(k){var s=S.steps.c[k];return s===1?"run":s===2?"done":s===3?"fail":""}
+
+function recorderHTML(){
+  var b=BR[S.brand],r=S.rec,i,st;
+  st=r.status==="on"?'<b class="on">● '+t("st_on")+'</b>':r.status==="wait"?'<b class="wait">● '+t("st_conn")+'</b>':r.status==="dis"?'<b class="off">● '+t("st_dis")+'</b>':'<b class="off">● '+t("st_off")+'</b>';
+  var h='<div class="rec"><div class="rec-top"><b>'+b.n.toUpperCase()+' · NVR</b><span>admin ▾</span></div><div class="rec-bc">'+b.path.join(" › ")+'</div><div class="rec-body"><div class="rec-side">'
+   +b.side.map(function(s,k){return '<div class="'+(k===b.sideOn?"on":"")+'">'+s+'</div>'}).join("")+'</div><div class="rec-main">'
+   +'<label><span>'+t("enable")+'</span><span><input type="checkbox" id="rEn"'+(r.en?" checked":"")+'></span></label>'
+   +'<label><span>'+t("mode")+'</span><select id="rMode" disabled><option>'+b.proto+'</option></select></label>';
+  for(i=0;i<4;i++)h+='<label><span>'+b.rlab[i]+'</span><input type="text" id="r'+i+'" data-r="'+i+'" value="'+r.v[i]+'" autocomplete="off" class="'+(r.err===i?"bad":"")+'"></label>';
+  h+='<div class="rec-row"><button class="rec-btn" id="rSave">'+t("save")+'</button></div><div class="rec-status" id="rStat">'+t("status")+': '+st+(r.msg?'<br><span style="color:#c0261b">'+r.msg+'</span>':"")+'</div></div></div></div>';
+  return h;
+}
+function updateRec(){var el=$("#rStat");if(!el)return;var r=S.rec;
+  var st=r.status==="on"?'<b class="on">● '+t("st_on")+'</b>':r.status==="wait"?'<b class="wait">● '+t("st_conn")+'</b>':r.status==="dis"?'<b class="off">● '+t("st_dis")+'</b>':'<b class="off">● '+t("st_off")+'</b>';
+  el.innerHTML=t("status")+': '+st+(r.msg?'<br><span style="color:#c0261b">'+r.msg+'</span>':"");
+  for(var i=0;i<4;i++){var f=$("#r"+i);if(f)f.className=r.err===i?"bad":""}
+}
+function setCk(k,s){S.steps.c[k]=s;var e=$("#ck"+k);if(e){e.className=ckClass(k);e.querySelector(".ic").textContent=s===2?"✓":s===3?"!":""}}
+function updateSum(){
+  var n=S.ch.filter(function(c){return c.on&&c.uc!=="none"}).length;
+  $("#selN").textContent=t("sel",{n:n});$("#selP").textContent=t("price",{p:(n*1099).toLocaleString("en-IN")});
+  $("#n3").disabled=n===0;
+}
+
+/* ---------- connect logic ---------- */
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function resetChecks(){S.steps.c=[1,0,0,0,0];[0,1,2,3,4].forEach(function(k){setCk(k,S.steps.c[k])})}
+async function save(){
+  if(S.busy||S.connected)return;
+  var r=S.rec,exp=vals(),i;
+  if(!r.en){r.status="dis";r.err=-1;r.msg=t("err_en");updateRec();L("recorder: Save pressed but Platform Access is not enabled");return}
+  var bad=-1;for(i=0;i<4;i++){var a=(r.v[i]||"").trim(),e=exp[i];if(i===2||i===0){a=a.toLowerCase();e=e.toLowerCase()}if(a!==e){bad=i;break}}
+  if(bad>-1){r.status="off";r.err=bad;r.msg=t("err_val");updateRec();L("recorder: registration attempt rejected (field "+(bad+1)+" does not match)");return}
+  S.busy=true;r.err=-1;r.msg="";r.status="wait";updateRec();resetChecks();
+  L("recorder: Save pressed, dialling "+r.v[0]+":"+r.v[1]);
+  await sleep(900);L("registrar: inbound connection from 49.205.118.40 (dynamic IP, behind customer router)");setCk(0,2);setCk(1,1);
+  await sleep(900);L("registrar: device "+r.v[2]+" key verified, session open");setCk(1,2);setCk(2,1);
+  await sleep(900);L("registrar: channel list received, 8 channels (4 active)");setCk(2,2);setCk(3,1);
+  await sleep(900);L("media: preview requested for channel 1, stream relay up, decoding at 5 fps");setCk(3,2);setCk(4,1);
+  r.status="on";updateRec();
+  await sleep(900);L("registry: recorder "+r.v[2]+" marked ONLINE, heartbeat every 30 s");setCk(4,2);
+  S.connected=true;S.busy=false;
+  var wn=$("#waitnote");if(wn)wn.innerHTML='<span class="pill ok">✓ '+t("connected")+'</span>';
+  var n2=$("#n2");if(n2)n2.disabled=false;
+  [0,1,2,3].forEach(function(k){var v=$("#val"+k);if(v)v.classList.add("ok")});
+}
+async function fillDemo(){
+  if(S.busy||S.connected)return;
+  var exp=vals(),i,j;
+  var en=$("#rEn");if(en){en.checked=true;S.rec.en=true}
+  for(i=0;i<4;i++){
+    var f=$("#r"+i);if(!f)return;S.rec.v[i]="";f.value="";
+    for(j=1;j<=exp[i].length;j++){S.rec.v[i]=exp[i].slice(0,j);f.value=S.rec.v[i];await sleep(28)}
+    var cp=$("#val"+i);if(cp)cp.classList.add("ok");
+    await sleep(150);
+  }
+  S.rec.err=-1;S.rec.msg="";updateRec();
+  await sleep(500);save();
+}
+
+/* ---------- events ---------- */
+function bind(){
+  var v=$("#view");
+  v.querySelectorAll("[data-brand]").forEach(function(b){b.onclick=function(){S.brand=b.getAttribute("data-brand");render()}});
+  var n1=$("#n1");if(n1)n1.onclick=function(){
+    S.step=2;S.rec={en:false,v:["","","",""],status:"off",err:-1,msg:""};S.steps.c=[1,0,0,0,0];S.connected=false;S.busy=false;S.log=[];
+    render();L("registrar: listening on :"+BR[S.brand].port+" ("+BR[S.brand].proto+"), waiting for device SHARMA-001");};
+  v.querySelectorAll("[data-copy]").forEach(function(b){b.onclick=function(){
+    var i=+b.getAttribute("data-copy"),val=vals()[i];
+    var done=function(){toast(t("copied")+": "+val)};
+    try{navigator.clipboard.writeText(val).then(done,done)}catch(e){done()}}});
+  v.querySelectorAll("[data-r]").forEach(function(f){f.oninput=function(){S.rec.v[+f.getAttribute("data-r")]=f.value}});
+  var en=$("#rEn");if(en)en.onchange=function(){S.rec.en=en.checked};
+  var sv=$("#rSave");if(sv)sv.onclick=save;
+  var fb=$("#fillBtn");if(fb)fb.onclick=fillDemo;
+  var b2=$("#b2");if(b2)b2.onclick=function(){S.step=1;render()};
+  var nn2=$("#n2");if(nn2)nn2.onclick=function(){
+    if(!S.ch.length){S.ch=T.en.cams.map(function(n,i){return {on:i<4,name:T[S.lang].cams[i],uc:i===0?"foot":i===1?"plate":"none"}})}
+    S.step=3;render()};
+  v.querySelectorAll("[data-ch]").forEach(function(c){c.onchange=function(){var i=+c.getAttribute("data-ch");S.ch[i].on=c.checked;if(c.checked&&S.ch[i].uc==="none")S.ch[i].uc="foot";render()}});
+  v.querySelectorAll("[data-name]").forEach(function(c){c.oninput=function(){S.ch[+c.getAttribute("data-name")].name=c.value}});
+  v.querySelectorAll("[data-uc]").forEach(function(c){c.onchange=function(){S.ch[+c.getAttribute("data-uc")].uc=c.value;updateSum()}});
+  var b3=$("#b3");if(b3)b3.onclick=function(){S.step=2;render()};
+  var nn3=$("#n3");if(nn3)nn3.onclick=function(){S.step=4;L("ai: workers started for "+S.ch.filter(function(c){return c.on&&c.uc!=="none"}).length+" cameras, first results in ~15 min");render()};
+  var ag=$("#again");if(ag)ag.onclick=function(){S.step=1;S.brand=null;S.ch=[];S.connected=false;render()};
+  var hb=$("#hpBtn");if(hb)hb.onclick=function(){var p=$("#hp").value.trim();if(!p){toast(t("helpPh"));return}toast(t("helpOk"))};
+}
+$("#themeBtn").onclick=function(){var r=document.documentElement,dark=r.getAttribute("data-theme")==="dark"||(!r.getAttribute("data-theme")&&matchMedia("(prefers-color-scheme: dark)").matches);r.setAttribute("data-theme",dark?"light":"dark")};
+render();L("server: registrar ready");
+})();
+</script>
