@@ -20,6 +20,7 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET" || url.origin !== location.origin) return;
   const p = url.pathname;
   if (p.startsWith("/v1/")) {
+    if (req.headers.get("X-View-As")) return;                  // a staff member looking at a customer: nothing is kept on this device
     if (SAVE.some((re) => re.test(p))) e.respondWith(networkThenSaved(req));
     return;                                                     // everything else: the network, untouched
   }

@@ -294,8 +294,9 @@ async def test_the_picture_files_have_the_sizes_their_names_promise(client):
 @pytest.mark.parametrize("path", ["/", "/staff/"])
 async def test_pages_point_at_the_icons(client, path):
     html = (await client.get(path)).text
-    for want in ('href="/img/favicon.svg"', 'href="/favicon.ico"', 'href="/img/apple-touch-icon.png"', 'href="/img/site.webmanifest"', 'name="theme-color"'):
-        assert want in html
+    manifest = "/img/staff.webmanifest" if path == "/staff/" else "/img/site.webmanifest"
+    for want in ('href="/img/favicon.svg"', 'href="/favicon.ico"', 'href="/img/apple-touch-icon.png"', f'href="{manifest}"', 'name="theme-color"', 'href="/css/app.css"'):
+        assert want in html            # one shared stylesheet for both apps
 
 
 # ------------------------------------------------------------------------------------------ no address is written into the code
@@ -346,3 +347,10 @@ async def test_the_manifest_makes_an_installable_app(client):
     m = (await client.get("/img/site.webmanifest")).json()
     assert m["display"] == "standalone" and m["start_url"] == "/" and m["scope"] == "/"
     assert {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
+
+
+async def test_the_staff_console_is_an_installable_app_of_its_own(client):
+    m = (await client.get("/img/staff.webmanifest")).json()
+    assert m["start_url"] == "/staff/" and m["scope"] == "/staff/" and m["display"] == "standalone" and {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
+    r = await client.get("/staff/set-password")                                       # the link in a new staff member's invitation opens the console
+    assert r.status_code == 200 and "/js/staff/main.js" in r.text

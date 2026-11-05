@@ -1,0 +1,46 @@
+{
+ "name": "Jas iVision Staff",
+ "short_name": "iVision Staff",
+ "description": "Run Jas iVision: customers, plans, messaging and billing.",
+ "icons": [
+  {
+   "src": "/img/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "/img/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "/img/icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ],
+ "theme_color": "#128BE0",
+ "background_color": "#EEF2F7",
+ "display": "standalone",
+ "id": "/staff/",
+ "start_url": "/staff/",
+ "scope": "/staff/",
+ "orientation": "any",
+ "categories": [
+  "business",
+  "productivity"
+ ],
+ "shortcuts": [
+  {
+   "name": "Alerts",
+   "url": "/#/alerts"
+  },
+  {
+   "name": "Cameras",
+   "url": "/#/cameras"
+  }
+ ]
+}

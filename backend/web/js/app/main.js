@@ -1,30 +1,13 @@
 // Jas iVision customer app: shell, router, sign-in, theme, install prompt, offline state. Pages come from screens.js.
 import { Api, busy, clear, errText, h, mount } from "../lib.js";
 import { screens, title } from "./screens.js";
+import { theme } from "./theme.js";
 import { dropPictures, empty, field, ic, logoPair, lockupPair, mountOverlays, note, openSheet, closeSheet, toast } from "./ui.js";
 
 const host = document.getElementById("app");
-const state = { me: null };
+const state = { me: null, viewing: null };
 const mem = {};
 const api = new Api({ refreshUrl: "/v1/auth/refresh", key: "gi_rt", onSignedOut: () => { state.me = null; showSignIn("Please sign in again."); } });
-
-// --------------------------------------------------------------------------------------------------------- theme
-const THEME_KEY = "gi_theme";
-const theme = {
-  get() { try { return localStorage.getItem(THEME_KEY) || "auto"; } catch { return "auto"; } },
-  set(v) {
-    try { v === "auto" ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, v); } catch { /* private mode */ }
-    theme.apply();
-  },
-  apply() {
-    const v = theme.get(), root = document.documentElement;
-    v === "auto" ? root.removeAttribute("data-theme") : root.setAttribute("data-theme", v);
-    const dark = v === "dark" || (v === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#070C12" : "#EEF2F7");
-  },
-};
-theme.apply();
-matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => theme.apply());
 
 // ------------------------------------------------------------------------------------------------------ install
 let deferred = null;
@@ -58,7 +41,15 @@ const X = {
   signOut,
 };
 
+function stopViewing() {
+  try { window.opener?.postMessage({ type: "gi-viewas-stop", session_id: state.viewing?.session_id }, location.origin); } catch { /* the console tab is gone */ }
+  api.clear(); state.me = null;
+  window.close();
+  authPage(note("The view-only session has ended. You can close this tab."));
+}
+
 async function signOut() {
+  if (state.viewing) return stopViewing();
   try { if (api.refreshToken) await api.call("POST", "/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ }
   api.clear(); state.me = null; dropPictures();
   try { navigator.serviceWorker?.controller?.postMessage("clear-api-cache"); } catch { /* no worker */ }
@@ -83,6 +74,7 @@ async function render(keepScroll = false) {
   catch (e) { nodes = [title("Something went wrong"), note(errText(e), "err"), h("button", { class: "btn", type: "button", onclick: () => render() }, "Try again")]; if (e.status === 0) ui.setOffline(true); }
   if (mine !== token) return;                       // the person moved on while this page was loading
   const banners = [];
+  if (state.viewing) banners.push(h("div", { class: "banner info" }, ic("eye"), h("div", { class: "grow" }, "You are looking at ", h("b", {}, state.viewing.tenant), " as Jas iVision staff. View only. Everything you open is logged."), h("button", { type: "button", onclick: stopViewing }, "Stop")));
   if (!navigator.onLine || api.lastStale >= t0) banners.push(h("div", { class: "banner" }, ic("nowifi"), h("div", { class: "grow" }, h("b", {}, "You are offline. "), "Showing what was saved on this device.")));
   mount(ui.page, banners, nodes);
   ui.scroll.scrollTop = keepScroll ? prev : 0;
@@ -154,6 +146,7 @@ function authPage(...body) {
 }
 
 function showSignIn(message) {
+  if (state.viewing) return authPage(note("The view-only session has ended. You can close this tab.", "warn"));
   const email = h("input", { type: "email", autocomplete: "username", required: true, autofocus: true });
   const pw = h("input", { type: "password", autocomplete: "current-password", required: true });
   const org = h("input", { type: "text", autocomplete: "organization", placeholder: "for example sharma-auto" });
@@ -201,4 +194,22 @@ addEventListener("online", () => render(true));
 addEventListener("offline", () => render(true));
 
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => { /* the app works without it */ }));
-if (location.pathname === "/set-password") showSetPassword(); else boot();
+/** A staff member opened this tab from the console: wait for the view-only session to be handed over, then show the customer's app. */
+function waitForViewAs() {
+  authPage(h("div", { class: "card" }, h("p", {}, "Opening the customer's app…")));
+  const timer = setTimeout(() => authPage(note("Could not open the customer's app. Close this tab and try again from the console.", "err")), 10000);
+  addEventListener("message", (e) => {
+    if (e.origin !== location.origin || e.data?.type !== "gi-viewas") return;
+    clearTimeout(timer);
+    state.viewing = { tenant: e.data.tenant, session_id: e.data.session_id };
+    api.access = e.data.token;
+    api.headers = { "X-View-As": "1" };                 // the service worker never saves what a staff member looks at
+    history.replaceState(null, "", "/#/today");
+    boot();
+  });
+  try { window.opener.postMessage({ type: "gi-viewas-ready" }, location.origin); } catch { /* no console tab */ }
+}
+
+if (location.pathname === "/set-password") showSetPassword();
+else if (new URLSearchParams(location.search).get("viewas") && window.opener) waitForViewAs();
+else boot();

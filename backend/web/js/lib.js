@@ -61,7 +61,7 @@ export class Api {
 
   async call(method, url, body, { blob = false, retry = true } = {}) {
     if (!this.access && this.refreshToken) await this.refresh();
-    const headers = {};
+    const headers = { ...(this.headers || {}) };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (this.access) headers.Authorization = "Bearer " + this.access;
     let r;

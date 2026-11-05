@@ -107,6 +107,25 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 
 ## 2. Platform admin API (`/admin/v1`)
 
+> **Platform console (current).** Staff have two roles, **owner** (everything) and **support** (look, help, send a customer a sign-in link, open a customer's app with a logged reason, read the delivery log). The tables below that mention technician, finance or the single-letter role codes are older; where they disagree, this box wins.
+>
+> | Method | Path | Who | Purpose |
+> |---|---|---|---|
+> | GET | `/admin/v1/plans?include_retired` | all | Plans with `customers` and `customers_on_old_price` counts |
+> | POST, PUT, DELETE | `/admin/v1/plans`, `/admin/v1/plans/{id}` | owner | Create, edit (price, speed, `anpr`, `review_queue`, `price_change_policy` of `next` or `keep`, `active`), delete (only a plan with no customers). A reason is required. With `keep`, customers already on the plan keep their old price (saved as `price_override_paise`); with `next` they move to the new price from the next invoice. |
+> | GET | `/admin/v1/overview/attention` | all | What needs a person: offline recorders, recorders never connected for a day, overdue invoices (owner), trials ending, failed messages |
+> | GET | `/admin/v1/tenants/{id}/health` | all | Cameras streaming, last picture, last sign-in, alerts and failed messages in 7 days |
+> | PATCH, DELETE | `/admin/v1/tenants/{id}/users/{uid}` | owner | Edit a person (name, email, phone, role) or delete them (`?reason=`). The last administrator cannot be removed or demoted. |
+> | POST | `/admin/v1/tenants/{id}/users/{uid}/enable` | owner | Enable a disabled person. `disable` and `reset-link` take an optional `?reason=`. |
+> | GET, POST | `/admin/v1/staff` | owner | List staff; add one (returns a one-time `/staff/set-password?token=` link) |
+> | PATCH | `/admin/v1/staff/{id}` | owner | Name or role. There is always at least one active owner, and nobody changes their own role. |
+> | POST | `/admin/v1/staff/{id}/disable`, `/enable`, `/reset-link` | owner | `?reason=` required |
+> | POST | `/admin/v1/auth/set-password` | public | `{ token, password }` from a staff invitation or reset link |
+> | GET | `/admin/v1/audit` | owner, support | `?q&since&until&action&tenant_id&actor_id&cursor` |
+>
+> Recorders are connected, renamed and removed by the customer. Staff can list them (`GET /admin/v1/recorders`) and read their connection details, nothing more.
+
+
 Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analyst. Every route also requires `mfa=true` in the token.
 
 ### Session

@@ -315,3 +315,48 @@ a{color:var(--brand)}
 @container app (min-width:780px){.ax .scroll{padding-top:22px}.ax h1.lt{margin-top:4px}}
 .ax .seg2 button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .ax .page>.sub.center{margin-top:16px}
+
+/* ---------- staff console additions (same system) ---------- */
+.ax .gi.dng b{color:var(--crit)}
+.ax .acts2{margin-top:12px}
+.ax .card>.gi.static{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:6px 0}
+.ax .card>.gi.static small{display:block;color:var(--fg2);font-size:13px}
+.ax .gi.static:not(:has(.ico)){grid-template-columns:minmax(0,1fr) auto}
+.ax .field textarea.code{font:12.5px/1.5 var(--mono);resize:vertical;min-height:120px}
+.ax .field input.mono,.ax .two input.mono{font-family:var(--mono);font-size:13px}
+.ax .two input{height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:0 10px;width:100%;min-width:0;font:inherit}
+.ax .insp .seg2 button,.ax .sheet .seg2 button{padding:7px 3px;font-size:13px}
+.ax .swipe .act{opacity:0}.ax .swipe.sw .act{opacity:1}
+.ax .stack>.gh:first-child{margin-top:0}
+.ax .sheet.wide .sb2{padding-bottom:40px}
+.ax pre.mono{margin:8px 0 0;white-space:pre-wrap;font:12px/1.5 var(--mono)}
+.ax .bubble{background:#E7F6EA;color:#0B1220;border-radius:14px;padding:10px 12px;max-width:340px;font-size:14px;line-height:1.45}
+.ax .bubble .pic{background:#C9D6DF;border-radius:10px;height:110px;display:grid;place-items:center;color:#566678;margin-bottom:8px;font-size:13px}
+.ax .bubble .btn2{border-top:1px solid #C5E3CB;margin:10px -12px 0;padding:9px 12px 0;text-align:center;color:#0A6CC4;font-weight:600}
+.ax .bubble b{color:#0A6CC4}
+.ax .cust-initials{font-weight:700;font-size:13px}
+.ax .hero{display:flex;gap:12px;align-items:center}
+.ax .hero .ico{width:48px;height:48px;border-radius:14px}
+.ax .hero .t{font-size:19px;font-weight:700;letter-spacing:-.015em}
+.ax .hero .s{color:var(--fg2);font-size:14px}
+@container app (min-width:780px){.ax .layer .sheet.wide{width:min(780px,94%);max-height:90%}}
+.ax .rowend{display:flex;gap:8px;align-items:center}
+.ax .gap{margin:12px 0}
+.ax .group .gi b{font-weight:600}
+.ax .tablewrap{overflow-x:auto}
+.ax table.roles{width:100%;border-collapse:collapse;font-size:13.5px}
+.ax table.roles th{text-align:center;color:var(--fg2);font-size:12px;padding:8px 6px}
+.ax table.roles th:first-child,.ax table.roles td:first-child{text-align:left}
+.ax table.roles td{padding:9px 6px;border-top:.5px solid var(--line)}
+.ax table.roles td.c{text-align:center}
+.ax .yes{color:var(--ok)}
+.ax .row small.why{color:var(--fg);margin-top:2px}
+.ax .gi.static .tg{margin-left:8px}
+.ax .gi:is(a){text-decoration:none}
+.ax .hero .grow{flex:1;min-width:0}
+.ax .insp[hidden]{display:none}
+.ax a.kpi{color:inherit}
+.ax .kpi strong .of{display:inline;font-size:16px;color:var(--fg2);font-weight:600}
+.ax .card>.pagehead{align-items:center;margin-bottom:8px}
+@container app (min-width:780px){.ax .only-phone{display:none}}
+.ax .field textarea{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;font:inherit;padding:10px 12px}
