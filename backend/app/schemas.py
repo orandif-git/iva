@@ -161,8 +161,9 @@ class CameraPatch(Strict):
 
 class CameraOut(BaseModel):
     id: UUID
-    recorder_id: UUID
-    channel_no: int
+    connection: str = "recorder"
+    recorder_id: UUID | None = None
+    channel_no: int | None = None
     name: str
     enabled: bool
     use_footfall: bool

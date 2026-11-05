@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"      # used to build the evidence links sent to people
     messaging_allow_private_hosts: bool = False         # tests only: lets an integration call a local server
     delivery_poll_seconds: float = 2.0
+    rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
+    ffprobe_path: str = "ffprobe"                       # used to check an RTSP address before a camera is created from it
     delivery_batch: int = 20
     evidence_backend: str = "local"                     # local (development) or r2 (Cloudflare R2)
     evidence_local_dir: str = "/tmp/gi-evidence"

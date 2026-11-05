@@ -91,7 +91,7 @@ async def worker_cameras(shard: int = Query(0, ge=0), of: int = Query(1, ge=1, l
     if shard >= of:
         raise ApiError(422, "invalid_shard", "shard must be smaller than of.")
     rows = await ctx.conn.fetch(
-        """SELECT c.id FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id JOIN app.recorders r ON r.id = c.recorder_id
+        """SELECT c.id FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
            WHERE c.enabled AND (c.use_footfall OR c.use_anpr) AND t.status::text NOT IN ('suspended','cancelled')
              AND (c.source_ciphertext IS NOT NULL OR r.protocol::text = 'gb28181')
              AND abs(hashtext(c.id::text)::bigint) % $2 = $1 ORDER BY c.id""", shard, of)
@@ -124,7 +124,7 @@ async def camera_source(camera_id: UUID, response: Response, ctx: ServiceCtx = D
     An address set by an administrator wins, so a technician can point one camera at a VPN address while the rest use the relay."""
     c = await ctx.conn.fetchrow(
         """SELECT c.source_ciphertext, c.enabled, c.channel_no, r.device_id, r.protocol::text AS protocol, t.status::text AS tenant_status
-           FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", camera_id)
+           FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", camera_id)
     if not c:
         raise ApiError(404, "unknown_camera", "No such camera.")
     if not c["enabled"] or c["tenant_status"] in ("suspended", "cancelled"):

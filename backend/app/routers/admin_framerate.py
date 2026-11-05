@@ -12,6 +12,7 @@ from ..crypto import vault
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
 from ..schemas import FrameRatePatch, SourceIn
+from ..services import rtsp
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: frame rate and sources"])
@@ -141,6 +142,7 @@ def parse_source(url: str) -> str:
 async def set_source(camera_id: UUID, body: SourceIn, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
     row = await _camera(ctx, camera_id)
     host = parse_source(body.url)
+    await rtsp.ensure_reachable_target(body.url)
     # Encrypted with the camera id bound in, like recorder keys. It is never returned, never logged, and never put in the audit log.
     await ctx.conn.execute("UPDATE app.cameras SET source_ciphertext=$2, source_host=$3, source_set_at=now() WHERE id=$1",
                            camera_id, vault().encrypt(body.url, str(camera_id)), host)

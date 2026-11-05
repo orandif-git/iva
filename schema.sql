@@ -277,8 +277,9 @@ CREATE TABLE app.cameras (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id     uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
   site_id       uuid REFERENCES app.sites(id) ON DELETE SET NULL,
-  recorder_id   uuid NOT NULL REFERENCES app.recorders(id) ON DELETE CASCADE,
-  channel_no    integer NOT NULL,
+  connection    text NOT NULL DEFAULT 'recorder' CHECK (connection IN ('recorder','rtsp')),   -- 'recorder': a channel of a registered recorder; 'rtsp': an address a technician entered
+  recorder_id   uuid REFERENCES app.recorders(id) ON DELETE CASCADE,
+  channel_no    integer,
   name          text NOT NULL,
   enabled       boolean NOT NULL DEFAULT true,
   use_footfall  boolean NOT NULL DEFAULT false,
@@ -303,7 +304,9 @@ CREATE TABLE app.cameras (
   source_set_at   timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (recorder_id, channel_no),
-  CHECK (use_footfall OR use_anpr OR NOT enabled)
+  CHECK (use_footfall OR use_anpr OR NOT enabled),
+  CONSTRAINT cameras_kind_check CHECK (
+    (connection = 'recorder' AND recorder_id IS NOT NULL AND channel_no IS NOT NULL) OR (connection = 'rtsp' AND recorder_id IS NULL AND channel_no IS NULL))
 );
 CREATE INDEX cameras_tenant_idx ON app.cameras (tenant_id);
 

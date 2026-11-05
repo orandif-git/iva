@@ -9,7 +9,7 @@ from ..schemas import CameraCreate, CameraOut, CameraPatch, ZoneOut, ZonesPut
 
 router = APIRouter(prefix="/v1", tags=["customer: cameras"])
 
-CAM_COLS = "c.id, c.recorder_id, c.channel_no, c.name, c.enabled, c.use_footfall, c.use_anpr, c.stream, c.last_frame_at, c.stream_state"
+CAM_COLS = "c.id, c.connection, c.recorder_id, c.channel_no, c.name, c.enabled, c.use_footfall, c.use_anpr, c.stream, c.last_frame_at, c.stream_state"
 
 
 async def _plan_features(conn, tenant_id) -> dict:

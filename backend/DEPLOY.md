@@ -186,14 +186,34 @@ There is **no sign-in screen or login API yet** (see the last section). For the 
 When reporting a problem, send: the recorder model and firmware version, a photo of its GB28181 page (hide the password), the last 50
 lines of `journalctl -u gi-registrar`, and the tcpdump result. That is usually enough to tell which of the above it is.
 
-## 10. Fallback if the recorder has no GB28181 page
+## 10. Fallback if the recorder has no GB28181 page: an RTSP camera
 
-Use a direct RTSP address instead (the backend supports it, the registrar is not involved). This needs the VPS to reach the recorder
-(a VPN such as WireGuard between the site and the VPS, or a port forward on the site router, which is **less safe**):
+Use a direct RTSP address (the registrar is not involved). The VPS must be able to reach the recorder: a VPN between the site and the
+VPS (safest), or a port forward on the site router plus the recorder's IP filter allowing only the VPS address. Never expose a recorder
+without both a strong password and an IP filter.
 
-- [ ] Dahua recorders usually serve channel N at `rtsp://<user>:<password>@<recorder address>:554/cam/realmonitor?channel=N&subtype=1`
-      (`subtype=1` is the lighter second stream, which is what analysis should use). Confirm on your model; I have not.
-- [ ] Set it with `PUT /admin/v1/cameras/<camera id>/source` (technician token): `{"url": "rtsp://...", "reason": "VPN to site"}`. It is stored encrypted and never shown again.
+1. [ ] On the recorder, create a **viewer-only user** (live view only) and use that, not `admin`.
+2. [ ] Dahua channels are usually `rtsp://<user>:<password>@<address>:554/cam/realmonitor?channel=N&subtype=1` (`subtype=1` is the lighter second stream, which is what analysis should use). Hikvision is usually `rtsp://<user>:<password>@<address>:554/Streaming/Channels/N02`. Test the address in VLC on the site network first.
+3. [ ] Check it from the server (nothing is saved, and the address is not repeated in the answer):
+   ```bash
+   curl -s -X POST http://localhost:8000/admin/v1/rtsp-check -H "Authorization: Bearer <technician token>" -H "Content-Type: application/json" \
+     -d '{"url":"rtsp://viewer:PASSWORD@ADDRESS:PORT/cam/realmonitor?channel=1&subtype=1"}'
+   ```
+   `"ok": true` with a picture size means the server can see the camera. Otherwise `problem` says why (wrong password, nothing listening, no answer).
+4. [ ] Create the camera for the customer (technician or owner token). The address is checked again, then stored encrypted and never shown again:
+   ```bash
+   curl -s -X POST http://localhost:8000/admin/v1/tenants/<tenant id>/rtsp-cameras -H "Authorization: Bearer <technician token>" -H "Content-Type: application/json" \
+     -d '{"name":"Main gate","url":"rtsp://viewer:PASSWORD@ADDRESS:PORT/cam/realmonitor?channel=1&subtype=1","use_footfall":true,"reason":"Customer has a static IP"}'
+   ```
+5. [ ] Draw its counting line or plate zone (`PUT /v1/cameras/<id>/zones`), then start the worker. It picks the camera up within a minute.
+
+Addresses that point at the server itself (127.x, localhost, 169.254.x) are refused. Private network and VPN addresses are allowed.
+
+**A server installed before this feature** needs a one-time database change first, run as the database owner:
+```bash
+sudo -u postgres psql -d gateinsight -f /www/wwwroot/iva/backend/migrations/001_rtsp_cameras.sql
+```
+Then `git pull` and `systemctl restart gi-api`.
 
 ## 11. After the test
 

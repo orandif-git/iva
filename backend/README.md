@@ -365,3 +365,14 @@ python -m worker run-many --camera-ids <id> <id>      # exactly these
   frame rates set in the admin console, and how busy the scenes are. Start with a few cameras per core, watch the "falling behind" figure
   in the admin console (dropped pictures), and spread cameras over more processes with `--shard/--of`.
 * Not built: moving a camera between workers while it runs (it restarts on the new one), and a shared plate-reader queue across processes.
+
+
+## Cameras from an RTSP address
+
+For recorders that cannot register with us (no GB28181), a technician or the owner creates a camera from its RTSP address:
+`POST /admin/v1/rtsp-check` opens the address from the server and says what it found, and `POST /admin/v1/tenants/{id}/rtsp-cameras`
+creates the camera (plan limits and features apply; the address is checked first unless `check_first` is false). The address is stored
+encrypted, bound to the camera, never returned and never written to the audit log. Addresses pointing at the server itself are refused;
+private and VPN addresses are allowed. Such a camera has `connection: "rtsp"` and no recorder; everything else (zones, frame rate,
+alerts, reports, billing) treats it like any camera. Not built: a customer-facing way to add one, and probing from the worker's own network
+instead of the API server's.
