@@ -269,3 +269,12 @@ async def test_stopping_the_gateway_signs_out_of_everything(env):
     login_id = env.gw.sessions["SHARMA-AB3K"].login_id
     await env.gw.stop()
     assert login_id in env.driver.logged_out and env.driver.stopped and not env.gw.sessions
+
+
+async def test_the_first_picture_is_reported_to_the_backend_once(env):
+    await online(env)
+    assert env.backend.previews == []                                          # being online is not the same as having shown a picture
+    for _ in range(2):
+        await read_all(env, (await play(env)).json()["url"], limit=1000)
+    await until(lambda: env.backend.previews)
+    assert env.backend.previews == ["SHARMA-AB3K"]                             # once, however many streams

@@ -44,6 +44,8 @@ class DahuaStream:
         if self.state not in ("starting", "live"):
             return
         self.last_data = self.mgr.now()
+        if self.chunks == 0:
+            self.mgr.gateway.first_picture(self.session)       # video really arrived, not just "the recorder accepted the request"
         if self.preroll is not None:
             self.preroll.append(raw)
         self.chunks += 1

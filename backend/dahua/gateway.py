@@ -32,6 +32,7 @@ class Session:
     serial: str
     channels: list
     connected_at: float = field(default_factory=time.monotonic)
+    preview_reported: bool = False
 
 
 class Gateway:
@@ -184,6 +185,19 @@ class Gateway:
         s = next((x for x in self.sessions.values() if x.login_id == login_id), None)
         if s is not None:
             await self._drop(s, "the recorder disconnected", tell_backend=True)
+
+    def first_picture(self, s: Session) -> None:
+        """Live video arrived from this recorder: tell the backend once, which ticks the last box on the customer's connect screen."""
+        if self._loop is None or s.preview_reported:
+            return
+        s.preview_reported = True
+        self._spawn(self._report_preview(s))
+
+    async def _report_preview(self, s: Session) -> None:
+        try:
+            await self.backend.preview_ok(s.device_id)
+        except BackendUnavailable:
+            s.preview_reported = False                          # try again with the next stream
 
     def session_unusable(self, s: Session) -> None:
         """Live video could not be started: the connection is probably dead. Forget it; a live recorder registers again within seconds."""

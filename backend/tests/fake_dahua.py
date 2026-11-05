@@ -81,6 +81,7 @@ class FakeBackend:
         self.recorders = recorders or {}          # device_id -> {"key", "protocol", "allowed"}
         self.heartbeats: list = []
         self.offlined: list = []
+        self.previews: list = []
         self.down = False
 
     async def credentials(self, device_id):
@@ -94,6 +95,11 @@ class FakeBackend:
             raise BackendUnavailable("down")
         self.heartbeats.append((device_id, ip, channels))
         return self.recorders.get(device_id, {}).get("allowed", True)
+
+    async def preview_ok(self, device_id):
+        if self.down:
+            raise BackendUnavailable("down")
+        self.previews.append(device_id)
 
     async def offline(self, device_id):
         self.offlined.append(device_id)
