@@ -47,7 +47,13 @@ CREATE TABLE platform.staff_users (
   status         text NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
   auth_subject   text UNIQUE,                       -- id from your identity provider
   last_login_at  timestamptz,
-  created_at     timestamptz NOT NULL DEFAULT now()
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  -- Sign-in (see app/services/auth.py). Staff always need a password AND a one-time code from an authenticator app.
+  password_hash          text,
+  totp_secret_ciphertext bytea,                     -- encrypted with the key vault, bound to the staff id
+  totp_last_step         bigint NOT NULL DEFAULT 0, -- the last 30-second step accepted, so a code cannot be used twice
+  failed_logins          integer NOT NULL DEFAULT 0,
+  locked_until           timestamptz
 );
 
 CREATE TABLE platform.partners (
@@ -224,6 +230,9 @@ CREATE TABLE app.tenant_users (
   auth_subject  text UNIQUE,
   last_login_at timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
+  password_hash   text,
+  failed_logins   integer NOT NULL DEFAULT 0,
+  locked_until    timestamptz,
   UNIQUE (tenant_id, email)
 );
 
@@ -611,6 +620,22 @@ CREATE TABLE platform.impersonation_sessions (
   CHECK (expires_at > started_at AND expires_at <= started_at + interval '60 minutes')
 );
 CREATE INDEX imp_tenant_idx ON platform.impersonation_sessions (tenant_id, started_at DESC);
+
+-- Refresh tokens, invitations and password resets. Only a hash of each token is stored, so a copy of the database cannot be used to sign in.
+CREATE TABLE platform.auth_tokens (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind         text NOT NULL CHECK (kind IN ('refresh','invite','reset')),
+  account_type text NOT NULL CHECK (account_type IN ('staff','customer')),
+  account_id   uuid NOT NULL,
+  family       uuid,                                -- refresh tokens: one family per sign-in, so reuse of an old token revokes the whole family
+  token_hash   text NOT NULL UNIQUE,
+  created_by   uuid,                                -- staff who made an invite or reset link
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL,
+  used_at      timestamptz,
+  revoked_at   timestamptz
+);
+CREATE INDEX auth_tokens_account_idx ON platform.auth_tokens (account_type, account_id, kind);
 
 -- ======================================================================
 -- ROW-LEVEL SECURITY

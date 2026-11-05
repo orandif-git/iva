@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import errors
 from .config import get_settings
 from .db import db
-from .routers import (admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_recorders, admin_rtsp, admin_tenants, customer_alerts, customer_billing, customer_cameras, customer_events,
+from .routers import (auth as auth_routes, admin_users, admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_recorders, admin_rtsp, admin_tenants, customer_alerts, customer_billing, customer_cameras, customer_events,
                       customer_recorders, customer_reports, internal, internal_evidence, internal_events, public_messaging)
 from .messaging import delivery
 from .services import billing, maintenance, reports, sweeper
@@ -52,7 +52,9 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
             await c.fetchval("SELECT 1")
         return {"ok": True}
 
-    for r in (admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, customer_recorders, customer_cameras, customer_events, customer_alerts, customer_reports, customer_billing,
+    app.include_router(auth_routes.customer)
+    app.include_router(auth_routes.staff)
+    for r in (admin_users, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, customer_recorders, customer_cameras, customer_events, customer_alerts, customer_reports, customer_billing,
               internal, internal_events, internal_evidence, public_messaging):
         app.include_router(r.router)
     return app

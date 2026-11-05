@@ -353,3 +353,41 @@ class FrameStatusIn(Strict):
     analysis_fps: float | None = Field(None, ge=0, le=60)
     dropped: int | None = Field(None, ge=0, le=2_000_000_000)      # pictures dropped this run because analysis fell behind
     error: str | None = Field(None, max_length=200)
+
+
+# --------------------------------------------------------------------------------------------- sign-in
+Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+Secret = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+
+
+class LoginIn(Strict):
+    email: Email
+    password: Secret
+    tenant: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None     # only needed if the email is in several organisations
+
+
+class StaffLoginIn(Strict):
+    email: Email
+    password: Secret
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=6, max_length=8)]
+
+
+class RefreshIn(Strict):
+    refresh_token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
+
+
+class SetPasswordIn(Strict):
+    token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
+    password: Secret
+
+
+class ChangePasswordIn(Strict):
+    current_password: Secret
+    new_password: Secret
+
+
+class UserInviteIn(Strict):
+    email: Email
+    name: Name
+    role: Literal["admin", "regular"] = "admin"
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)] | None = None

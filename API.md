@@ -29,9 +29,11 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 ### Session and account
 | Method | Route | Role | Purpose |
 |---|---|---|---|
-| POST | `/v1/auth/login` | public | Email and password, or OTP. Returns tokens. |
-| POST | `/v1/auth/refresh` | public | New access token |
-| POST | `/v1/auth/logout` | A R | Revoke refresh token |
+| POST | `/v1/auth/login` | public | `{ email, password, tenant? }` → `{ access_token (15 min), refresh_token, expires_in, user }`. `tenant` (the organisation's short name) is needed only when the email belongs to several organisations (the answer is then `409 choose_account`). Every failure is the same `401 wrong_credentials`. Five wrong passwords lock the account for 15 minutes (`429 too_many_attempts`); attempts per address and per email are limited too. |
+| POST | `/v1/auth/refresh` | public | `{ refresh_token }` → a new pair. Each refresh token works once; presenting an old one again ends that whole sign-in. |
+| POST | `/v1/auth/logout` | public | `{ refresh_token }` → 204. Ends that sign-in. |
+| POST | `/v1/auth/set-password` | public | `{ token, password }` from an invitation or reset link (works once) → 204. Password: 10+ characters, not a common one. |
+| POST | `/v1/auth/change-password` | A R | `{ current_password, new_password }` → 204. Other devices are signed out. |
 | GET | `/v1/me` | A R | Current user, tenant, plan, limits |
 | GET | `/v1/tenant` | A R | Organisation details, plan, camera usage |
 | GET | `/v1/users` | A | List users |
@@ -110,6 +112,12 @@ Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analys
 |---|---|---|---|
 | POST | `/admin/v1/auth/sso/callback` | public | Sign in through your identity provider |
 | POST | `/admin/v1/auth/mfa/verify` | public | Second factor |
+| POST | `/admin/v1/auth/login` | public | `{ email, password, code }`, where `code` is the 6-digit code from the staff member's authenticator app. Same tokens as above (access 15 min, refresh 12 h); a code cannot be used twice. |
+| POST | `/admin/v1/auth/refresh`, `/admin/v1/auth/logout` | public | As for customers. |
+| GET | `/admin/v1/tenants/{id}/users` | all | A customer's people (no secrets) |
+| POST | `/admin/v1/tenants/{id}/users` | owner, technician, support | `{ email, name, role, phone? }` → creates an invited account and returns a one-time `link` (valid 7 days) to send to the person. |
+| POST | `/admin/v1/tenants/{id}/users/{uid}/reset-link` | owner, technician, support | A one-time link (valid 1 hour) to set a new password; a new link cancels the old one. |
+| POST | `/admin/v1/tenants/{id}/users/{uid}/disable` | owner, support | Disables the user and signs them out at once. |
 | GET | `/admin/v1/me` | all | Current staff user and permissions |
 
 ### Overview and health

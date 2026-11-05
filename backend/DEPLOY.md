@@ -124,7 +124,7 @@ WantedBy=multi-user.target
 
 ## 6. Create the test customer and tokens
 
-There is **no sign-in screen or login API yet** (see the last section). For the test you use tokens printed by the seed script.
+Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pages for it come next. Until then you can still use tokens printed by the seed script. See section 6b to create a real super admin.
 
 - [ ] ```bash
       cd /opt/gateinsight/backend && source .venv/bin/activate
@@ -132,6 +132,25 @@ There is **no sign-in screen or login API yet** (see the last section). For the 
       ```
 - [ ] It prints staff tokens and a customer admin token (valid 8 hours). Save the **customer admin token** and the **technician token**.
 - [ ] The seed creates a customer "Sharma Auto Components" on the `full` plan with room for 10 cameras.
+
+## 6b. Real sign-in: the first super admin
+
+1. [ ] Apply the database change once (not needed for a database created from the current `schema.sql`):
+   ```bash
+   cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/002_auth.sql"
+   ```
+   Then restart the API: `systemctl restart gi-api`.
+2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:
+   ```bash
+   cd /www/wwwroot/iva/backend && .venv/bin/python -m scripts.create_staff --email you@yourcompany.in --name "Your Name" --role owner
+   ```
+   Add the key to Google Authenticator, Microsoft Authenticator or Authy. Running it again for the same email resets the password and the authenticator and signs that person out everywhere.
+3. [ ] Check it (use a hidden prompt, do not paste the password into chat):
+   ```bash
+   read -rs P; curl -s -X POST http://127.0.0.1:8000/admin/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"you@yourcompany.in\",\"password\":\"$P\",\"code\":\"123456\"}"
+   ```
+   Replace `123456` with the code your app shows. You get an `access_token`.
+4. [ ] Invite a customer's first user: `POST /admin/v1/tenants/<tenant id>/users` with `{"email","name","role":"admin"}` returns a `link`. Send it to the person; they choose their own password there.
 
 ## 7. Reach the API safely
 
@@ -251,7 +270,7 @@ Things to know:
 
 These are gaps in the product itself, not in this checklist:
 
-1. **No sign-in.** There is no login, password, OTP or invite flow for customers or staff. Access is by tokens made with a script. A real sign-in is the biggest missing core piece.
+1. **Sign-in pages and password email.** The sign-in API is built (passwords, authenticator codes for staff, invitations, reset links) but there are no web pages for it yet, and no self-service "forgot password" email: staff send reset links by hand.
 2. **No web app.** The screens exist only as mock-ups. Everything is driven through the API.
 3. **Never run against a real recorder, real WhatsApp provider or R2** (this test is the first for the recorder).
 4. **HTTPS and hardening:** the API is plain HTTP on localhost here. Before any customer: nginx with a real certificate, `GI_ENV=production`, CORS set, rate limiting at nginx, automatic OS updates, off-server backups of the database and of `GI_KEY_ENCRYPTION_KEY`.

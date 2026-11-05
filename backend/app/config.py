@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     gb_port: int = 5060
     dahua_viewer_user: str = "giview"      # the viewer-only user a customer creates on a Dahua recorder (the gateway signs in as this user)
     heartbeat_timeout_seconds: int = 90
+    # Sign-in
+    access_token_minutes: int = 15
+    customer_refresh_days: int = 30
+    staff_refresh_hours: int = 12
+    invite_days: int = 7
+    reset_hours: int = 1
+    lockout_failures: int = 5                # wrong passwords before an account is locked
+    lockout_minutes: int = 15
+    login_ip_limit: int = 30                 # sign-in attempts per address per 5 minutes
     sweep_interval_seconds: int = 30
     cors_origins: list[str] = []
 
