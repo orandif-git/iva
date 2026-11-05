@@ -26,6 +26,7 @@ class TenantOut(BaseModel):
     plan_id: str
     partner_id: UUID | None
     camera_limit: int
+    price_override_paise: int | None = None
     trial_ends_at: datetime | None
     retention_events_days: int
     retention_snapshots_days: int
@@ -406,6 +407,24 @@ class SetPasswordIn(Strict):
 class ChangePasswordIn(Strict):
     current_password: Secret
     new_password: Secret
+
+
+class UserPatchIn(Strict):
+    name: Name | None = None
+    email: Email | None = None
+    role: Literal["admin", "regular"] | None = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)] | None = None
+
+
+class StaffCreateIn(Strict):
+    name: Name
+    email: Email
+    role: Literal["owner", "support"] = "support"
+
+
+class StaffPatchIn(Strict):
+    name: Name | None = None
+    role: Literal["owner", "support"] | None = None
 
 
 class UserInviteIn(Strict):

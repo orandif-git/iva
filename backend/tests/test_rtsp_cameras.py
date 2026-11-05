@@ -40,7 +40,7 @@ def body(**k):
 
 
 async def tech(make):
-    return (await make.staff("technician"))["headers"]
+    return (await make.staff("owner"))["headers"]
 
 
 async def tenant(make, **kw):
@@ -140,9 +140,9 @@ async def test_limits_and_plan_features_apply_like_for_any_camera(client, make, 
     assert (await client.post(f"/admin/v1/tenants/{uuid.uuid4()}/rtsp-cameras", json=body(), headers=h)).status_code == 404
 
 
-async def test_only_owner_and_technician_can_do_this_and_never_a_customer(client, make):
+async def test_only_the_owner_can_do_this_and_never_a_customer(client, make):
     t = await tenant(make)
-    for role in ("support", "finance", "analyst"):
+    for role in ("support",):
         hh = (await make.staff(role))["headers"]
         assert (await client.post(f"/admin/v1/tenants/{t}/rtsp-cameras", json=body(), headers=hh)).status_code == 403, role
         assert (await client.post("/admin/v1/rtsp-check", json={"url": GOOD}, headers=hh)).status_code == 403, role

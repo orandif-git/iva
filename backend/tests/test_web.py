@@ -64,7 +64,7 @@ def test_the_pages_use_no_inline_style_or_html_injection():
 
 # ------------------------------------------------------------------------------------------ plans
 async def test_staff_can_list_plans_and_others_cannot(client, make):
-    for role in ("owner", "analyst"):
+    for role in ("owner", "support"):
         r = await client.get("/admin/v1/plans", headers=(await make.staff(role))["headers"])
         assert r.status_code == 200 and {p["id"] for p in r.json()["items"]} >= {"quick", "full"}
     assert (await client.get("/admin/v1/plans")).status_code == 401
@@ -142,7 +142,7 @@ async def test_a_picture_is_for_administrators_of_that_organisation_only(client,
 
 
 async def test_an_rtsp_camera_picture_uses_its_own_address_without_a_format(client, make, monkeypatch):
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t, u, foot, anpr = await setup_cameras(client, make, footfall=1, anpr=0)
     await client.put(f"/admin/v1/cameras/{foot[0]}/source", json={"url": "rtsp://v:p@10.20.0.14/x", "reason": "Site VPN is up"}, headers=tech["headers"])
     seen = []

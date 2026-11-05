@@ -13,6 +13,10 @@ from zoneinfo import ZoneInfo
 
 from ..db import db
 
+# The price one camera costs per month for a customer. A customer who kept an older price after the plan price changed has an override,
+# which only counts for days spent on the plan they are on now.
+PRICE_SQL = "CASE WHEN u.plan_id = t.plan_id AND t.price_override_paise IS NOT NULL THEN t.price_override_paise ELSE p.price_per_camera_paise END"
+
 log = logging.getLogger("gateinsight.billing")
 PAYING = ("active", "past_due")
 
@@ -100,9 +104,9 @@ async def generate(month: date, tenant_id=None) -> dict:
             if local_day(t["timezone"]) < nxt:
                 continue                                                      # the month is not over in that account's own time zone
             rows = await conn.fetch(
-                """SELECT u.plan_id, p.name, p.price_per_camera_paise AS price, sum(u.billable_cameras)::int AS camera_days
-                   FROM app.usage_daily u JOIN platform.plans p ON p.id = u.plan_id
-                   WHERE u.tenant_id=$1 AND u.day >= $2 AND u.day < $3 AND u.billable_cameras > 0 GROUP BY u.plan_id, p.name, p.price_per_camera_paise ORDER BY u.plan_id""", t["id"], month, nxt)
+                f"""SELECT u.plan_id, p.name, {PRICE_SQL} AS price, sum(u.billable_cameras)::int AS camera_days
+                   FROM app.usage_daily u JOIN platform.plans p ON p.id = u.plan_id JOIN app.tenants t ON t.id = u.tenant_id
+                   WHERE u.tenant_id=$1 AND u.day >= $2 AND u.day < $3 AND u.billable_cameras > 0 GROUP BY u.plan_id, p.name, t.plan_id, t.price_override_paise, p.price_per_camera_paise ORDER BY u.plan_id""", t["id"], month, nxt)
             lines = [(f"{r['name']}: {r['camera_days']} camera-days in {month:%B %Y} (price per camera per month)", r["camera_days"], r["price"], money(Decimal(r["camera_days"]) * r["price"] / days)) for r in rows]
             subtotal = sum(l[3] for l in lines)
             if subtotal == 0:

@@ -159,13 +159,14 @@ async def test_provider_secrets_are_never_shown_and_only_one_is_active_per_chann
 
 
 async def test_only_the_owner_manages_providers_and_templates(client, make, world):
-    for role in ("support", "technician", "finance", "analyst"):
+    for role in ("support",):
         s = await make.staff(role)
         r = await client.post("/admin/v1/messaging/providers", json={"channel": "email", "name": "x", "kind": "smtp", "config": {}, "reason": "no way"}, headers=s["headers"])
         assert r.status_code == 403, role
         assert (await client.post("/admin/v1/messaging/templates/install-defaults", headers=s["headers"])).status_code == 403
-    assert (await client.get("/admin/v1/messaging/providers", headers=(await make.staff("support"))["headers"])).status_code == 200
-    assert (await client.get("/admin/v1/messaging/providers", headers=(await make.staff("analyst"))["headers"])).status_code == 403
+    assert (await client.get("/admin/v1/messaging/providers", headers=(await make.staff("support"))["headers"])).status_code == 403          # setup is for the owner; support sees only the delivery log
+    assert (await client.get("/admin/v1/messaging/templates", headers=(await make.staff("support"))["headers"])).status_code == 403
+    assert (await client.get("/admin/v1/messaging/providers", headers=(await make.staff("owner"))["headers"])).status_code == 200
 
 
 @pytest.mark.parametrize("config,why", [
@@ -636,7 +637,7 @@ async def test_the_admin_delivery_log_and_summary(client, make, su, world):
     rows = (await client.get("/admin/v1/messaging/notifications", params={"tenant_id": str(t)}, headers=h)).json()
     assert len(rows) == 1 and rows[0]["status"] == "sent" and rows[0]["tenant"]
     assert (await client.get("/admin/v1/messaging/summary", headers=h)).json()["last_24_hours"]["whatsapp"]["sent"] >= 1
-    assert (await client.get("/admin/v1/messaging/notifications", headers=(await make.staff("analyst"))["headers"])).status_code == 200
+    assert (await client.get("/admin/v1/messaging/notifications", headers=(await make.staff("support"))["headers"])).status_code == 200
 
 
 async def test_webhook_rejects_unknown_providers_and_missing_signatures(client, world):

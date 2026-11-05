@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.crypto import vault
 from app.services import passwords, totp
 
-ROLES = ("owner", "support", "technician", "finance", "analyst")
+ROLES = ("owner", "support")
 
 
 async def main() -> int:

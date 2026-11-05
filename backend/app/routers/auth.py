@@ -54,6 +54,17 @@ async def set_password(body: SetPasswordIn, request: Request):
         await auth.set_password_with_token(conn, body.token, body.password)
 
 
+@staff.post("/set-password", status_code=204)
+async def staff_set_password(body: SetPasswordIn, request: Request):
+    """From a staff invitation or reset link. The link works once."""
+    from ..config import get_settings
+    from ..services.loginguard import guard
+    s = get_settings()
+    guard.check(client_ip(request), "staff-set-password", s.login_ip_limit, 10 ** 9, 1)
+    async with db.admin_tx() as conn:
+        await auth.set_staff_password_with_token(conn, body.token, body.password)
+
+
 @customer.post("/change-password", status_code=204)
 async def change_password(body: ChangePasswordIn, ctx: CustomerCtx = Depends(customer_ctx())):
     if ctx.viewing_as_staff:

@@ -21,7 +21,7 @@ async def main() -> None:
         ('quick','Quick connect',79900,'snapshots','{}'),
         ('full','Full speed 5 fps',149900,'realtime_5fps','{"anpr": true}') ON CONFLICT DO NOTHING""")
     staff = {}
-    for role, name in (("owner", "Aman"), ("support", "Priya"), ("technician", "Karthik"), ("finance", "Divya")):
+    for role, name in (("owner", "Aman"), ("support", "Priya")):
         staff[role] = await c.fetchval(
             """INSERT INTO platform.staff_users (email, name, role, mfa_enabled) VALUES ($1,$2,$3::platform.staff_role,true)
                ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name RETURNING id""", f"{name.lower()}@example.test", name, role)

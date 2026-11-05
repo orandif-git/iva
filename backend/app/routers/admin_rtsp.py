@@ -1,5 +1,5 @@
 """Cameras made from an RTSP address, for recorders that cannot register with us (and for customers with a static IP or a VPN).
-A technician or the owner sets it up; the address holds the camera's password, so it is stored encrypted, bound to the camera, and never shown again."""
+The owner sets it up; the address holds the camera's password, so it is stored encrypted, bound to the camera, and never shown again."""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -13,7 +13,7 @@ from ..services import rtsp
 from .admin_framerate import parse_source
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: rtsp cameras"])
-ROLES = ("owner", "technician")
+ROLES = ("owner",)
 
 
 class RtspCameraIn(Strict):

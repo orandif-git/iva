@@ -21,7 +21,8 @@ DO $$ BEGIN
 END $$;
 
 -- ---------- enums ----------
-CREATE TYPE platform.staff_role   AS ENUM ('owner','support','technician','finance','analyst');
+CREATE TYPE platform.staff_role   AS ENUM ('owner','support','technician','finance','analyst');   -- only owner and support are used; the others are legacy values, never assigned
+
 CREATE TYPE platform.actor_type   AS ENUM ('staff','partner_user','tenant_user','system');
 CREATE TYPE app.tenant_status     AS ENUM ('trial','active','past_due','suspended','cancelled');
 CREATE TYPE app.tenant_role       AS ENUM ('admin','regular');
@@ -81,7 +82,9 @@ CREATE TABLE platform.plans (
   price_per_camera_paise  integer NOT NULL CHECK (price_per_camera_paise >= 0),
   stream_mode             text NOT NULL CHECK (stream_mode IN ('snapshots','realtime_5fps')),
   features                jsonb NOT NULL DEFAULT '{}',   -- e.g. {"anpr": true, "review_queue": true}
-  active                  boolean NOT NULL DEFAULT true
+  active                  boolean NOT NULL DEFAULT true,
+  -- When the price changes: 'next' moves existing customers to the new price at their next invoice, 'keep' leaves them on the price they had.
+  price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep'))
 );
 
 -- How WhatsApp and email are sent. Owned by the platform, not by tenants. Secrets (API keys, SMTP password) are encrypted.
@@ -188,6 +191,7 @@ CREATE TABLE app.tenants (
   state                    text DEFAULT 'Tamil Nadu',
   status                   app.tenant_status NOT NULL DEFAULT 'trial',
   plan_id                  text NOT NULL REFERENCES platform.plans(id),
+  price_override_paise     integer CHECK (price_override_paise >= 0),   -- a price this customer keeps after the plan price changed; NULL = follow the plan
   partner_id               uuid REFERENCES platform.partners(id),
   camera_limit             integer NOT NULL DEFAULT 5 CHECK (camera_limit >= 0),
   trial_ends_at            timestamptz,
@@ -687,6 +691,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, pl
 GRANT SELECT ON platform.plans TO app_user, service_worker;
 GRANT SELECT ON platform.messaging_providers, platform.message_templates TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
+GRANT DELETE ON platform.plans, platform.messaging_providers, platform.message_templates TO platform_admin;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;
 GRANT SELECT ON platform.audit_log TO platform_admin;
 GRANT INSERT ON platform.audit_log TO platform_admin, service_worker;

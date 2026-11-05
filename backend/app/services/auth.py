@@ -172,19 +172,19 @@ async def revoke_all(conn, account_type: str, account_id, except_family=None) ->
 
 
 # ----------------------------------------------------------------------------- invites and resets
-async def make_link_token(conn, kind: str, account_id, created_by) -> tuple[str, datetime]:
-    """One invite or reset link per customer account at a time: a new one cancels the old."""
+async def make_link_token(conn, kind: str, account_id, created_by, account_type: str = "customer") -> tuple[str, datetime]:
+    """One invite or reset link per account at a time: a new one cancels the old. account_type is customer or staff."""
     s = get_settings()
-    await conn.execute("UPDATE platform.auth_tokens SET revoked_at=now() WHERE account_type='customer' AND account_id=$1 AND kind IN ('invite','reset') AND used_at IS NULL AND revoked_at IS NULL", account_id)
+    await conn.execute("UPDATE platform.auth_tokens SET revoked_at=now() WHERE account_type=$2 AND account_id=$1 AND kind IN ('invite','reset') AND used_at IS NULL AND revoked_at IS NULL", account_id, account_type)
     raw = secrets.token_urlsafe(32)
     exp = _now() + (timedelta(days=s.invite_days) if kind == "invite" else timedelta(hours=s.reset_hours))
-    await conn.execute("INSERT INTO platform.auth_tokens (kind, account_type, account_id, token_hash, created_by, expires_at) VALUES ($1,'customer',$2,$3,$4,$5)",
-                       kind, account_id, token_hash(raw), created_by, exp)
+    await conn.execute("INSERT INTO platform.auth_tokens (kind, account_type, account_id, token_hash, created_by, expires_at) VALUES ($1,$6,$2,$3,$4,$5)",
+                       kind, account_id, token_hash(raw), created_by, exp, account_type)
     return raw, exp
 
 
-def link(raw: str) -> str:
-    return f"{get_settings().public_base_url.rstrip('/')}/set-password?token={raw}"
+def link(raw: str, staff: bool = False) -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/{'staff/' if staff else ''}set-password?token={raw}"
 
 
 async def set_password_with_token(conn, raw: str, password: str) -> None:
@@ -200,3 +200,19 @@ async def set_password_with_token(conn, raw: str, password: str) -> None:
         raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask for a new one.")
     await conn.execute("UPDATE app.tenant_users SET password_hash=$2, status='active', failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], h)
     await revoke_all(conn, "customer", u["id"])             # a reset signs out every device
+
+
+async def set_staff_password_with_token(conn, raw: str, password: str) -> None:
+    """The same one-time link for a staff member: their first password, or a new one."""
+    row = await conn.fetchrow("SELECT id, account_id, expires_at, used_at, revoked_at FROM platform.auth_tokens WHERE token_hash=$1 AND kind IN ('invite','reset') AND account_type='staff'", token_hash(raw))
+    if not row or row["used_at"] or row["revoked_at"] or row["expires_at"] < _now():
+        raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask an owner for a new one.")
+    u = await conn.fetchrow("SELECT id, email, status FROM platform.staff_users WHERE id=$1", row["account_id"])
+    if not u or u["status"] != "active":
+        raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask an owner for a new one.")
+    passwords.check_policy(password, str(u["email"]))
+    h = await passwords.hash_async(password)
+    if await conn.fetchval("UPDATE platform.auth_tokens SET used_at=now() WHERE id=$1 AND used_at IS NULL RETURNING id", row["id"]) is None:
+        raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask an owner for a new one.")
+    await conn.execute("UPDATE platform.staff_users SET password_hash=$2, failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], h)
+    await revoke_all(conn, "staff", u["id"])

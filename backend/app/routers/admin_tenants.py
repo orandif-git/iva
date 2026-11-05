@@ -16,7 +16,7 @@ router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
 
 TENANT_SELECT = """
 SELECT t.id, t.name, t.slug::text AS slug, t.city, t.state, t.status::text AS status, t.plan_id, t.partner_id, t.camera_limit,
-       t.trial_ends_at, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
+       t.price_override_paise, t.trial_ends_at, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
        (SELECT count(*) FROM app.cameras c WHERE c.tenant_id=t.id AND c.enabled) AS cameras_in_use,
        (SELECT count(*) FROM app.recorders r WHERE r.tenant_id=t.id) AS recorders_total,
        (SELECT count(*) FROM app.recorders r WHERE r.tenant_id=t.id AND r.status='online') AS recorders_online
@@ -69,8 +69,20 @@ async def list_tenants(
     return {"items": [TenantOut(**r) for r in rows], "next_cursor": nxt}
 
 
+@router.get("/tenants/{tenant_id}/health")
+async def tenant_health(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
+    """How a customer is doing right now, for the customer page."""
+    await _get(ctx, tenant_id)
+    c = ctx.conn
+    cams = await c.fetchrow("SELECT count(*) FILTER (WHERE enabled) AS enabled, count(*) FILTER (WHERE enabled AND stream_state='streaming') AS streaming, max(last_frame_at) AS last_frame FROM app.cameras WHERE tenant_id=$1", tenant_id)
+    login = await c.fetchval("SELECT max(last_login_at) FROM app.tenant_users WHERE tenant_id=$1", tenant_id)
+    return {"cameras_enabled": cams["enabled"], "cameras_streaming": cams["streaming"], "last_frame_at": cams["last_frame"], "last_sign_in_at": login,
+            "alerts_7d": await c.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND created_at > now() - interval '7 days'", tenant_id),
+            "messages_failed_7d": await c.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1 AND status='failed' AND created_at > now() - interval '7 days'", tenant_id)}
+
+
 @router.post("/tenants", response_model=TenantOut, status_code=201)
-async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     if not await ctx.conn.fetchval("SELECT 1 FROM platform.plans WHERE id=$1 AND active", body.plan_id):
         raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
     if body.partner_id and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1 AND status='active'", body.partner_id):
@@ -102,7 +114,7 @@ async def get_tenant(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
 
 
 @router.patch("/tenants/{tenant_id}", response_model=TenantOut)
-async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     changes = body.model_dump(exclude_unset=True)
     if not changes:
         raise ApiError(422, "nothing_to_change", "Send at least one field to change.")
@@ -143,7 +155,7 @@ async def reactivate(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(ad
 
 
 @router.post("/tenants/{tenant_id}/plan", response_model=TenantOut)
-async def change_plan(tenant_id: UUID, body: PlanIn, ctx: AdminCtx = Depends(admin_ctx("owner", "finance"))):
+async def change_plan(tenant_id: UUID, body: PlanIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     plan = await ctx.conn.fetchrow("SELECT id, features FROM platform.plans WHERE id=$1 AND active", body.plan_id)
     if not plan:
         raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
@@ -152,7 +164,7 @@ async def change_plan(tenant_id: UUID, body: PlanIn, ctx: AdminCtx = Depends(adm
         raise ApiError(409, "same_plan", "The tenant is already on this plan.")
     if not plan["features"].get("anpr") and await ctx.conn.fetchval("SELECT count(*) FROM app.cameras WHERE tenant_id=$1 AND use_anpr AND enabled", tenant_id):
         raise ApiError(409, "plan_feature_in_use", "Cameras are using number plate reading, which this plan does not include. Turn it off first.")
-    await ctx.conn.execute("UPDATE app.tenants SET plan_id=$2 WHERE id=$1", tenant_id, body.plan_id)
+    await ctx.conn.execute("UPDATE app.tenants SET plan_id=$2, price_override_paise=NULL WHERE id=$1", tenant_id, body.plan_id)
     await ctx.audit("plan.change", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, before={"plan_id": before["plan_id"]}, after={"plan_id": body.plan_id})
     return await _get(ctx, tenant_id)
 

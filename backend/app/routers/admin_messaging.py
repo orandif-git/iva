@@ -63,7 +63,7 @@ def _validate(kind: str, channel: str, config: dict, names: set[str]) -> None:
 def _public(r, with_config: bool = True) -> dict:
     names = sorted(json.loads(vault().decrypt(bytes(r["secrets_ciphertext"]), str(r["id"]))).keys()) if r["secrets_ciphertext"] else []
     out = {"id": r["id"], "channel": r["channel"], "name": r["name"], "kind": r["kind"], "active": r["active"], "rate_per_second": float(r["rate_per_second"]),
-           "secret_names": names, "updated_at": r["updated_at"]}
+           "secret_names": names, "updated_at": r["updated_at"], "webhook_url": f"{get_settings().public_base_url.rstrip('/')}/hooks/messaging/{r['id']}"}
     if with_config:
         out["config"] = r["config"]
     return out
@@ -86,7 +86,7 @@ def _secrets_of(r) -> dict:
 
 # ----------------------------------------------------------------------------- providers
 @router.get("/providers")
-async def list_providers(ctx: AdminCtx = Depends(admin_ctx("owner", "support", "technician"))):
+async def list_providers(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     return [_public(r) for r in await ctx.conn.fetch("SELECT * FROM platform.messaging_providers ORDER BY channel, created_at")]
 
 
@@ -162,7 +162,7 @@ class TestIn(Strict):
 
 
 @router.post("/providers/{pid}/test")
-async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """Preview (default) or really send a sample message, so a recipe can be tried before any customer depends on it."""
     p = await _get(ctx, pid)
     secrets, s = _secrets_of(p), get_settings()
@@ -220,7 +220,7 @@ def _check_template(t: TemplateIn) -> None:
 
 
 @router.get("/templates")
-async def list_templates(ctx: AdminCtx = Depends(admin_ctx("owner", "support", "technician"))):
+async def list_templates(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     return [dict(r) for r in await ctx.conn.fetch("SELECT * FROM platform.message_templates ORDER BY channel, key, language")]
 
 
@@ -254,7 +254,7 @@ async def install_defaults(ctx: AdminCtx = Depends(admin_ctx("owner"))):
 
 
 @router.get("/templates/{tid}/submission")
-async def submission_sheet(tid: UUID, ctx: AdminCtx = Depends(admin_ctx("owner", "support", "technician"))):
+async def submission_sheet(tid: UUID, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """Everything to type into the provider's template form, including the samples Meta requires for each variable."""
     t = await ctx.conn.fetchrow("SELECT * FROM platform.message_templates WHERE id=$1", tid)
     if not t:
@@ -304,7 +304,7 @@ async def get_tenant_messaging(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ct
 
 
 @router.put("/tenants/{tenant_id}")
-async def set_tenant_messaging(tenant_id: UUID, body: TenantMessaging, ctx: AdminCtx = Depends(admin_ctx("owner", "finance"))):
+async def set_tenant_messaging(tenant_id: UUID, body: TenantMessaging, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     cur = await ctx.conn.fetchrow("SELECT msg_whatsapp, msg_email, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", tenant_id)
     if not cur:
         raise ApiError(404, "tenant_not_found", "Tenant not found.")

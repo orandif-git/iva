@@ -249,7 +249,7 @@ async def test_the_fleet_runs_until_told_to_stop_and_polls_on_its_own():
 
 # ---------------------------------------------------------------------------------- the real thing
 async def test_three_cameras_in_one_process_each_get_their_own_counts_with_analysis_in_threads(client, make, su, two_crossings):
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     cams = []
     for _ in range(3):
         t, u, (cam,), _x = await setup_cameras(client, make)
@@ -296,7 +296,7 @@ async def test_three_cameras_in_one_process_each_get_their_own_counts_with_analy
 
 # ---------------------------------------------------------------------------------- which cameras a worker runs
 async def test_each_camera_belongs_to_exactly_one_worker_and_only_runnable_cameras_are_listed(client, make, su):
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t, u, foot, anpr = await setup_cameras(client, make, footfall=3, anpr=3)
     ids = foot + anpr
     for cam in ids[:2] + ids[3:5]:                                                                     # these four get an address: runnable

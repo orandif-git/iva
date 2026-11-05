@@ -353,7 +353,7 @@ async def test_frames_are_counted_from_the_cameras_health_reports(client, make, 
 
 # ----------------------------------------------------------------------------- margin and access
 async def test_the_summary_shows_revenue_cost_and_margin_per_customer(client, make, su):
-    finance = await make.staff("finance")
+    finance = await make.staff("owner")
     t = await tenant(make, su, name="Margin Traders")
     await use(su, t, 10, 31)
     await su.execute("UPDATE app.usage_daily SET frames_analysed=40000000, compute_cost_paise=600000, messaging_cost_paise=17000, storage_bytes=20000000000 WHERE tenant_id=$1 AND day='2026-10-15'", t)
@@ -366,20 +366,18 @@ async def test_the_summary_shows_revenue_cost_and_margin_per_customer(client, ma
     assert (await client.get("/admin/v1/billing/usage", params={"tenant_id": str(t), "month": "2026-10"}, headers=hdr(finance))).json()[14]["frames_analysed"] == 40000000
 
 
-async def test_only_owner_and_finance_can_touch_billing(client, make, su):
+async def test_only_the_owner_can_touch_billing(client, make, su):
     owner = await make.staff("owner")
     t, inv = await drafted(client, make, su, owner)
     calls = [("get", "/admin/v1/billing/summary", None), ("get", "/admin/v1/billing/settings", None), ("get", "/admin/v1/billing/invoices", None),
              ("post", f"/admin/v1/billing/invoices/{inv['id']}/issue", None), ("post", "/admin/v1/billing/invoices/generate", {"month": "2026-10"}),
              ("get", f"/admin/v1/billing/invoices/{inv['id']}/pdf", None), ("post", "/admin/v1/billing/dunning/run", None)]
-    for role in ("support", "technician", "analyst"):
+    for role in ("support",):
         h = hdr(await make.staff(role))
         for method, url, body in calls:
             r = await (client.get(url, headers=h) if method == "get" else client.post(url, json=body, headers=h))
             assert r.status_code == 403, (role, url)
-    fin = hdr(await make.staff("finance"))
-    assert (await client.get("/admin/v1/billing/summary", headers=fin)).status_code == 200
-    assert (await client.post("/admin/v1/billing/dunning/run", headers=fin)).status_code == 403                  # running the overdue rules by hand is owner-only
+    assert (await client.get("/admin/v1/billing/summary", headers=hdr(owner))).status_code == 200
 
 
 async def test_settings_are_validated_and_the_audit_log_never_holds_bank_details(client, make, su):

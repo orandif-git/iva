@@ -1,7 +1,7 @@
 """Super-admin control of how fast cameras are analysed, and the RTSP address the AI worker pulls from.
 
 Frame rate costs real money (compute grows in direct proportion), so it is set here, not by customers.
-Tenant-wide settings: owner and finance. Per-camera overrides and stream addresses: owner and technician."""
+Owner only."""
 import re
 from urllib.parse import urlparse
 from uuid import UUID
@@ -57,7 +57,7 @@ async def get_tenant_policy(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx()
 
 
 @router.put("/tenants/{tenant_id}/frame-rate")
-async def set_tenant_policy(tenant_id: UUID, body: FrameRatePatch, ctx: AdminCtx = Depends(admin_ctx("owner", "finance"))):
+async def set_tenant_policy(tenant_id: UUID, body: FrameRatePatch, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     row = await _tenant(ctx, tenant_id)
     cur = tenant_policy(row)
     new = _merge(cur, body)
@@ -94,7 +94,7 @@ async def tenant_cameras(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
 
 # ------------------------------------------------------------------------- camera
 @router.put("/cameras/{camera_id}/frame-rate")
-async def set_camera_override(camera_id: UUID, body: FrameRatePatch, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def set_camera_override(camera_id: UUID, body: FrameRatePatch, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     row = await _camera(ctx, camera_id)
     tp, cur = tenant_policy(row), camera_override(row)
     new = _merge(cur, body)
@@ -111,7 +111,7 @@ async def set_camera_override(camera_id: UUID, body: FrameRatePatch, ctx: AdminC
 
 
 @router.delete("/cameras/{camera_id}/frame-rate")
-async def reset_camera_override(camera_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def reset_camera_override(camera_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """Remove every override so the camera follows its tenant again."""
     row = await _camera(ctx, camera_id)
     cur = camera_override(row)
@@ -139,7 +139,7 @@ def parse_source(url: str) -> str:
 
 
 @router.put("/cameras/{camera_id}/source")
-async def set_source(camera_id: UUID, body: SourceIn, ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def set_source(camera_id: UUID, body: SourceIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     row = await _camera(ctx, camera_id)
     host = parse_source(body.url)
     await rtsp.ensure_reachable_target(body.url)
@@ -151,7 +151,7 @@ async def set_source(camera_id: UUID, body: SourceIn, ctx: AdminCtx = Depends(ad
 
 
 @router.delete("/cameras/{camera_id}/source", status_code=204)
-async def clear_source(camera_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner", "technician"))):
+async def clear_source(camera_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
     row = await _camera(ctx, camera_id)
     await ctx.conn.execute("UPDATE app.cameras SET source_ciphertext=NULL, source_host=NULL, source_set_at=NULL WHERE id=$1", camera_id)
     await ctx.audit("camera.source.clear", tenant_id=row["tenant_id"], target_type="camera", target_id=camera_id, reason=reason)

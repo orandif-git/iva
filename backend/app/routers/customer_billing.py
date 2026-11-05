@@ -16,7 +16,7 @@ router = APIRouter(prefix="/v1/billing", tags=["customer: billing"])
 
 @router.get("/usage")
 async def usage(ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    t = await ctx.conn.fetchrow("SELECT t.timezone, t.status::text AS status, t.plan_id, p.name AS plan, p.price_per_camera_paise AS price FROM app.tenants t JOIN platform.plans p ON p.id=t.plan_id WHERE t.id=$1", ctx.tenant_id)
+    t = await ctx.conn.fetchrow("SELECT t.timezone, t.status::text AS status, t.plan_id, p.name AS plan, coalesce(t.price_override_paise, p.price_per_camera_paise) AS price FROM app.tenants t JOIN platform.plans p ON p.id=t.plan_id WHERE t.id=$1", ctx.tenant_id)
     today = local_day(t["timezone"])
     m = today.replace(day=1)
     days = (next_month(m) - m).days

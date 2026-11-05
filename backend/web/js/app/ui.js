@@ -20,6 +20,15 @@ const P = {
   lock: '<rect x="5" y="11" width="14" height="9.5" rx="2.5"/><path d="M8.5 11V8a3.5 3.5 0 017 0v3"/>',
   line: '<path d="M4 17l16-10"/><circle cx="4" cy="17" r="1.6"/><circle cx="20" cy="7" r="1.6"/>', swap: '<path d="M7 4L3.5 7.5 7 11M3.5 7.5H20M17 13l3.5 3.5L17 20M20.5 16.5H4"/>',
   edit: '<path d="M4 20h4L19 9a2.1 2.1 0 00-3-3L5 17z"/><path d="M14.5 7.5l3 3"/>', trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5"/>',
+  users: '<circle cx="9" cy="8" r="3.4"/><path d="M2.5 20a6.5 6.5 0 0113 0M16 5.3a3.3 3.3 0 010 6.4M18 14.2a6 6 0 013.5 5.8"/>',
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6 15h4"/>',
+  chat: '<path d="M4 5.5h16a1 1 0 011 1V16a1 1 0 01-1 1h-8l-4.5 3.5V17H4a1 1 0 01-1-1V6.5a1 1 0 011-1z"/>',
+  wrench: '<path d="M14.5 6a4 4 0 005 5l-8.7 8.7a2.1 2.1 0 01-3-3L16.5 8M14.5 6a4 4 0 014-4l-2.5 2.5L18 6.5 20.5 4"/>',
+  log: '<path d="M6.5 3h7l4.5 4.5V20a1 1 0 01-1 1H6.5a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M9 13h6M9 17h6M9 9h2"/>',
+  shield: '<path d="M12 3l7.5 3v5.5c0 4.6-3 8-7.5 9.5-4.5-1.5-7.5-4.9-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  tag: '<path d="M3.5 12.5V5A1.5 1.5 0 015 3.5h7.5l8 8a1.5 1.5 0 010 2.1l-6.4 6.4a1.5 1.5 0 01-2.1 0z"/><circle cx="8" cy="8" r="1.3"/>',
+  link: '<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>',
   pause: '<path d="M9 5v14M15 5v14"/>', play: '<path d="M8 5l11 7-11 7z"/>',
 };
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -59,6 +68,7 @@ export function mountOverlays(root) {
 let sheetClose = null, lastFocus = null;
 export function openSheet(title, ...body) {
   const { layer, sheetBody, sheetTitle } = openSheet.parts;
+  layer.querySelector(".sheet").classList.remove("wide");
   lastFocus = document.activeElement;
   sheetTitle.textContent = title;
   mount(sheetBody, body);
@@ -193,3 +203,31 @@ export function barChart(items, { mode = "both" } = {}) {
   return wrap;
 }
 export const legend = () => h("div", { class: "legend" }, h("span", {}, h("i", { class: "lgi a" }), "In"), h("span", {}, h("i", { class: "lgi b" }), "Out"));
+
+/** Makes the open sheet wide on a desktop window, for forms with a lot in them. */
+export const sheetWide = () => openSheet.parts.layer.querySelector(".sheet").classList.add("wide");
+
+/** A sheet that asks for a short reason (saved in the audit log) before it does something. run(reason) may throw to show an error. */
+export function reasonSheet({ title, text, label, danger = false, min = 5, run, extra = null }) {
+  const err = h("div"), why = h("input", { type: "text", placeholder: "For example: customer called, locked out", autocomplete: "off", "aria-label": "Reason" });
+  const btn = h("button", { class: "btn " + (danger ? "danger" : ""), type: "button", disabled: true }, label);
+  why.oninput = () => { btn.disabled = why.value.trim().length < min; };
+  btn.onclick = async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { await run(why.value.trim()); } catch (e) { clear(err); err.append(note(e?.message || "Something went wrong.", "err")); btn.disabled = false; }
+  };
+  openSheet(title, text ? h("p", {}, text) : null, extra, field("Reason (saved in the audit log)", why), err, h("div", { class: "acts" }, btn, h("button", { class: "btn gray", type: "button", onclick: () => closeSheet() }, "Cancel")));
+}
+
+/** A sheet with a form. fields are nodes; run() may throw to show an error and keep the sheet open. */
+export function formSheet(title, fields, label, run, { wide = false } = {}) {
+  const err = h("div"), btn = h("button", { class: "btn", type: "button" }, label);
+  btn.onclick = async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { await run(); } catch (e) { clear(err); err.append(note(e?.message || "Something went wrong.", "err")); btn.disabled = false; }
+  };
+  openSheet(title, fields, err, h("div", { class: "acts" }, btn, h("button", { class: "btn gray", type: "button", onclick: () => closeSheet() }, "Cancel")));
+  if (wide) sheetWide();
+}

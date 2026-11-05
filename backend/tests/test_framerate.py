@@ -46,11 +46,11 @@ async def test_tenant_policy_can_be_raised_and_reaches_every_camera(client, make
 async def test_who_may_change_the_tenant_policy(client, make):
     t = await make.tenant()
     body = {"active_fps": 10, "reason": "Needed for the new gate"}
-    for role, code in (("owner", 200), ("finance", 200), ("technician", 403), ("support", 403), ("analyst", 403)):
+    for role, code in (("owner", 200), ("support", 403)):
         s = await make.staff(role)
         body = {"active_fps": 10 if code == 200 and role == "owner" else 12, "reason": "Needed for the new gate"}
         assert (await client.put(f"/admin/v1/tenants/{t}/frame-rate", json=body, headers=s["headers"])).status_code == code, role
-    assert (await client.get(f"/admin/v1/tenants/{t}/frame-rate", headers=(await make.staff("analyst"))["headers"])).status_code == 200      # everyone may read
+    assert (await client.get(f"/admin/v1/tenants/{t}/frame-rate", headers=(await make.staff("support"))["headers"])).status_code == 200      # everyone may read
 
 
 @pytest.mark.parametrize("body,status,code", [
@@ -80,7 +80,7 @@ async def test_policy_changes_are_audited_with_before_and_after(client, make, su
 
 # ---------------------------------------------------------------------- camera
 async def test_camera_override_beats_the_tenant_and_reset_returns_to_it(client, make):
-    owner, tech = await make.staff("owner"), await make.staff("technician")
+    owner, tech = await make.staff("owner"), await make.staff("owner")
     t, u, (a, b), _ = await setup_cameras(client, make, footfall=2)
     r = await client.put(f"/admin/v1/cameras/{a}/frame-rate", json={"active_fps": 15, "reason": "Fast gate lane"}, headers=tech["headers"])
     assert r.json()["override"] == {"mode": None, "idle_fps": None, "active_fps": 15, "fixed_fps": None} and r.json()["effective"]["capture_fps"] == 15
@@ -100,9 +100,9 @@ async def test_camera_override_beats_the_tenant_and_reset_returns_to_it(client, 
 async def test_camera_override_roles_and_validation(client, make):
     t, u, (a,), _ = await setup_cameras(client, make)
     body = {"active_fps": 10, "reason": "Fast gate lane"}
-    for role, code in (("owner", 200), ("technician", 200), ("finance", 403), ("support", 403)):
+    for role, code in (("owner", 200), ("support", 403)):
         s = await make.staff(role)
-        body = {"active_fps": 10 + (role == "technician"), "reason": "Fast gate lane"}
+        body = {"active_fps": 10, "reason": "Fast gate lane"}
         assert (await client.put(f"/admin/v1/cameras/{a}/frame-rate", json=body, headers=s["headers"])).status_code == code, role
     s = await make.staff("owner")
     bad = await client.put(f"/admin/v1/cameras/{a}/frame-rate", json={"idle_fps": 10, "active_fps": 2, "reason": "Idle faster than active"}, headers=s["headers"])
@@ -131,7 +131,7 @@ URL = "rtsp://viewer:S3cretPass@10.20.0.14:554/Streaming/Channels/102"
 
 async def test_a_stream_address_is_stored_encrypted_and_reaches_only_the_worker(client, make, su):
     import uuid
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t, u, (cam,), _ = await setup_cameras(client, make)
     r = await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": URL, "reason": "Site VPN is up"}, headers=tech["headers"])
     assert r.json() == {"source_host": "10.20.0.14:554", "has_source": True} and "S3cretPass" not in r.text
@@ -148,18 +148,17 @@ async def test_a_stream_address_is_stored_encrypted_and_reaches_only_the_worker(
 
 async def test_stream_address_validation_and_roles(client, make):
     t, u, (cam,), _ = await setup_cameras(client, make)
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     put = lambda url, who=tech: client.put(f"/admin/v1/cameras/{cam}/source", json={"url": url, "reason": "Site VPN is up"}, headers=who["headers"])
     for bad in ("http://10.0.0.1/stream", "rtsp://", "rtsp://host/with space", "ftp://x/y", "rtsp://10.0.0.1:99999/x", "rtsp://h/" + "a" * 600):
         assert (await put(bad)).status_code == 422, bad
     assert (await put("rtsps://cam.example.in:322/live")).json()["source_host"] == "cam.example.in:322"
     assert (await put("rtsp://10.20.0.14/x", await make.staff("support"))).status_code == 403
-    assert (await put("rtsp://10.20.0.14/x", await make.staff("finance"))).status_code == 403
 
 
 async def test_source_is_withheld_when_missing_inactive_or_tampered(client, make, su):
     import uuid
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t, u, (cam,), _ = await setup_cameras(client, make)
     assert (await client.get(f"/internal/v1/cameras/{cam}/source", headers=make.service())).json()["error"]["code"] == "no_source"
     await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": URL, "reason": "Site VPN is up"}, headers=tech["headers"])
@@ -226,7 +225,7 @@ async def test_a_silent_camera_is_marked_offline_and_comes_back_with_the_next_re
 
 
 async def test_a_camera_on_a_registered_recorder_is_served_by_the_relay_unless_an_address_is_set(client, make):
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t = await make.tenant()
     u = await make.user(t)
     cred = (await client.post("/v1/recorders", json={"brand": "hikvision", "protocol": "gb28181"}, headers=u["headers"])).json()
@@ -244,7 +243,7 @@ async def test_a_camera_on_a_registered_recorder_is_served_by_the_relay_unless_a
 async def test_the_worker_link_turns_the_answer_into_a_relay_source_or_an_address(client, make):
     from worker.backend import WorkerBackend
     from worker.relay import RelaySource
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     t = await make.tenant()
     u = await make.user(t)
     cred = (await client.post("/v1/recorders", json={"brand": "dahua", "protocol": "gb28181"}, headers=u["headers"])).json()

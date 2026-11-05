@@ -165,7 +165,7 @@ async def test_the_other_audiences_refresh_token_is_not_accepted(client, make, s
 
 # --------------------------------------------------------------------------------- invites and resets
 async def test_staff_invite_a_customer_who_sets_their_own_password(client, make, su):
-    staff = await make.staff("technician")
+    staff = await make.staff("support")
     t = await make.tenant()
     email = f"{uuid.uuid4().hex[:6]}@newshop.test"
     r = await client.post(f"/admin/v1/tenants/{t}/users", json={"email": email, "name": "Meena", "role": "admin"}, headers=staff["headers"])
@@ -186,7 +186,7 @@ async def test_staff_invite_a_customer_who_sets_their_own_password(client, make,
 
 async def test_an_invitation_cannot_be_made_twice_for_one_email_or_by_the_wrong_staff(client, make):
     t = await make.tenant()
-    tech, finance = await make.staff("technician"), await make.staff("finance")
+    tech, finance = await make.staff("support"), await make.staff("analyst")
     body = {"email": "dup@shop.test", "name": "Dup"}
     assert (await client.post(f"/admin/v1/tenants/{t}/users", json=body, headers=finance["headers"])).status_code == 403
     assert (await client.post(f"/admin/v1/tenants/{t}/users", json=body, headers=tech["headers"])).status_code == 201
@@ -222,10 +222,12 @@ async def test_a_reset_link_changes_the_password_signs_out_every_device_and_repl
 
 async def test_a_disabled_user_loses_access_at_once(client, make, su):
     staff = await make.staff("support")
+    owner = await make.staff("owner")
     t = await make.tenant()
     uid, email = await person(su, t)
     j = (await login(client, email)).json()
-    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/disable", headers=staff["headers"])).status_code == 204
+    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/disable", headers=staff["headers"])).status_code == 403         # only an owner disables people
+    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/disable", headers=owner["headers"])).status_code == 204
     assert (await client.get("/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 401
     assert (await client.post("/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
     assert (await login(client, email)).status_code == 401
@@ -233,7 +235,7 @@ async def test_a_disabled_user_loses_access_at_once(client, make, su):
 
 
 async def test_staff_can_list_a_customers_users_without_any_secret(client, make, su):
-    staff = await make.staff("analyst")
+    staff = await make.staff("support")
     t = await make.tenant()
     await person(su, t)
     items = (await client.get(f"/admin/v1/tenants/{t}/users", headers=staff["headers"])).json()["items"]

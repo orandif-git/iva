@@ -17,7 +17,7 @@ from .db import db
 from .errors import ApiError
 from .security import verify_token
 
-STAFF_ROLES = ("owner", "support", "technician", "finance", "analyst")
+STAFF_ROLES = ("owner", "support")
 
 
 def _bearer(request: Request) -> str:

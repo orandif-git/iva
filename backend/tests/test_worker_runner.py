@@ -305,7 +305,7 @@ async def test_a_refused_camera_stops_the_worker_through_the_sink(two_crossings)
 async def test_live_run_against_the_real_backend_reports_health_and_follows_the_admin_console(client, make, su, two_crossings):
     owner = await make.staff("owner")
     t, u, (cam,), _ = await setup_cameras(client, make)
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": "rtsp://viewer:S3cret@10.20.0.14/Streaming/Channels/102", "reason": "Site VPN is up"}, headers=tech["headers"])
     await client.put(f"/v1/cameras/{cam}/zones", json={"zones": [{"kind": "count_line", "points": LINE, "in_direction": [0, 1]}]}, headers=u["headers"])
     token = make.service()["Authorization"].split()[1]
@@ -342,7 +342,7 @@ async def test_live_run_against_the_real_backend_reports_health_and_follows_the_
 
 async def test_suspending_a_tenant_stops_a_running_worker(client, make, su, two_crossings):
     t, u, (cam,), _ = await setup_cameras(client, make)
-    tech = await make.staff("technician")
+    tech = await make.staff("owner")
     await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": "rtsp://10.20.0.14/x", "reason": "Site VPN is up"}, headers=tech["headers"])
     token = make.service()["Authorization"].split()[1]
     clock = Clock()

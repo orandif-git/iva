@@ -1,5 +1,5 @@
-"""Billing for the platform owner and finance: company and tax settings, usage and margin, and the invoice life cycle.
-Only owner and finance may use any of it."""
+"""Billing for the platform owner: company and tax settings, usage and margin, and the invoice life cycle.
+Only the owner may use any of it."""
 import re
 from datetime import date
 from decimal import Decimal
@@ -17,7 +17,7 @@ from ..services import billing, invoice_pdf
 from ..services.billing import BillingError, money, next_month
 
 router = APIRouter(prefix="/admin/v1/billing", tags=["admin: billing"])
-ROLES = ("owner", "finance")
+ROLES = ("owner",)
 GSTIN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
@@ -105,11 +105,11 @@ async def summary(month: str | None = Query(None), ctx: AdminCtx = Depends(admin
     days = (nxt - m).days
     st = await ctx.conn.fetchrow("SELECT cost_per_gb_month_paise FROM platform.billing_settings")
     usage = await ctx.conn.fetch(
-        """SELECT u.tenant_id, t.name, t.status::text AS status, u.plan_id, p.price_per_camera_paise AS price, sum(u.billable_cameras)::int AS camera_days, sum(u.frames_analysed)::bigint AS frames,
+        """SELECT u.tenant_id, t.name, t.status::text AS status, u.plan_id, CASE WHEN u.plan_id = t.plan_id AND t.price_override_paise IS NOT NULL THEN t.price_override_paise ELSE p.price_per_camera_paise END AS price, sum(u.billable_cameras)::int AS camera_days, sum(u.frames_analysed)::bigint AS frames,
                   sum(u.compute_cost_paise)::bigint AS compute, sum(u.messaging_cost_paise)::bigint AS messaging, sum(u.alerts_whatsapp)::int AS whatsapp, sum(u.alerts_email)::int AS email,
                   coalesce(avg(NULLIF(u.storage_bytes,0)),0)::bigint AS storage_avg
            FROM app.usage_daily u JOIN app.tenants t ON t.id=u.tenant_id LEFT JOIN platform.plans p ON p.id = u.plan_id
-           WHERE u.day >= $1 AND u.day < $2 GROUP BY u.tenant_id, t.name, t.status, u.plan_id, p.price_per_camera_paise ORDER BY t.name""", m, nxt)
+           WHERE u.day >= $1 AND u.day < $2 GROUP BY u.tenant_id, t.name, t.status, u.plan_id, t.plan_id, t.price_override_paise, p.price_per_camera_paise ORDER BY t.name""", m, nxt)
     per: dict = {}
     for r in usage:
         x = per.setdefault(r["tenant_id"], {"tenant_id": r["tenant_id"], "tenant": r["name"], "status": r["status"], "camera_days": 0, "frames": 0, "whatsapp": 0, "email": 0,
@@ -134,8 +134,9 @@ async def summary(month: str | None = Query(None), ctx: AdminCtx = Depends(admin
                   coalesce(sum(total_paise) FILTER (WHERE status='issued'),0)::bigint AS outstanding, coalesce(sum(total_paise) FILTER (WHERE status='issued' AND due_at < now()),0)::bigint AS overdue,
                   count(*) FILTER (WHERE status='draft')::int AS drafts FROM app.invoices WHERE period_month=$1""", m)
     mrr = await ctx.conn.fetchval(
-        """SELECT coalesce(sum(cams * p.price_per_camera_paise),0)::bigint FROM (SELECT t.plan_id, count(c.id) AS cams FROM app.tenants t LEFT JOIN app.cameras c ON c.tenant_id=t.id AND c.enabled
-           WHERE t.status IN ('active','past_due') GROUP BY t.id, t.plan_id) x JOIN platform.plans p ON p.id=x.plan_id""")
+        """SELECT coalesce(sum(cams * price),0)::bigint FROM (SELECT coalesce(t.price_override_paise, p.price_per_camera_paise) AS price, count(c.id) AS cams FROM app.tenants t
+           JOIN platform.plans p ON p.id=t.plan_id LEFT JOIN app.cameras c ON c.tenant_id=t.id AND c.enabled
+           WHERE t.status IN ('active','past_due') GROUP BY t.id, 1) x""")
     rev, cost = sum(x["revenue_paise"] for x in rows), sum(x["cost_paise"] for x in rows)
     return {"month": m.isoformat(), "mrr_paise": mrr, "usage_revenue_paise": rev, "cost_paise": cost, "margin_paise": rev - cost, "margin_percent": round((rev - cost) * 100 / rev) if rev else None,
             "invoices": dict(inv), "tenants": rows}

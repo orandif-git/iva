@@ -8,13 +8,13 @@ router = APIRouter(prefix="/admin/v1/maintenance", tags=["admin: maintenance"])
 
 
 @router.get("/runs")
-async def runs(job: str | None = Query(None, max_length=40), limit: int = Query(20, ge=1, le=100), ctx: AdminCtx = Depends(admin_ctx())):
+async def runs(job: str | None = Query(None, max_length=40), limit: int = Query(20, ge=1, le=100), ctx: AdminCtx = Depends(admin_ctx("owner"))):
     rows = await ctx.conn.fetch("SELECT id, job, ran_at, seconds, ok, details FROM platform.job_runs WHERE ($1::text IS NULL OR job=$1) ORDER BY ran_at DESC, id DESC LIMIT $2", job, limit)
     return [dict(r) for r in rows]
 
 
 @router.get("/retention/preview")
-async def preview(ctx: AdminCtx = Depends(admin_ctx("owner", "support", "technician", "finance"))):
+async def preview(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """How much the next clean-up would remove right now, and the shortest and longest periods in use."""
     q = lambda sql: ctx.conn.fetchval(sql)
     return {

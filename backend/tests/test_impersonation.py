@@ -32,7 +32,7 @@ async def test_view_as_customer_is_read_only_and_logged(client, make, su):
 
 async def test_only_owner_and_support_can_view_as_customer(client, make):
     t = await make.tenant()
-    for role in ("technician", "finance", "analyst"):
+    for role in ("analyst",):                                                         # a role that is no longer used can do nothing
         s = await make.staff(role)
         assert (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Checking something", "minutes": 15}, headers=s["headers"])).status_code == 403
 
