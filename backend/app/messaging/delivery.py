@@ -107,9 +107,9 @@ async def build_report_email(conn, n, c):
     fname = filename(r["report_type"], r["period_start"], r["period_end"], r["timezone"])
     label = TYPES[r["report_type"]][0]
     big = len(data) > 8_000_000
-    text = (f"Hello {c['r_name'] or ''},\n\nYour {label.lower()} is " + ("ready. It is too large to attach, so please open it in the Gate Insight app under Reports." if big else "attached.") +
-            f"\n\nFile: {fname}\n\nGate Insight")
-    return {"to": n["recipient"], "name": c["r_name"], "subject": f"[Gate Insight] {label}: {fname[:-5]}", "text": text, "html": None,
+    text = (f"Hello {c['r_name'] or ''},\n\nYour {label.lower()} is " + ("ready. It is too large to attach, so please open it in the Jas iVision app under Reports." if big else "attached.") +
+            f"\n\nFile: {fname}\n\nJas iVision")
+    return {"to": n["recipient"], "name": c["r_name"], "subject": f"[Jas iVision] {label}: {fname[:-5]}", "text": text, "html": None,
             "attachments": [] if big else [(fname, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]}, "report"
 
 
@@ -119,11 +119,11 @@ def build_email(n, c):
     if c["evidence_id"] or c["clip_id"]:
         link = evidence.link_for(c["evidence_id"] or c["clip_id"])[1]
     lines = [f"Event: {d.get('event', c['title'])}", f"Location: {d.get('location', '-')}", f"Time: {d.get('time', '-')}", f"Details: {d.get('details', '-')}"]
-    text = f"Hello {c['r_name'] or ''},\n\n" + "\n".join(lines) + (f"\n\nSee the evidence: {link}\n(the link expires in {get_settings().evidence_link_ttl_hours} hours)" if link else "") + "\n\nGate Insight"
+    text = f"Hello {c['r_name'] or ''},\n\n" + "\n".join(lines) + (f"\n\nSee the evidence: {link}\n(the link expires in {get_settings().evidence_link_ttl_hours} hours)" if link else "") + "\n\nJas iVision"
     rows = "".join(f"<p><b>{html.escape(l.split(': ')[0])}:</b> {html.escape(l.split(': ', 1)[1])}</p>" for l in lines)
     htm = f"<div style='font-family:sans-serif'><p>Hello {html.escape(c['r_name'] or '')},</p>{rows}" + \
-          (f"<p><a href='{html.escape(link)}'>See the evidence</a> (link expires in {get_settings().evidence_link_ttl_hours} hours)</p>" if link else "") + "<p>Gate Insight</p></div>"
-    return {"to": n["recipient"], "name": c["r_name"], "subject": f"[Gate Insight] {d.get('event', c['title'])}", "text": text, "html": htm}
+          (f"<p><a href='{html.escape(link)}'>See the evidence</a> (link expires in {get_settings().evidence_link_ttl_hours} hours)</p>" if link else "") + "<p>Jas iVision</p></div>"
+    return {"to": n["recipient"], "name": c["r_name"], "subject": f"[Jas iVision] {d.get('event', c['title'])}", "text": text, "html": htm}
 
 
 def backoff(attempts: int) -> int:

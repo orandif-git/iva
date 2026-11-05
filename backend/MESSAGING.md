@@ -87,9 +87,9 @@ All are category **Utility** (a transactional alert the customer asked for), lan
 to paste into your provider's form. After the provider/Meta approves each one, mark it with `PUT .../templates/{id}/status?status=approved`.
 Only approved templates are ever used; if the picture template is not approved yet the system falls back to the link one, then plain text.
 
-**1. `gi_alert_image`** — header: **Image** (sample: any picture) · button: **URL**, text `View evidence`, URL `https://app.gateinsight.in/e/{{1}}`, sample `Ab3dEf`
+**1. `gi_alert_image`** — header: **Image** (sample: any picture) · button: **URL**, text `View evidence`, URL `https://app.example.com/e/{{1}}`, sample `Ab3dEf`
 ```
-Security alert from Gate Insight.
+Security alert from Jas iVision.
 
 Event: {{1}}
 Location: {{2}}
@@ -104,7 +104,7 @@ Samples: `Blocked vehicle TN72AB1234` · `Main Gate` · `05 Nov, 10:30 AM` · `S
 
 **3. `gi_alert_text`** — no header, no button (camera/recorder offline, overstay, crowding)
 ```
-Gate Insight notice.
+Jas iVision notice.
 
 Event: {{1}}
 Location: {{2}}

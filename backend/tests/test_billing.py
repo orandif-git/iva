@@ -18,7 +18,7 @@ FULL, QUICK = 149900, 79900                             # paise per camera per m
 @pytest.fixture(autouse=True)
 async def clean(su):
     """Start each test with company details filled in and nothing overdue from an earlier test."""
-    await su.execute("""UPDATE platform.billing_settings SET legal_name='Gate Insight Technologies', address='12 Park Road, Ahmedabad', gstin='24AABCG1234F1Z5', state_code='24', sac_code='998315',
+    await su.execute("""UPDATE platform.billing_settings SET legal_name='Jas iVision Technologies', address='12 Park Road, Ahmedabad', gstin='24AABCG1234F1Z5', state_code='24', sac_code='998315',
                         bank_details='HDFC 0000 1234', invoice_prefix='GI', gst_rate_percent=18, due_days=15, auto_suspend_days=NULL""")
     await su.execute("UPDATE app.invoices SET status='void', void_reason='test cleanup' WHERE status IN ('draft','issued')")
 
@@ -197,7 +197,7 @@ async def test_an_issued_invoice_keeps_the_details_it_was_issued_with(client, ma
     r = await client.get(f"/admin/v1/billing/invoices/{inv['id']}/pdf", headers=hdr(owner))
     assert r.status_code == 200 and r.content[:4] == b"%PDF" and "attachment" in r.headers["content-disposition"]
     text = "\n".join(p.extract_text() for p in pypdf.PdfReader(io.BytesIO(r.content)).pages)
-    assert "Gate Insight Technologies" in text and "Old Name Traders" in text and "Someone Else" not in text and "New Name" not in text
+    assert "Jas iVision Technologies" in text and "Old Name Traders" in text and "Someone Else" not in text and "New Name" not in text
     row = await su.fetchrow("SELECT total_paise, cgst_paise, number FROM app.invoices WHERE id=$1", inv["id"])
     assert row["number"] in text and inr(row["total_paise"]) in text and "CGST @ 9%" in text and "SGST @ 9%" in text and "IGST" not in text and "998315" in text
 
@@ -384,7 +384,7 @@ async def test_only_owner_and_finance_can_touch_billing(client, make, su):
 
 async def test_settings_are_validated_and_the_audit_log_never_holds_bank_details(client, make, su):
     owner = await make.staff("owner")
-    base = {"legal_name": "Gate Insight Pvt Ltd", "address": "Ahmedabad", "gstin": "24AABCG1234F1Z5", "sac_code": "998315", "bank_details": "ICICI SECRET-ACCT-77", "invoice_prefix": "GIT",
+    base = {"legal_name": "Jas iVision Pvt Ltd", "address": "Ahmedabad", "gstin": "24AABCG1234F1Z5", "sac_code": "998315", "bank_details": "ICICI SECRET-ACCT-77", "invoice_prefix": "GIT",
             "gst_rate_percent": "18", "due_days": 10, "auto_suspend_days": None, "reason": "annual review"}
     assert (await client.put("/admin/v1/billing/settings", json={**base, "gstin": "NOTAGSTIN"}, headers=hdr(owner))).json()["error"]["code"] == "invalid_gstin"
     assert (await client.put("/admin/v1/billing/settings", json={**base, "gst_rate_percent": "55"}, headers=hdr(owner))).status_code == 422

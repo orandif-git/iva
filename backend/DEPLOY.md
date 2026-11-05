@@ -98,7 +98,7 @@ Create `/etc/systemd/system/gi-api.service`, `gi-registrar.service`, `gi-worker.
 
 ```ini
 [Unit]
-Description=Gate Insight API            # registrar: "... registrar"   worker: "... worker"
+Description=Jas iVision API            # registrar: "... registrar"   worker: "... worker"
 After=network-online.target postgresql.service
 Wants=network-online.target
 

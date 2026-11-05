@@ -1,5 +1,5 @@
 // Staff console: sign in (password and authenticator code), see the business at a glance, create customers, invite their people, add recorders.
-import { Api, LOGO, ago, busy, chip, clear, copyRow, copy, errText, field, fmtDateTime, fmtNum, h, icon, modal, mount, note, qs, toast } from "./lib.js";
+import { Api, BRAND, LOGO, ago, busy, chip, clear, copyRow, copy, errText, field, fmtDateTime, fmtNum, h, icon, modal, mount, note, qs, toast } from "./lib.js";
 
 const app = document.getElementById("app");
 const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => { state.me = null; signIn(); } });
@@ -23,7 +23,7 @@ function signIn() {
     try { api.setTokens(await api.call("POST", "/admin/v1/auth/login", { email: email.value, password: pw.value, code: code.value })); pw.value = code.value = ""; boot(); }
     catch (x) { err.append(note(x.message, "err")); code.value = ""; }
   }) }, field("Email", email), field("Password", pw), field("Code from your authenticator app", code, "The 6 digits shown in the app. They change every 30 seconds."), err, btn);
-  mount(app, h("div", { class: "auth" }, h("div", { class: "box" }, h("div", { class: "brand" }, h("i", {}, icon(LOGO)), "Gate Insight staff"), h("div", { class: "card" }, h("h1", {}, "Staff sign in"), form))));
+  mount(app, h("div", { class: "auth" }, h("div", { class: "box" }, h("div", { class: "brand" }, h("i", {}, icon(LOGO)), `${BRAND.name} staff`), h("p", { class: "tagline" }, BRAND.tagline), h("div", { class: "card" }, h("h1", {}, "Staff sign in"), form))));
 }
 
 // ------------------------------------------------------------------------------------------------ shell and routes

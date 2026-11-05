@@ -1,5 +1,5 @@
 // Customer app: sign in, connect a recorder, set up cameras and counting lines, see footfall and number plates.
-import { Api, ApiError, LOGO, ago, barChart, busy, chip, clear, copyRow, errText, field, fmtDateTime, fmtNum, h, icon, istDay, modal, mount, note, qs, toast } from "./lib.js";
+import { Api, ApiError, BRAND, LOGO, ago, barChart, busy, chip, clear, copyRow, errText, field, fmtDateTime, fmtNum, h, icon, istDay, modal, mount, note, qs, toast } from "./lib.js";
 
 const app = document.getElementById("app");
 const api = new Api({ refreshUrl: "/v1/auth/refresh", key: "gi_rt", onSignedOut: () => { state.me = null; signIn(); } });
@@ -11,7 +11,7 @@ const LINK = { online: ["Online", "ok"], offline: ["Offline", "crit"], never: ["
 // ------------------------------------------------------------------------------------------------ sign-in
 function authShell(title, ...body) {
   mount(app, h("div", { class: "auth" }, h("div", { class: "box" },
-    h("div", { class: "brand" }, h("i", {}, icon(LOGO)), "Gate Insight"),
+    h("div", { class: "brand" }, h("i", {}, icon(LOGO)), BRAND.name), h("p", { class: "tagline" }, BRAND.tagline),
     h("div", { class: "card" }, h("h1", {}, title), h("div", { class: "stack" }, body)))));
 }
 
@@ -37,7 +37,7 @@ function signIn(message) {
     }
   }) }, field("Email", email), field("Password", pw), orgField, err, btn);
   authShell("Sign in", message ? note(message, "ok") : null, form,
-    h("p", { class: "hint" }, "Forgotten your password? Ask your administrator or Gate Insight support for a new link."));
+    h("p", { class: "hint" }, "Forgotten your password? Ask your administrator or Jas\u00a0iVision support for a new link."));
 }
 
 function setPasswordPage() {
@@ -66,7 +66,7 @@ const NAV = [["#/", "Overview"], ["#/cameras", "Cameras"], ["#/recorders", "Reco
 function shell() {
   const main = h("main", { class: "main", id: "main" });
   mount(app, h("div", { class: "shell" },
-    h("aside", { class: "side" }, h("div", { class: "brand" }, h("i", {}, icon(LOGO)), "Gate Insight"), h("div", { class: "org" }, state.me.tenant.name),
+    h("aside", { class: "side" }, h("div", { class: "brand" }, h("i", {}, icon(LOGO)), BRAND.name), h("div", { class: "org" }, state.me.tenant.name),
       h("nav", { class: "nav", "aria-label": "Main" }, NAV.map(([href, label]) => h("a", { href }, label)))), main));
   return main;
 }

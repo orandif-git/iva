@@ -142,6 +142,7 @@ export function istDay(offsetDays = 0) {
 export function icon(path) {
   return h("svg:svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, h("svg:path", { d: path }));
 }
+export const BRAND = { name: "Jas iVision", tagline: "Intelligent Vision. Automated Insights." };
 export const LOGO = "M3 7l9-4 9 4v10l-9 4-9-4z M12 3v18";
 
 /** Grouped bar chart as SVG. series: [{name, color, values[]}], labels: x labels. */

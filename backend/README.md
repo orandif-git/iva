@@ -1,4 +1,4 @@
-# Gate Insight backend (FastAPI)
+# Jas iVision backend (FastAPI)
 
 First slice: platform admin (tenants, recorders, view-as-customer, audit), customer onboarding (recorders, cameras, zones),
 and the internal routes the recorder registrar calls. See `../API.md` for the full route plan and `../schema.sql` for the database.

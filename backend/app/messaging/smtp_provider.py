@@ -45,7 +45,7 @@ async def send(cfg: dict, secrets: dict, msg: dict, *, allow_private: bool = Fal
     except netguard.BlockedAddress as e:
         return Result(False, permanent=True, error=str(e))
     m = EmailMessage()
-    m["From"] = formataddr((cfg.get("from_name", "Gate Insight"), cfg["from_email"]))
+    m["From"] = formataddr((cfg.get("from_name", "Jas iVision"), cfg["from_email"]))
     m["To"] = formataddr((msg.get("name") or "", msg["to"]))
     m["Subject"] = msg["subject"].replace("\r", " ").replace("\n", " ")[:200]
     mid = make_msgid(domain=cfg["from_email"].split("@")[-1])

@@ -169,9 +169,9 @@ async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_c
     sample_vars = ["Blocked vehicle TN72AB1234", "Main Gate", "05 Nov, 10:30 AM", "Seen entering"]
     if p["kind"] == "smtp":
         if not body.send:
-            return {"preview": {"to": body.to, "subject": "[Gate Insight] Test message", "from": p["config"].get("from_email")}}
-        res = await smtp_provider.send(p["config"], secrets, {"to": body.to, "name": "Test", "subject": "[Gate Insight] Test message",
-                                                              "text": "This is a test message from Gate Insight.", "html": None},
+            return {"preview": {"to": body.to, "subject": "[Jas iVision] Test message", "from": p["config"].get("from_email")}}
+        res = await smtp_provider.send(p["config"], secrets, {"to": body.to, "name": "Test", "subject": "[Jas iVision] Test message",
+                                                              "text": "This is a test message from Jas iVision.", "html": None},
                                        allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
     else:
         tpl = None
@@ -240,7 +240,7 @@ async def create_template(body: TemplateIn, ctx: AdminCtx = Depends(admin_ctx("o
 
 @router.post("/templates/install-defaults")
 async def install_defaults(ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Adds Gate Insight's standard templates as drafts. Templates that already exist are left alone."""
+    """Adds Jas iVision's standard templates as drafts. Templates that already exist are left alone."""
     added = []
     for t in DEFAULT_TEMPLATES:
         r = await ctx.conn.fetchval(

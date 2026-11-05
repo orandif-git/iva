@@ -67,7 +67,7 @@ def _ranged(data: bytes, request: Request, content_type: str) -> Response:
 async def view_evidence(token: str):
     row, problem = await _load(token)
     if problem:
-        return _page("Link expired", "<div class='card'><h1>This link has expired</h1><p>For security, evidence links only work for a few days. Please open the Gate Insight app.</p></div>", 410)
+        return _page("Link expired", "<div class='card'><h1>This link has expired</h1><p>For security, evidence links only work for a few days. Please open the Jas iVision app.</p></div>", 410)
     from zoneinfo import ZoneInfo
     when = row["created_at"].astimezone(ZoneInfo(row["timezone"])).strftime("%d %b %Y, %I:%M %p")
     t = html.escape(token)
@@ -80,7 +80,7 @@ async def view_evidence(token: str):
     else:
         media = f"<img src='/e/{t}/image.jpg' alt='Evidence picture'>" if has_image else "<p>The video is still being prepared. Please try again in a minute.</p>"
     body = (f"<div class='card'><h1>{html.escape(row['title'] or 'Alert')}</h1><p>{html.escape(row['camera'] or '')} · {html.escape(when)}</p>"
-            f"<p>{html.escape(row['body'] or '')}</p><br>{media}<p><small>{html.escape(row['company'])} · Gate Insight</small></p></div>")
+            f"<p>{html.escape(row['body'] or '')}</p><br>{media}<p><small>{html.escape(row['company'])} · Jas iVision</small></p></div>")
     return _page("Evidence", body)
 
 

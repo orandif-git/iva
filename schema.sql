@@ -1,4 +1,4 @@
--- Gate Insight: PostgreSQL 16 schema (multi-tenant, shared database, row-level security)
+-- Jas iVision: PostgreSQL 16 schema (multi-tenant, shared database, row-level security)
 -- Two schemas:
 --   platform : things only you (the platform owner) manage: staff, partners, plans, audit log
 --   app      : everything that belongs to a customer (tenant). Every table carries tenant_id and is protected by RLS.

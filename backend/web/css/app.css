@@ -1,4 +1,4 @@
-/* Gate Insight web pages: shared by the customer app and the staff console. No external fonts or scripts. */
+/* Jas iVision web pages: shared by the customer app and the staff console. No external fonts or scripts. */
 :root{
   --bg:#F2F4F1; --surface:#FFFFFF; --surface2:#F7F9F7; --ink:#14201E; --muted:#5C6B68; --line:#DAE1DD;
   --accent:#0F766E; --accent-ink:#FFFFFF; --accent-soft:#DDF1EE;
@@ -135,3 +135,5 @@ a.btn{text-decoration:none}
 .after{margin-top:14px}
 .row+.row{margin-top:8px}
 .noscript{padding:16px}
+.tagline{text-align:center;color:var(--muted);font-size:13px;margin:-10px 0 16px}
+.card>h1{margin-bottom:12px}

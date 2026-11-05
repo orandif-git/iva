@@ -98,7 +98,7 @@ async def world(client, make, su, bsp_server, smtp_server):
                           "status_path": "state", "error_path": "why", "status_map": {"DELIVERED": "delivered", "READ": "read", "FAILED": "failed", "SENT": "sent"}}}
     r = await su.fetchval("SELECT 1")
     wa = await _provider(su, h, "whatsapp", "BSP", "http", recipe, {"api_key": "SECRET-API-KEY-1", "hook": HOOK}, client)
-    em = await _provider(su, h, "email", "Mail", "smtp", {"host": "127.0.0.1", "port": smtp_port, "security": "none", "from_email": "alerts@gi.test", "from_name": "Gate Insight"},
+    em = await _provider(su, h, "email", "Mail", "smtp", {"host": "127.0.0.1", "port": smtp_port, "security": "none", "from_email": "alerts@gi.test", "from_name": "Jas iVision"},
                          {}, client)
     inst = await client.post("/admin/v1/messaging/templates/install-defaults", headers=h)
     assert inst.status_code == 200, inst.text
@@ -418,7 +418,7 @@ async def test_a_permanent_whatsapp_failure_falls_back_to_email(client, make, su
     await delivery.run_once()
     assert (await su.fetchval("SELECT status::text FROM app.notifications WHERE id=$1", rows["email"]["id"])) == "sent"
     m = world["smtp"].messages[-1]
-    assert m.rcpt_tos == ["ravi@x.test"] and b"Blocked vehicle TN72AB1234" in m.content and b"Subject: [Gate Insight] Blocked vehicle" in m.content
+    assert m.rcpt_tos == ["ravi@x.test"] and b"Blocked vehicle TN72AB1234" in m.content and b"Subject: [Jas iVision] Blocked vehicle" in m.content
 
 
 async def test_whatsapp_and_email_both_requested_send_both(client, make, su, world):

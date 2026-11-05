@@ -142,7 +142,7 @@ async def test_message(rid: UUID, channel: Channel = Query(...), ctx: CustomerCt
         raise ApiError(429, "test_limit", "Three tests a day per person is the limit. Try again tomorrow.")
     tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_email, msg_monthly_cap FROM app.tenants WHERE id=$1", ctx.tenant_id)
     from zoneinfo import ZoneInfo
-    payload = {"event": "Test message", "location": "Setup", "time": datetime.now(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"), "details": "This is a test from Gate Insight."}
+    payload = {"event": "Test message", "location": "Setup", "time": datetime.now(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"), "details": "This is a test from Jas iVision."}
     alert_id = await ctx.conn.fetchval("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, details) VALUES ($1,'test','info','Test message','Sent from your settings',$2) RETURNING id",
                                        ctx.tenant_id, payload)
     n = await fan_out(ctx.conn, ctx.tenant_id, tenant, alert_id, [channel], [rid], payload)

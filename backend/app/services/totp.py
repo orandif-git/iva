@@ -33,5 +33,5 @@ def verify(secret: str, code: str, last_step: int = 0, now: float | None = None)
     return None
 
 
-def uri(secret: str, account: str, issuer: str = "Gate Insight") -> str:
+def uri(secret: str, account: str, issuer: str = "Jas iVision") -> str:
     return f"otpauth://totp/{quote(issuer)}:{quote(account)}?secret={secret}&issuer={quote(issuer)}&digits=6&period={STEP}"
