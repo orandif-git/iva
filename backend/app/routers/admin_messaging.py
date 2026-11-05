@@ -183,7 +183,7 @@ async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_c
         msg = {"recipient": {"phone": phone, "name": "Test", "email": body.to}, "template": {"name": tpl["provider_template"] if tpl else "hello_world", "language": tpl["language"] if tpl else "en"},
                "vars": sample_vars[:len(tpl["variables"])] if tpl else [], "media_type": tpl["media_type"] if tpl else None,
                "media_url": body.media_url if tpl and tpl["media_type"] in ("image", "video") else None,
-               "link_url": "https://example.com/e/sample", "link_token": "sample" if tpl and tpl["link_button"] else None, "message_id": "test",
+               "link_url": f"{s.public_base_url.rstrip('/')}/e/sample", "link_token": "sample" if tpl and tpl["link_button"] else None, "message_id": "test",
                "alert": {"title": sample_vars[0], "body": sample_vars[3], "camera": sample_vars[1], "time": sample_vars[2]}}
         if not body.send:
             return {"preview": await http_provider.send(p["config"], secrets, msg, dry_run=True)}
@@ -261,7 +261,7 @@ async def submission_sheet(tid: UUID, ctx: AdminCtx = Depends(admin_ctx("owner",
         raise ApiError(404, "template_not_found", "Template not found.")
     d = next((x for x in DEFAULT_TEMPLATES if x["key"] == t["key"]), {})
     return {"name": t["provider_template"], "language": t["language"], "category": t["category"].upper(), "header": None if t["media_type"] == "none" else t["media_type"].upper(),
-            "body": t["body_text"], "samples": d.get("samples", []), "button": ({"type": "URL", "text": d.get("button_text", "View evidence"), "url": d.get("button_url", "https://example.com/e/{{1}}"),
+            "body": t["body_text"], "samples": d.get("samples", []), "button": ({"type": "URL", "text": d.get("button_text", "View evidence"), "url": d.get("button_url", "{base}/e/{{1}}").replace("{base}", get_settings().public_base_url.rstrip("/")),
                                                                                   "sample": "Ab3dEf"} if t["link_button"] else None)}
 
 
