@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
@@ -23,6 +23,8 @@ logging.basicConfig(level=logging.INFO)
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 _DOCS = ("/docs", "/openapi.json")
+# A request that came through a proxy (the website's front door) carries one of these headers; our own services call the API directly and do not.
+_PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")
 
 
 @asynccontextmanager
@@ -50,6 +52,10 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     async def request_id(request: Request, call_next):
         rid = request.headers.get("x-request-id", "")[:64] or uuid.uuid4().hex
         request.state.request_id = rid
+        if request.url.path.startswith("/internal/") and any(h in request.headers for h in _PROXIED):
+            # The /internal routes are for the registrar, gateway and workers on this server. Anything that arrives through the public web
+            # address is refused here as well, whatever the web server's settings are (the service token would still be needed).
+            return JSONResponse({"error": {"code": "not_found", "message": "Not Found", "request_id": rid}}, status_code=404, headers={"X-Request-ID": rid})
         response = await call_next(request)
         response.headers["X-Request-ID"] = rid
         response.headers.setdefault("X-Content-Type-Options", "nosniff")

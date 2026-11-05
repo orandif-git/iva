@@ -315,3 +315,19 @@ def test_no_real_looking_address_is_written_into_the_code():
         text = f.read_text()
         import re
         assert not re.search(r"jasinfo|gateinsight\.in\b|app\.example\.com", text), f.name
+
+
+# ------------------------------------------------------------------------------------------ the public address never reaches the internal routes
+@pytest.mark.parametrize("header", ["X-Forwarded-For", "X-Real-IP", "Forwarded", "X-Forwarded-Host"])
+async def test_internal_routes_refuse_anything_that_came_through_the_public_address(client, make, header):
+    r = await client.get("/internal/v1/workers/cameras", headers={**make.service(), header: "203.0.113.5"})
+    assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"          # even with the right service token
+    assert (await client.get("/internal/v1/workers/cameras", headers=make.service())).status_code == 200      # our own services call directly and still work
+    assert (await client.get("/internal/v1/workers/cameras", headers={"X-Forwarded-For": "203.0.113.5"})).status_code == 404   # and without a token it does not even say 401
+
+
+async def test_public_routes_still_work_through_the_proxy(client, make):
+    u = await make.user(await make.tenant())
+    r = await client.get("/v1/me", headers={**u["headers"], "X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
+    assert r.status_code == 200
+    assert (await client.get("/", headers={"X-Forwarded-For": "203.0.113.5"})).status_code == 200
