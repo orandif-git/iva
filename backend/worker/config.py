@@ -8,6 +8,7 @@ class WorkerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="GI_WORKER_", env_file=".env", extra="ignore")
 
     backend_url: str = "http://127.0.0.1:8000"
+    dahua_url: str = "http://127.0.0.1:8082"         # the Dahua gateway's video relay, for Dahua recorders that use Auto Register
     relay_url: str = "http://127.0.0.1:8081"        # the registrar's video relay, for cameras whose recorder registered with us
     service_token: str = ""
     model_dir: Path = Path.home() / ".cache" / "gateinsight" / "models"

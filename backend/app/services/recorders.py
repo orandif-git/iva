@@ -36,9 +36,13 @@ def registrar_endpoint(protocol: str) -> tuple[str, int]:
 
 
 def extras(protocol: str) -> dict:
+    s = get_settings()
+    if protocol == "auto_register":
+        # What the customer types on a Dahua recorder besides the address: the Sub-Device ID is the device id, and the
+        # viewer-only user's password is the key shown here.
+        return {"viewer_user": s.dahua_viewer_user}
     if protocol != "gb28181":
         return {}
-    s = get_settings()
     return {"server_id": s.gb_server_id, "domain": s.gb_realm}
 
 

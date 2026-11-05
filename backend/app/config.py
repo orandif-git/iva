@@ -21,11 +21,12 @@ class Settings(BaseSettings):
 
     registrar_host: str = "connect.gateinsight.in"
     isup_port: int = 7660
-    auto_register_port: int = 9500
+    auto_register_port: int = 7000
     # GB28181 (SIP) settings handed to customers. The registrar must be configured with the same realm and server id.
     gb_realm: str = "3402000000"            # 10 digits: the SIP domain
     gb_server_id: str = "34020000002000000001"   # 20 digits: this server's SIP id
     gb_port: int = 5060
+    dahua_viewer_user: str = "giview"      # the viewer-only user a customer creates on a Dahua recorder (the gateway signs in as this user)
     heartbeat_timeout_seconds: int = 90
     sweep_interval_seconds: int = 30
     cors_origins: list[str] = []

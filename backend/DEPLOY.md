@@ -140,7 +140,7 @@ There is **no sign-in screen or login API yet** (see the last section). For the 
 
 ## 8. Register the recorder (the real test)
 
-1. [ ] Ask for credentials. **Dahua defaults to a protocol we have not built, so you must say `gb28181`:**
+1. [ ] Ask for credentials. **For Dahua, section 10b (Auto Register) is the main route; say `gb28181` only to use this GB28181 route:**
    ```bash
    curl -s -X POST http://localhost:8000/v1/recorders \
      -H "Authorization: Bearer <customer admin token>" -H "Content-Type: application/json" \
@@ -149,7 +149,7 @@ There is **no sign-in screen or login API yet** (see the last section). For the 
    The answer is shown **once**: `server`, `port`, `server_id`, `domain`, `device_id` (20 digits), `key`. Copy it now.
 2. [ ] On the recorder, open the menu that points it at a server. Look under **Network** (or Network → Advanced / Platform Access) for **GB28181**.
    The name differs by model and firmware. **If there is no GB28181 page, stop here** and tell me what the Network menu does list (a photo helps).
-   A page called only "Auto Register" is Dahua's own protocol, which is **not** built.
+   A page called only "Auto Register" is Dahua's own protocol: use section 10b.
 3. [ ] Enter:
 
    | Recorder field | Value |
@@ -215,6 +215,33 @@ sudo -u postgres psql -d gateinsight -f /www/wwwroot/iva/backend/migrations/001_
 ```
 Then `git pull` and `systemctl restart gi-api`.
 
+## 10b. Dahua "Auto Register" (the main route for Dahua recorders)
+
+The recorder connects OUT to our server, so the customer needs no VPN and no port forwarding. A separate service, the **Dahua gateway**
+(`python -m dahua`), accepts these connections. It uses Dahua's own NetSDK, which is **not in this repository**: you download it from Dahua
+(Python package for Linux 64-bit), accept Dahua's licence, and install the `.whl` into the venv. Check the licence allows hosted use for your customers.
+
+1. [ ] Install the wrapper into the service venv, then check it loads **from a folder that is not the wrapper's own**:
+   ```bash
+   /opt/gateinsight/backend/.venv/bin/pip install /root/sdk/whl/NetSDK-*.whl      # path to the .whl you downloaded
+   cd /tmp && /opt/gateinsight/backend/.venv/bin/python -c "from NetSDK.NetSDK import NetClient; print('ok')"
+   ```
+   (A line `动态库加载失败` at start-up has been seen on a working setup: it is Dahua's library telling us one optional part did not load.)
+2. [ ] Open the port: `sudo ufw allow 7000/tcp`. Add to `.env`: `GI_DH_SERVICE_TOKEN` (the same value as `GI_REG_SERVICE_TOKEN`) and, if the API is not on 127.0.0.1:8000, `GI_DH_BACKEND_URL`. Add `GI_WORKER_DAHUA_URL=http://127.0.0.1:8082` for the worker if it runs elsewhere.
+3. [ ] `/etc/systemd/system/gi-dahua.service`: same as the registrar's, with `ExecStart=/opt/gateinsight/backend/.venv/bin/python -m dahua`. `sudo systemctl enable --now gi-dahua`, then `journalctl -u gi-dahua -f` shows `dahua gateway listening`.
+4. [ ] Create the recorder **without** saying gb28181 (a Dahua recorder defaults to Auto Register): `POST /v1/recorders` with `{"brand":"dahua"}`. The answer gives `server`, `port` (7000), `device_id`, `key` and `viewer_user`.
+5. [ ] On the Dahua recorder:
+   - Network → Register: Enable, Server Address = the VPS public IP, Port = 7000, **Sub-Device ID = the `device_id`** (not `0`).
+   - Account (user management): add a user named `viewer_user` (default `giview`), password = the `key`, **viewer-only permissions** (live view only), never the admin account.
+6. [ ] `journalctl -u gi-dahua -f` shows `recorder <device_id> online from <ip> with N channels`. Status and channels then appear through the API exactly as for GB28181.
+7. [ ] Create cameras and start the worker as in section 8. A camera's `stream` setting picks the main stream (full resolution: use this for number plates) or the sub stream (light: enough for counting people).
+
+Things to know:
+- The recorder is recognised by the Sub-Device ID **and** the key: a wrong key never gets in. After a refused sign-in the gateway ignores that recorder for 30 s, doubling to 15 min, so a mistyped password does not lock the viewer account.
+- If the ID on the recorder is left at `0` the gateway ignores the registration and logs `registration from <ip> with an id we do not serve`. Fix the Sub-Device ID.
+- If the Dahua page refuses the key as a password (some firmware wants a mix of letters and digits), rotate the key (`rotate-key`) until it is accepted.
+- Video is Dahua's own container (DHAV, H.265 or H.264). The worker reads it with FFmpeg's `-f dhav`.
+
 ## 11. After the test
 
 - [ ] Rotate or delete the test recorder key; revoke the seed tokens by changing `GI_JWT_SECRET_*` and restarting.
@@ -230,4 +257,4 @@ These are gaps in the product itself, not in this checklist:
 4. **HTTPS and hardening:** the API is plain HTTP on localhost here. Before any customer: nginx with a real certificate, `GI_ENV=production`, CORS set, rate limiting at nginx, automatic OS updates, off-server backups of the database and of `GI_KEY_ENCRYPTION_KEY`.
 5. **Monitoring:** nothing alerts you if the registrar or worker dies (systemd restarts them, but you are not told).
 6. **Invoicing** is built but paused: not reviewed for GST rules, no screens.
-7. **Hikvision ISUP and Dahua Auto Register** are not built; GB28181 is the only recorder protocol that works.
+7. **Hikvision ISUP** is not built. Dahua Auto Register is built (section 10b) but tested only with one NVR model; GB28181 and RTSP also work.

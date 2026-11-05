@@ -302,12 +302,12 @@ class StreamManager:
         if sum(1 for k in live if k[0] == device_id) >= self.cfg.relay_max_streams_per_device:
             raise RelayError("too_many_streams", 429, "That recorder is already serving as many live streams as it may.")
 
-    def preflight(self, device_id: str, channel_no: int) -> None:
+    def preflight(self, device_id: str, channel_no: int, stream: str | None = None) -> None:       # `stream` (main/sub) is not used by GB28181
         self.check(device_id, channel_no)
         self._check_limits(device_id, (device_id, channel_no))
 
     # --------------------------------------------------------------- acquiring
-    async def acquire(self, device_id: str, channel_no: int, *, subscriber: bool = False, hold: bool = False):
+    async def acquire(self, device_id: str, channel_no: int, stream: str | None = None, *, subscriber: bool = False, hold: bool = False):
         """Returns (stream, subscriber or None). Starts the stream if it is not running."""
         s, ch = self.check(device_id, channel_no)
         key = (device_id, channel_no)
@@ -371,13 +371,15 @@ def build_app(mgr: StreamManager, service_token: str, base_url) -> Starlette:
         try:
             body = await request.json()
             device_id, channel_no = body["device_id"], body["channel_no"]
-            if not (isinstance(device_id, str) and 0 < len(device_id) <= 64 and isinstance(channel_no, int) and not isinstance(channel_no, bool) and 1 <= channel_no <= 256):
+            stream = body.get("stream")
+            if not (isinstance(device_id, str) and 0 < len(device_id) <= 64 and isinstance(channel_no, int) and not isinstance(channel_no, bool) and 1 <= channel_no <= 256
+                    and stream in (None, "main", "sub")):
                 raise ValueError
         except (ValueError, KeyError, TypeError):
-            return _error(RelayError("validation_error", 422, "Send device_id (text) and channel_no (1 to 256)."))
+            return _error(RelayError("validation_error", 422, "Send device_id (text), channel_no (1 to 256) and optionally stream (main or sub)."))
         try:
-            mgr.preflight(device_id, channel_no)
-            token = mgr.tokens.issue((device_id, channel_no))
+            mgr.preflight(device_id, channel_no, stream)
+            token = mgr.tokens.issue((device_id, channel_no, stream))
         except RelayError as e:
             return _error(e)
         return JSONResponse({"url": f"{base_url()}/relay/v1/play/{token}", "expires_in": mgr.cfg.relay_token_ttl}, status_code=201)
@@ -387,7 +389,7 @@ def build_app(mgr: StreamManager, service_token: str, base_url) -> Starlette:
         if key is None:
             return _error(RelayError("link_invalid", 404, "This play link is not valid, or has been used or expired."))
         try:
-            st, sub = await mgr.acquire(key[0], key[1], subscriber=True)
+            st, sub = await mgr.acquire(key[0], key[1], key[2], subscriber=True)
         except RelayError as e:
             return _error(e)
 
@@ -398,7 +400,7 @@ def build_app(mgr: StreamManager, service_token: str, base_url) -> Starlette:
             finally:
                 mgr.release(st, sub)                          # safe to repeat; also runs if the viewer disconnects
 
-        return StreamingResponse(body(), media_type="video/mp2p", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        return StreamingResponse(body(), media_type=getattr(mgr, "media_type", "video/mp2p"), headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
                                  background=BackgroundTask(mgr.release, st, sub))
 
     async def listing(request):

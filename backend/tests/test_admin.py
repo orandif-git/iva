@@ -77,7 +77,7 @@ async def test_admin_register_recorder_and_rotate_are_audited(client, make):
     t = await make.tenant()
     assert (await client.post("/admin/v1/recorders", json={"tenant_id": str(t), "brand": "dahua"}, headers=support["headers"])).status_code == 403
     cred = (await client.post("/admin/v1/recorders", json={"tenant_id": str(t), "brand": "dahua"}, headers=tech["headers"])).json()
-    assert cred["port"] == 9500
+    assert cred["port"] == 7000 and cred["viewer_user"] == "giview"
     assert (await client.post(f"/admin/v1/recorders/{cred['recorder_id']}/rotate-key", json={"reason": "x"}, headers=tech["headers"])).status_code == 422
     assert (await client.post(f"/admin/v1/recorders/{cred['recorder_id']}/rotate-key", json={"reason": "Technician left"}, headers=tech["headers"])).status_code == 200
     owner = await make.staff("owner")

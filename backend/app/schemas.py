@@ -121,6 +121,7 @@ class RecorderCredentials(BaseModel):
     key: str
     server_id: str | None = None            # GB28181 only: the SIP server id the recorder must be given
     domain: str | None = None               # GB28181 only: the SIP domain (realm)
+    viewer_user: str | None = None          # Dahua Auto Register only: the viewer-only user to create on the recorder (its password is the key)
 
 
 class RecorderStatus(BaseModel):

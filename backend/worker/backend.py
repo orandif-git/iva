@@ -53,7 +53,9 @@ class WorkerBackend:
         if r.status_code != 200:
             return None
         j = r.json()
-        return RelaySource(j["device_id"], j["channel_no"]) if j.get("kind") == "gb28181" else j["url"]
+        if j.get("kind") in ("gb28181", "auto_register"):
+            return RelaySource(j["device_id"], j["channel_no"], j["kind"], j.get("stream"))
+        return j["url"]
 
     async def status(self, state: str, analysis_fps: float | None, error: str | None, dropped: int | None = None) -> bool | None:
         """Report health. Returns whether the worker should keep going, or None if the report could not be delivered."""

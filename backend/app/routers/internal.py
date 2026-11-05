@@ -93,7 +93,7 @@ async def worker_cameras(shard: int = Query(0, ge=0), of: int = Query(1, ge=1, l
     rows = await ctx.conn.fetch(
         """SELECT c.id FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
            WHERE c.enabled AND (c.use_footfall OR c.use_anpr) AND t.status::text NOT IN ('suspended','cancelled')
-             AND (c.source_ciphertext IS NOT NULL OR r.protocol::text = 'gb28181')
+             AND (c.source_ciphertext IS NOT NULL OR r.protocol::text IN ('gb28181','auto_register'))
              AND abs(hashtext(c.id::text)::bigint) % $2 = $1 ORDER BY c.id""", shard, of)
     return {"cameras": [str(r["id"]) for r in rows]}
 
@@ -121,9 +121,10 @@ async def camera_source(camera_id: UUID, response: Response, ctx: ServiceCtx = D
     """Where the worker gets this camera's video from. Never log the response.
       {"kind": "rtsp", "url": ...}                              an RTSP address an administrator set (it holds the camera password)
       {"kind": "gb28181", "device_id": ..., "channel_no": ...}   a recorder that registered with us: ask the video relay for it
+      {"kind": "auto_register", "device_id": ..., "channel_no": ..., "stream": "main"|"sub"}   a Dahua recorder: ask the Dahua gateway for it
     An address set by an administrator wins, so a technician can point one camera at a VPN address while the rest use the relay."""
     c = await ctx.conn.fetchrow(
-        """SELECT c.source_ciphertext, c.enabled, c.channel_no, r.device_id, r.protocol::text AS protocol, t.status::text AS tenant_status
+        """SELECT c.source_ciphertext, c.enabled, c.channel_no, c.stream, r.device_id, r.protocol::text AS protocol, t.status::text AS tenant_status
            FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", camera_id)
     if not c:
         raise ApiError(404, "unknown_camera", "No such camera.")
@@ -138,6 +139,8 @@ async def camera_source(camera_id: UUID, response: Response, ctx: ServiceCtx = D
             raise ApiError(500, "source_unreadable", "The stored address failed its integrity check. Set it again.")
     if c["protocol"] == "gb28181":
         return {"kind": "gb28181", "device_id": c["device_id"], "channel_no": c["channel_no"]}
+    if c["protocol"] == "auto_register":                  # a Dahua recorder connected to our Dahua gateway; it can serve the main or the sub stream
+        return {"kind": "auto_register", "device_id": c["device_id"], "channel_no": c["channel_no"], "stream": c["stream"]}
     raise ApiError(404, "no_source", "No stream address is set for this camera.")
 
 

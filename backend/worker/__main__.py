@@ -90,7 +90,7 @@ async def run_live_cmd(a, settings: WorkerSettings) -> int:
     from .backend import WorkerBackend
     from .detector import YoloxDetector
     from .live import make_stream_reader, mask_url
-    from .relay import RelayClient, RelaySource, make_relay_reader
+    from .relay import RelayClient, Relays, RelaySource, make_relay_reader
     from .runner import LiveSettings, run_live
 
     model = settings.model_dir / f"{settings.detector_model}.onnx"
@@ -99,7 +99,7 @@ async def run_live_cmd(a, settings: WorkerSettings) -> int:
         return 2
     client = httpx.AsyncClient(base_url=settings.backend_url, timeout=10)
     backend = WorkerBackend(client, settings.service_token, a.camera_id)
-    relay = RelayClient(settings.relay_url, settings.service_token)
+    relay = Relays(RelayClient(settings.relay_url, settings.service_token), RelayClient(settings.dahua_url, settings.service_token))
     url = a.rtsp_url or os.environ.get("GI_WORKER_RTSP_URL")
 
     def reader_factory(source, w, h, fps):
@@ -140,7 +140,7 @@ async def run_many_cmd(a, settings: WorkerSettings) -> int:
     from .detector import YoloxDetector
     from .live import make_stream_reader
     from .multi import Fleet
-    from .relay import RelayClient, RelaySource, make_relay_reader
+    from .relay import RelayClient, Relays, RelaySource, make_relay_reader
     from .runner import LiveSettings, run_live
 
     model = settings.model_dir / f"{settings.detector_model}.onnx"
@@ -148,7 +148,7 @@ async def run_many_cmd(a, settings: WorkerSettings) -> int:
         print(f"Model not found: {model}\nRun:  python -m scripts.fetch_models", file=sys.stderr)
         return 2
     client = httpx.AsyncClient(base_url=settings.backend_url, timeout=10)
-    relay = RelayClient(settings.relay_url, settings.service_token)
+    relay = Relays(RelayClient(settings.relay_url, settings.service_token), RelayClient(settings.dahua_url, settings.service_token))
     sink = BackendSink(client, settings.service_token)
     detector = YoloxDetector(model, threads=settings.threads)
     plates: dict = {}
