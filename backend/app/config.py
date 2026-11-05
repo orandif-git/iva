@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     messaging_allow_private_hosts: bool = False         # tests only: lets an integration call a local server
     delivery_poll_seconds: float = 2.0
     rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
+    ffmpeg_path: str = "ffmpeg"                          # used to take one picture from a camera for the "draw your counting line" screen
+    dahua_relay_url: str = "http://127.0.0.1:8082"       # the Dahua gateway's video relay
+    gb_relay_url: str = "http://127.0.0.1:8081"          # the registrar's video relay
+    web_dir: str = ""                                    # folder of the web pages; default: backend/web next to this package
     ffprobe_path: str = "ffprobe"                       # used to check an RTSP address before a camera is created from it
     delivery_batch: int = 20
     evidence_backend: str = "local"                     # local (development) or r2 (Cloudflare R2)

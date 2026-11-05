@@ -1,10 +1,13 @@
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from cryptography.exceptions import InvalidTag
+from fastapi import APIRouter, Depends, Response
 
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
+from ..crypto import vault
+from ..services import snapshot
 from ..schemas import CameraCreate, CameraOut, CameraPatch, ZoneOut, ZonesPut
 
 router = APIRouter(prefix="/v1", tags=["customer: cameras"])
@@ -39,9 +42,9 @@ async def add_camera(body: CameraCreate, ctx: CustomerCtx = Depends(customer_ctx
     try:
         async with ctx.conn.transaction():
             row = await ctx.conn.fetchrow(
-                f"""INSERT INTO app.cameras AS c (tenant_id, recorder_id, channel_no, name, use_footfall, use_anpr)
-                    VALUES ($1,$2,$3,$4,$5,$6) RETURNING {CAM_COLS}""",
-                ctx.tenant_id, body.recorder_id, body.channel_no, body.name, body.use_footfall, body.use_anpr)
+                f"""INSERT INTO app.cameras AS c (tenant_id, recorder_id, channel_no, name, use_footfall, use_anpr, stream)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING {CAM_COLS}""",
+                ctx.tenant_id, body.recorder_id, body.channel_no, body.name, body.use_footfall, body.use_anpr, body.stream or ("main" if body.use_anpr else "sub"))
     except asyncpg.UniqueViolationError:
         raise ApiError(409, "camera_exists", "This channel is already set up as a camera.")
     await ctx.audit("camera.create", "camera", row["id"], {"name": body.name, "footfall": body.use_footfall, "anpr": body.use_anpr})
@@ -59,6 +62,8 @@ async def _camera(ctx: CustomerCtx, camera_id: UUID):
 async def patch_camera(camera_id: UUID, body: CameraPatch, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
     cur = await _camera(ctx, camera_id)
     ch = body.model_dump(exclude_unset=True)
+    if ch.get("stream") is None:
+        ch.pop("stream", None)
     if not ch:
         raise ApiError(422, "nothing_to_change", "Send at least one field to change.")
     merged = {**dict(cur), **ch}
@@ -108,3 +113,20 @@ async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx = Depends(
             ctx.tenant_id, camera_id, z.kind, z.points, z.in_direction)
     await ctx.audit("zones.update", "camera", camera_id, {"kinds": kinds})
     return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 ORDER BY kind", camera_id)]
+
+
+@router.get("/cameras/{camera_id}/snapshot")
+async def camera_snapshot(camera_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
+    """A current still picture (JPEG), so the customer can see the view while drawing the counting line or plate zone."""
+    await _camera(ctx, camera_id)
+    row = await ctx.conn.fetchrow(
+        """SELECT c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol
+           FROM app.cameras c LEFT JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", camera_id)
+
+    def decrypt():
+        try:
+            return vault().decrypt(bytes(row["source_ciphertext"]), str(camera_id))
+        except InvalidTag:
+            raise ApiError(500, "source_unreadable", "The stored address failed its integrity check.")
+    jpeg = await snapshot.get(camera_id, row, decrypt)
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})

@@ -14,6 +14,12 @@ async def me(ctx: AdminCtx = Depends(admin_ctx())):
     return {"id": ctx.staff.id, "name": ctx.staff.name, "role": ctx.staff.role}
 
 
+@router.get("/plans")
+async def plans(ctx: AdminCtx = Depends(admin_ctx())):
+    rows = await ctx.conn.fetch("SELECT id, name, price_per_camera_paise, stream_mode, features FROM platform.plans WHERE active ORDER BY price_per_camera_paise")
+    return {"items": [dict(r) for r in rows]}
+
+
 @router.get("/overview")
 async def overview(ctx: AdminCtx = Depends(admin_ctx())):
     c = ctx.conn

@@ -3,6 +3,13 @@
 First slice: platform admin (tenants, recorders, view-as-customer, audit), customer onboarding (recorders, cameras, zones),
 and the internal routes the recorder registrar calls. See `../API.md` for the full route plan and `../schema.sql` for the database.
 
+## Web pages and sign-in
+
+`web/` holds the customer app (`/`), the staff console (`/staff/`) and the set-password page. They are plain HTML, CSS and JavaScript served by the API itself
+(no build step), built from text nodes only (no `innerHTML`, no inline scripts or styles; a test enforces it) and sent with a strict content policy.
+Sign-in is in `app/services/auth.py` (passwords with scrypt; staff also need an authenticator code; refresh tokens work once; lockout and rate limits).
+Create the first staff account with `python -m scripts.create_staff`. Deployment steps: `DEPLOY.md` sections 6b and 6c.
+
 ## Run it
 
 ```bash

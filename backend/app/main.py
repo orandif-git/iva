@@ -1,10 +1,13 @@
 import asyncio
 import logging
 import uuid
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import errors
 from .config import get_settings
@@ -15,6 +18,11 @@ from .messaging import delivery
 from .services import billing, maintenance, reports, sweeper
 
 logging.basicConfig(level=logging.INFO)
+
+# The web pages load only their own scripts and styles and talk only to this server, so a page cannot be made to load or send anything elsewhere.
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; "
+       "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+_DOCS = ("/docs", "/openapi.json")
 
 
 @asynccontextmanager
@@ -44,6 +52,16 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         request.state.request_id = rid
         response = await call_next(request)
         response.headers["X-Request-ID"] = rid
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if not request.url.path.startswith(_DOCS):
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            if response.headers.get("content-type", "").startswith("text/html"):
+                response.headers.setdefault("Content-Security-Policy", CSP)         # a page with its own policy (the evidence viewer plays video) keeps it
+            if not request.url.path.startswith(("/v1", "/admin/v1", "/internal")):
+                response.headers.setdefault("Cache-Control", "no-cache")        # pages and scripts are re-checked each time, so an update reaches everyone
+        if request.url.scheme == "https":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response
 
     @app.get("/healthz", include_in_schema=False)
@@ -57,6 +75,13 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     for r in (admin_users, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, customer_recorders, customer_cameras, customer_events, customer_alerts, customer_reports, customer_billing,
               internal, internal_events, internal_evidence, public_messaging):
         app.include_router(r.router)
+
+    web = Path(s.web_dir) if s.web_dir else Path(__file__).resolve().parents[1] / "web"
+    if (web / "index.html").is_file():
+        @app.get("/set-password", include_in_schema=False)
+        async def set_password_page():
+            return FileResponse(web / "index.html")
+        app.mount("/", StaticFiles(directory=web, html=True), name="web")        # last, so it never hides an API route
     return app
 
 

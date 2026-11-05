@@ -152,6 +152,25 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    Replace `123456` with the code your app shows. You get an `access_token`.
 4. [ ] Invite a customer's first user: `POST /admin/v1/tenants/<tenant id>/users` with `{"email","name","role":"admin"}` returns a `link`. Send it to the person; they choose their own password there.
 
+## 6c. The web pages
+
+The API serves the pages itself, so there is nothing else to install: no Node, no build step.
+
+| Address | Who | What |
+|---|---|---|
+| `/` | customers | sign in, overview, connect a recorder, cameras and counting lines, people count, number plates, account |
+| `/staff/` | your team | sign in (password + authenticator code), overview, customers, invite users, add recorders, camera health |
+| `/set-password?token=...` | invited customers | the one-time link staff send; they choose their own password |
+
+- [ ] Set the public address in `.env` so invitation links point to the right place: `GI_PUBLIC_BASE_URL=https://app.yourcompany.in` (until you have the domain, use the tunnel address below). Restart `gi-api`.
+- [ ] Until the domain and HTTPS are ready, reach the pages through an SSH tunnel from your laptop: `ssh -L 8000:127.0.0.1:8000 you@<VPS IP>`, then open `http://localhost:8000/staff/` (and `http://localhost:8000/` for the customer side). Set `GI_PUBLIC_BASE_URL=http://localhost:8000` meanwhile. **Do not put the pages on the open internet over plain HTTP: passwords would travel unprotected.**
+- [ ] With the domain: in aaPanel add a website for the domain, turn on its free Let's Encrypt certificate, and set it up as a **reverse proxy** to `http://127.0.0.1:8000`. Keep the default `X-Forwarded-*` headers. The API then adds `Strict-Transport-Security` by itself.
+- [ ] Set `GI_ENV=prod` once real customers use it: the interactive API pages (`/docs`) are then switched off.
+- [ ] Staff pages: sign in with the account from section 6b. In the console: **Customers → New customer → Invite a user**, copy the link, send it to the customer (for example on WhatsApp).
+- [ ] Taking a camera picture (the "draw your counting line" screen) needs FFmpeg on the server (`ffmpeg -version`) and the Dahua gateway or registrar running. Settings if they are elsewhere: `GI_DAHUA_RELAY_URL` (default `http://127.0.0.1:8082`), `GI_GB_RELAY_URL` (default `http://127.0.0.1:8081`), `GI_FFMPEG_PATH`.
+
+Security of the pages: they load only their own scripts and styles (a strict content policy is sent with every page), they never put server or customer text into the page as HTML, and the sign-in token lives in the browser only: customers keep a long-lived refresh token (so they stay signed in on their own phone), staff keep theirs until the tab is closed.
+
 ## 7. Reach the API safely
 
 - [ ] From your laptop: `ssh -L 8000:127.0.0.1:8000 you@<VPS IP>` and leave it open. Now `http://localhost:8000/docs` on your laptop is the API's interactive page. The page cannot send your token for you, so use curl with the header as in section 8.

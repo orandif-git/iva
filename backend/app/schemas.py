@@ -145,6 +145,7 @@ class CameraCreate(Strict):
     name: Name
     use_footfall: bool = False
     use_anpr: bool = False
+    stream: Literal["sub", "main"] | None = None       # sub: light, enough for counting people. main: full resolution, for number plates. Default: main for plates, otherwise sub.
 
     @model_validator(mode="after")
     def _one_use(self):
@@ -158,6 +159,7 @@ class CameraPatch(Strict):
     enabled: bool | None = None
     use_footfall: bool | None = None
     use_anpr: bool | None = None
+    stream: Literal["sub", "main"] | None = None
 
 
 class CameraOut(BaseModel):

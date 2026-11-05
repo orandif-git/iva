@@ -39,7 +39,7 @@ async def test_a_dahua_camera_is_listed_for_workers_and_its_source_names_the_gat
     s = make.service()
     assert cam in (await client.get("/internal/v1/workers/cameras", headers=s)).json()["cameras"]
     src = (await client.get(f"/internal/v1/cameras/{cam}/source", headers=s)).json()
-    assert src == {"kind": "auto_register", "device_id": cred["device_id"], "channel_no": 1, "stream": "sub"}
+    assert src == {"kind": "auto_register", "device_id": cred["device_id"], "channel_no": 1, "stream": "main"}        # a plate camera defaults to the full picture
 
 
 async def test_a_suspended_customer_gets_no_dahua_source(client, make, su):
@@ -55,7 +55,7 @@ async def test_the_worker_turns_the_source_into_a_dahua_relay_source(client, mak
     class Backend(WorkerBackend):
         async def _call(self, method, path, **kw):                       # go through the test client instead of the network
             return await client.request(method, f"/internal/v1/cameras/{cam}/{path}", headers=make.service(), **kw)
-    assert await Backend(client, "x", cam).source() == RelaySource(cred["device_id"], 1, "auto_register", "sub")
+    assert await Backend(client, "x", cam).source() == RelaySource(cred["device_id"], 1, "auto_register", "main")
 
 
 def test_dahua_video_is_read_as_dhav_from_the_dahua_gateway_and_gb28181_as_mpeg():
