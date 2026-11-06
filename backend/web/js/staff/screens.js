@@ -107,7 +107,7 @@ export async function customerDetail(X, id, ds, redraw) {
   const [c, hl, plans] = await Promise.all([api.get(`/admin/v1/tenants/${id}`), api.get(`/admin/v1/tenants/${id}/health`), api.get("/admin/v1/plans?include_retired=true")]);
   const plan = plans.items.find((p) => p.id === c.plan_id);
   const after = async () => { redraw(); X.refresh(); };
-  const tabs = [["ov", "Overview"], ["pp", "People"], ["dv", "Devices"], ["ms", "Messaging"], ...(X.isOwner ? [["bl", "Billing"]] : [])];
+  const tabs = [["ov", "Overview"], ["pp", "People"], ["dv", "Devices"], ["ms", "Messaging"], ["sp", "Speed"], ...(X.isOwner ? [["bl", "Billing"]] : [])];
   const tabBar = seg(tabs, ds.tab, (v) => { ds.tab = v; redraw(); });
   let body;
   if (ds.tab === "ov") {
@@ -121,6 +121,7 @@ export async function customerDetail(X, id, ds, redraw) {
     body = h("div", {}, group(...(recs.length ? recs.map((r) => row({ icon: "server", title: r.name || r.device_id, sub: `${r.device_id} · ${r.channel_count} cameras`, onclick: () => { X.go("#/fleet/" + r.id); closeSheet(); }, right: h("span", { class: "rowend" }, statusPill(REC_STATUS, r.status), ic("chev", "chev")) })) : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No recorders yet."))])),
       h("p", { class: "sub", style: null }, "Customers connect and manage their own recorders. You can look at the details here."));
   } else if (ds.tab === "ms") body = await messagingTab(X, c, after);
+  else if (ds.tab === "sp") body = await speedTab(X, c, after);
   else if (ds.tab === "bl") {
     const inv = await api.get(`/admin/v1/billing/invoices?tenant_id=${id}`);
     body = group(...(inv.length ? inv.map((i) => row({ icon: "doc", title: money(i.total_paise), sub: `${i.number || "Draft"} · ${i.period_month.slice(0, 7)}`, right: h("span", { class: "rowend" }, statusPill(INV_STATUS, i.overdue ? "overdue" : i.status), ic("chev", "chev")), onclick: () => invoiceSheet(X, i, after) })) : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No invoices yet."))]));
@@ -228,6 +229,50 @@ async function messagingTab(X, c, after) {
     X.isOwner ? h("div", { class: "acts2" }, h("button", { class: "btn gray block", type: "button", onclick: () => capSheet(X, c, cur, after) }, "Change monthly cap")) : h("p", { class: "sub" }, "Only an owner can change these."),
     group(row({ icon: "chat", title: "Delivery log for this customer", sub: "What was sent and what failed", onclick: () => { X.mem.logTenant = c.id; closeSheet(); X.go("#/messaging"); } })),
     h("p", { class: "sub" }, "Who receives each alert is managed by the customer in their own app."));
+}
+
+// ------------------------------------------------------------------------------------------ analysis speed
+const PRESETS = [["Standard", 2, 5, "A quiet doorway or gate"], ["Busy entrance", 3, 8, "People often arrive together"], ["Crowded", 4, 10, "Dense crowds. Needs a stronger server."]];
+const fps = (e) => (e.mode === "fixed" ? `${e.fixed_fps} fps always` : `${e.idle_fps} fps quiet, ${e.active_fps} fps when busy`);
+
+async function speedTab(X, c, after) {
+  const d = await X.api.get(`/admin/v1/tenants/${c.id}/cameras`);
+  const tp = d.tenant_policy;
+  const rows = d.cameras.map((cam) => {
+    const own = Object.values(cam.override).some((v) => v != null);
+    const behind = cam.enabled && cam.stream_state === "streaming" && (cam.frames_dropped || 0) > 0;
+    return row({ icon: "cam", title: cam.name, sub: `${fps(cam.effective)} · ${own ? "set for this camera" : "follows the customer"}${cam.analysis_fps != null && cam.enabled ? ` · analysing ${Number(cam.analysis_fps).toFixed(1)} fps` : ""}`,
+      right: h("span", { class: "rowend" }, behind ? pill("Falling behind", "warn") : cam.stream_state === "streaming" ? pill("Keeping up", "ok") : pill(cam.enabled ? cap(cam.stream_state) : "Paused", ""), X.isOwner ? ic("chev", "chev") : null), onclick: X.isOwner ? () => cameraSpeed(X, c, cam, after) : undefined });
+  });
+  return h("div", {}, h("p", { class: "sub" }, "How many pictures a second the AI looks at. Higher follows people better in a crowd, but the server's processor does more work for every camera."),
+    group(kv("Counting", tp.mode === "fixed" ? "Always the same speed" : "Faster when someone is in view"), kv("When quiet", `${tp.idle_fps} fps`), kv("When busy", `${tp.active_fps} fps`), kv("If set to always the same", `${tp.fixed_fps} fps`)),
+    X.isOwner ? h("div", { class: "acts2" }, h("button", { class: "btn sec2 block", type: "button", onclick: () => customerSpeed(X, c, tp, after) }, "Change the customer's speed")) : h("p", { class: "sub" }, "Only an owner can change these."),
+    gh("Cameras"), group(...(rows.length ? rows : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No cameras yet."))])),
+    h("p", { class: "sub" }, "Above about 10 fps one camera can be more than a small server can analyse. “Falling behind” means pictures were dropped, so lower the speed or add processor power."));
+}
+
+function speedFields(cur, allowBlank) {
+  const num = (v, max) => h("input", { type: "number", min: 1, max, value: v ?? "", inputmode: "numeric", placeholder: allowBlank ? "Same as customer" : "" });
+  const mode = h("select", {}, allowBlank ? h("option", { value: "", selected: !cur.mode }, "Same as customer") : null, h("option", { value: "adaptive", selected: cur.mode === "adaptive" }, "Faster when someone is in view"), h("option", { value: "fixed", selected: cur.mode === "fixed" }, "Always the same speed"));
+  const idle = num(cur.idle_fps, 10), active = num(cur.active_fps, 25), fixed = num(cur.fixed_fps, 25);
+  const presets = h("div", { class: "chips gap" }, PRESETS.map(([n, i, a, tip]) => h("button", { class: "chip", type: "button", title: tip, "aria-pressed": "false", onclick: () => { idle.value = i; active.value = a; mode.value = "adaptive"; } }, `${n} · ${i} / ${a}`)));
+  const body = () => { const o = {}; if (mode.value) o.mode = mode.value; if (idle.value) o.idle_fps = Number(idle.value); if (active.value) o.active_fps = Number(active.value); if (fixed.value) o.fixed_fps = Number(fixed.value); return o; };
+  return { node: h("div", {}, presets, field("Counting", mode), field("Speed when quiet (1 to 10 fps)", idle), field("Speed when someone is in view (1 to 25 fps)", active), field("Speed if always the same (1 to 25 fps)", fixed),
+    h("p", { class: "sub" }, "Quick choices fill the boxes. Standard is 2 and 5. Busy and Crowded cost more processor time.")), body };
+}
+
+function customerSpeed(X, c, tp, after) {
+  const f = speedFields(tp, false);
+  reasonSheet({ title: "Analysis speed", text: `For every camera of ${c.name} that has no setting of its own.`, label: "Save", extra: f.node,
+    run: async (reason) => { await X.api.put(`/admin/v1/tenants/${c.id}/frame-rate`, { ...f.body(), reason }); closeSheet(); toast("Speed saved. Cameras pick it up within a minute."); after(); } });
+}
+
+function cameraSpeed(X, c, cam, after) {
+  const f = speedFields(cam.override, true), own = Object.values(cam.override).some((v) => v != null);
+  const reset = own ? h("button", { class: "btn gray block", type: "button", onclick: () => reasonSheet({ title: `${cam.name}: follow the customer?`, text: "This camera's own speed is removed and it uses the customer's again.", label: "Use the customer's speed",
+    run: async (reason) => { await X.api.del(`/admin/v1/cameras/${cam.id}/frame-rate${qs({ reason })}`); closeSheet(); toast("Now follows the customer"); after(); } }) }, "Use the customer's speed") : null;
+  reasonSheet({ title: cam.name, text: `Now: ${fps(cam.effective)}. Leave a box empty to follow the customer for that part.`, label: "Save", extra: h("div", {}, f.node, reset),
+    run: async (reason) => { const b = f.body(); if (!Object.keys(b).length) throw new Error("Choose a speed, or use the customer's speed."); await X.api.put(`/admin/v1/cameras/${cam.id}/frame-rate`, { ...b, reason }); closeSheet(); toast("Saved. The camera picks it up within a minute."); after(); } });
 }
 
 function capSheet(X, c, cur, after) {
