@@ -123,6 +123,10 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 > | POST | `/admin/v1/auth/set-password` | public | `{ token, password }` from a staff invitation or reset link |
 > | GET | `/admin/v1/audit` | owner, support | `?q&since&until&action&tenant_id&actor_id&cursor` |
 >
+> | GET, PUT | `/admin/v1/storage` | owner | Where evidence is kept: `{ backend: local or r2, account_id, bucket, endpoint_url, access_key_id, secret_access_key, reason }`. The secret is encrypted and never returned. A change is saved only after a test file is written, read back and deleted. |
+> | POST | `/admin/v1/storage/test` | owner | Try settings without saving; a blank secret uses the saved one |
+> | GET | `/v1/plates/{id}/image` | customer | The picture taken when the plate was read (404 when none, or after the retention period) |
+>
 > Recorders are connected, renamed and removed by the customer. Staff can list them (`GET /admin/v1/recorders`) and read their connection details, nothing more.
 
 

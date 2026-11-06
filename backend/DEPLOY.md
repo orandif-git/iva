@@ -11,7 +11,7 @@ Nothing here has been run on a real server or a real recorder yet. Where a step 
 - [ ] The recorder on a network with internet access, its **clock set correctly** (India time), and its admin password.
 - [ ] A way to open the recorder's menu (its screen and mouse, or its web page).
 - [ ] (Optional for the first test) a domain name. Without one, use the VPS IP address everywhere.
-- [ ] (Optional for the first test) Cloudflare R2 bucket and keys. Without them, evidence pictures are stored on the VPS disk (`GI_EVIDENCE_BACKEND=local`).
+- [ ] (Optional for the first test) Cloudflare R2 bucket and keys. Without them, evidence pictures are stored on the VPS disk. Set R2 up in the owner console under Storage (no file edits or restart); the `GI_EVIDENCE_*` and `GI_R2_*` lines in `.env` apply only until you save settings there.
 
 ## 1. Prepare the server
 
@@ -140,6 +140,7 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/002_auth.sql"
    su postgres -c "psql -d gateinsight -f migrations/003_recorder_name.sql"
    su postgres -c "psql -d gateinsight -f migrations/004_platform_console.sql"
+   su postgres -c "psql -d gateinsight -f migrations/005_storage_and_plate_pictures.sql"
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:
