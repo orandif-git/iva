@@ -354,3 +354,31 @@ async def test_the_staff_console_is_an_installable_app_of_its_own(client):
     assert m["start_url"] == "/staff/" and m["scope"] == "/staff/" and m["display"] == "standalone" and {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
     r = await client.get("/staff/set-password")                                       # the link in a new staff member's invitation opens the console
     assert r.status_code == 200 and "/js/staff/main.js" in r.text
+
+
+async def test_a_camera_picture_is_shared_for_the_configured_time_only(monkeypatch):
+    """Everyone who asks inside the window gets the same picture (one grab from the recorder); after it, a new one is taken."""
+    import uuid
+    from app.services import snapshot
+    calls = []
+
+    async def fake_source(row, decrypt):
+        return "url", "fmt"
+
+    async def fake_grab(url, fmt):
+        calls.append(1)
+        return b"jpeg"
+    monkeypatch.setattr(snapshot, "source_for", fake_source)
+    monkeypatch.setattr(snapshot, "grab", fake_grab)
+    monkeypatch.setattr(get_settings(), "snapshot_cache_seconds", 3.0)
+    t, cam = [100.0], uuid.uuid4()
+    now = lambda: t[0]
+    snapshot._cache.clear()
+    await snapshot.get(cam, {}, None, now)
+    t[0] += 2
+    await snapshot.get(cam, {}, None, now)
+    assert len(calls) == 1
+    t[0] += 2
+    await snapshot.get(cam, {}, None, now)
+    assert len(calls) == 2
+    snapshot._cache.clear()

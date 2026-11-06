@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     web_dir: str = ""                                    # folder of the web pages; default: backend/web next to this package
     ffprobe_path: str = "ffprobe"                       # used to check an RTSP address before a camera is created from it
     delivery_batch: int = 20
+    snapshot_cache_seconds: float = 3.0                 # a camera picture is shared by everyone who asks within this time; the app refreshes no faster than 3 s
     evidence_backend: str = "local"                     # local (development) or r2 (Cloudflare R2)
     evidence_local_dir: str = "/tmp/gi-evidence"
     evidence_link_ttl_hours: int = 72

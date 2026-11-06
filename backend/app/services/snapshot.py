@@ -16,7 +16,6 @@ from .rtsp import mask
 log = logging.getLogger("gateinsight.snapshot")
 _cache: dict = {}            # camera id -> (taken at, jpeg)
 _locks: dict = {}
-KEEP_SECONDS = 20
 MAX_BYTES = 2_000_000
 GRAB_TIMEOUT = 25
 
@@ -71,13 +70,18 @@ async def grab(url: str, fmt: str | None) -> bytes:
     return out
 
 
+def _keep() -> float:
+    from ..config import get_settings
+    return max(1.0, get_settings().snapshot_cache_seconds)
+
+
 async def get(camera_id, row, decrypt_source, now=time.monotonic) -> bytes:
     hit = _cache.get(camera_id)
-    if hit and now() - hit[0] < KEEP_SECONDS:
+    if hit and now() - hit[0] < _keep():
         return hit[1]
     async with _locks.setdefault(camera_id, asyncio.Lock()):
         hit = _cache.get(camera_id)
-        if hit and now() - hit[0] < KEEP_SECONDS:
+        if hit and now() - hit[0] < _keep():
             return hit[1]
         url, fmt = await source_for(row, decrypt_source)
         jpeg = await grab(url, fmt)

@@ -151,13 +151,39 @@ export async function loadPicture(api, id, { fresh = false } = {}) {
 }
 export const dropPictures = () => { for (const { url } of pics.values()) URL.revokeObjectURL(url); pics.clear(); };
 
-/** A picture frame showing the camera's own picture, or a plain message when there is none. */
+// How often the pictures on the screen are fetched again. Kept on this device; the shortest allowed is 3 seconds, and 0 turns it off.
+const PIC_KEY = "gi_pic_refresh";
+export const MIN_REFRESH = 3;
+export function picInterval() {
+  try { const v = localStorage.getItem(PIC_KEY); if (v === null) return 10; const n = Number(v); return n === 0 ? 0 : Math.max(MIN_REFRESH, Number.isFinite(n) && n > 0 ? n : 10); } catch { return 10; }
+}
+export function setPicInterval(n) {
+  const v = n === 0 ? 0 : Math.min(3600, Math.max(MIN_REFRESH, Math.round(n)));
+  try { localStorage.setItem(PIC_KEY, String(v)); } catch { /* private mode */ }
+  return v;
+}
+
+/** A picture frame showing the camera's own picture, or a plain message when there is none. It fetches a fresh picture every few seconds
+ *  while the page is open and visible, and stops by itself when the frame leaves the page. */
 export function pictureFrame(api, cam, { tag } = {}) {
   const frame = h("div", { class: "scene" });
   const msg = (t) => mount(frame, h("div", { class: "none" }, t));
-  msg(cam.enabled ? "Getting a picture…" : "Paused");
-  if (cam.enabled) loadPicture(api, cam.id).then((url) => {
-    mount(frame, h("img", { src: url, alt: `Latest picture from ${cam.name}`, draggable: "false" }), tag ? h("span", { class: "tag" }, tag) : null);
+  msg(cam.enabled ? "Getting a picture\u2026" : "Paused");
+  if (!cam.enabled) return frame;
+  let img = null, seen = false, misses = 0;
+  const tick = async () => {
+    if (!frame.isConnected) { if (seen || ++misses > 5) return; setTimeout(tick, 1000); return; }   // not on the page yet, or the page moved on
+    seen = true;
+    const sec = picInterval();
+    if (img && sec && !document.hidden && navigator.onLine !== false) {
+      try { img.src = await loadPicture(api, cam.id, { fresh: true }); } catch { /* keep the picture we have */ }
+    }
+    setTimeout(tick, Math.max(MIN_REFRESH, sec || 5) * 1000);
+  };
+  loadPicture(api, cam.id).then((url) => {
+    img = h("img", { src: url, alt: `Latest picture from ${cam.name}`, draggable: "false" });
+    mount(frame, img, tag ? h("span", { class: "tag" }, tag) : null);
+    setTimeout(tick, Math.max(MIN_REFRESH, picInterval() || 5) * 1000);
   }, (e) => msg(e.status === 403 ? "Pictures are shown to administrators" : "No picture yet"));
   return frame;
 }

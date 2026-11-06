@@ -1,6 +1,6 @@
 // Recorders (connect, details, rename, delete), reports and the More tab.
 import { ago, clear, copy, errText, fmtDateTime, h, istDay, mount } from "../lib.js";
-import { chips, confirmSheet, empty, field, ic, note, onSheetClose, openSheet, closeSheet, pill, sec, seg, toast, toggle } from "./ui.js";
+import { chips, confirmSheet, empty, field, ic, MIN_REFRESH, note, onSheetClose, openSheet, closeSheet, picInterval, pill, sec, seg, setPicInterval, toast, toggle } from "./ui.js";
 
 const LINK = { online: ["Online", "ok"], offline: ["Offline", "crit"], never: ["Waiting to connect", ""] };
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -159,6 +159,16 @@ async function more(X) {
   const row = (icon, label, sub, href) => h("a", { class: "gi", href }, ic(icon), h("div", {}, label, sub ? h("small", {}, sub) : null), ic("chev", "chev"));
   out.push(h("div", { class: "group" }, row("server", "Recorders", "Connect, rename or remove", "#/recorders"), row("doc", "Reports", "Spreadsheets to download or share", "#/reports")));
   out.push(h("div", { class: "gh" }, "Appearance"), h("div", { class: "card" }, seg([["light", "Light"], ["auto", "Auto"], ["dark", "Dark"]], X.theme.get(), (v) => X.theme.set(v))));
+  const cur = picInterval(), presets = [["0", "Off"], ["3", "3 s"], ["5", "5 s"], ["10", "10 s"], ["30", "30 s"], ["60", "1 min"]];
+  const custom = h("input", { type: "number", min: MIN_REFRESH, max: 3600, inputmode: "numeric", placeholder: `Other, ${MIN_REFRESH} or more`, "aria-label": "Seconds between pictures", value: presets.some((x) => x[0] === String(cur)) ? "" : cur });
+  const preset = chips(presets, String(cur), (v) => { custom.value = ""; setPicInterval(Number(v)); toast(Number(v) ? `Pictures refresh every ${v} seconds` : "Pictures no longer refresh by themselves", false); });
+  custom.onchange = () => {
+    const n = Number(custom.value);
+    if (!n) { custom.value = ""; return; }
+    const v = setPicInterval(n); custom.value = v; preset.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    toast(`Pictures refresh every ${v} seconds`, false);
+  };
+  out.push(h("div", { class: "gh" }, "Camera pictures"), h("div", { class: "card stack" }, h("div", {}, h("b", {}, "Refresh every"), h("p", { class: "sub" }, `While a page is open, pictures update on their own. The shortest is ${MIN_REFRESH} seconds. Faster uses more of the recorder's internet. Saved on this device.`)), preset, field("Or type your own (seconds)", custom)));
   if (X.install.available()) out.push(h("div", { class: "gh" }, "App"), h("div", { class: "group" }, h("button", { class: "gi", type: "button", onclick: () => X.install.prompt() }, ic("phone"), h("div", {}, "Install Jas iVision", h("small", {}, "Open it from your home screen like an app")), ic("chev", "chev"))));
   out.push(h("div", { class: "gh" }, "Your account"), h("div", { class: "card" },
     h("p", {}, h("b", {}, me.user.name), h("br"), h("span", { class: "sub" }, `${me.user.role === "admin" ? "Administrator" : "Viewer"} · plan ${me.tenant.plan_name}`)),
