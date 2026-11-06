@@ -114,6 +114,38 @@ class CameraPipeline:
                 self._emit(tr.id)
         return Observation(relevant, len(self.people.tracks) + len(self.vehicles.tracks), len(self.visits))
 
+    def annotate(self, frame, fps: float | None = None) -> bytes | None:
+        """The picture the detector just looked at, with what it found drawn on it: boxes with track numbers, the counting line with its
+        IN direction, the plate zone, and the running count. Called only while someone is looking, so it costs nothing otherwise."""
+        import numpy as np
+        img = frame.copy()
+        h, w = img.shape[:2]
+        px = lambda p: (int(p[0] * w), int(p[1] * h))
+        scale = max(1.0, w / 640)
+        th = max(1, round(scale))
+        if self.cfg.zone:
+            cv2.polylines(img, [np.array([px(p) for p in self.cfg.zone], np.int32)], True, (244, 198, 53), th + 1)
+        if self.cfg.line:
+            a, b, d = self.cfg.line
+            cv2.line(img, px(a), px(b), (63, 210, 255), th + 1)
+            if d:
+                m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+                cv2.arrowedLine(img, px(m), px((m[0] + d[0] * 0.08, m[1] + d[1] * 0.08)), (255, 255, 255), th + 1, tipLength=0.35)
+                cv2.putText(img, "IN", px((m[0] + d[0] * 0.1, m[1] + d[1] * 0.1)), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * scale, (255, 255, 255), th)
+        for tr, color, tag in [(t, (80, 200, 80), "") for t in self.people.tracks] + [(t, (244, 198, 53), t.label + " ") for t in self.vehicles.tracks]:
+            x1, y1, x2, y2 = (int(v) for v in tr.box)
+            cv2.rectangle(img, (x1, y1), (x2, y2), color if tr.confirmed else (160, 160, 160), th)
+            cv2.putText(img, f"{tag}#{tr.id} {tr.score:.0%}", (x1, max(12, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42 * scale, color, th)
+        bar = f"people in view {len(self.people.tracks)}"
+        if self.counter:
+            bar += f"   IN {self.totals['in']}  OUT {self.totals['out']}"
+        if fps:
+            bar += f"   analysing {fps:.1f} fps"
+        cv2.rectangle(img, (0, 0), (w, int(22 * scale)), (0, 0, 0), -1)
+        cv2.putText(img, bar, (6, int(16 * scale)), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * scale, (255, 255, 255), th)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        return buf.tobytes() if ok else None
+
     def reset(self) -> None:
         """The picture was interrupted (a reconnect or a settings change). Nobody can be followed across the gap, so close every open
         vehicle visit and forget every track. Counting then carries on as if new."""

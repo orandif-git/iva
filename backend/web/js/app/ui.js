@@ -69,6 +69,7 @@ export function mountOverlays(root) {
 let sheetClose = null, lastFocus = null;
 export function openSheet(title, ...body) {
   const { layer, sheetBody, sheetTitle } = openSheet.parts;
+  if (sheetClose) { const f = sheetClose; sheetClose = null; f(); }                // a sheet that is replaced cleans up like one that is closed
   layer.querySelector(".sheet").classList.remove("wide");
   lastFocus = document.activeElement;
   sheetTitle.textContent = title;

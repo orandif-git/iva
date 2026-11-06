@@ -313,6 +313,7 @@ CREATE TABLE app.cameras (
   use_anpr      boolean NOT NULL DEFAULT false,
   stream        text NOT NULL DEFAULT 'sub' CHECK (stream IN ('sub','main')),
   last_frame_at timestamptz,
+  ai_view_until timestamptz,                         -- while this is in the future, the worker sends annotated pictures (someone is looking at "what the AI sees")
   -- Per-camera frame-rate overrides. NULL means "use the tenant's value".
   fps_mode      text CHECK (fps_mode IN ('adaptive','fixed')),
   fps_idle      smallint CHECK (fps_idle BETWEEN 1 AND 10),
@@ -457,6 +458,15 @@ CREATE TABLE app.evidence (
   expires_at   timestamptz NOT NULL                        -- when the stored file is deleted (retention)
 );
 CREATE INDEX evidence_expiry_idx ON app.evidence (expires_at);
+
+-- "What the AI sees": while a staff member has the view open, the worker sends an annotated picture every few seconds, which replaces the last one.
+-- It is never kept: one row per camera, overwritten, and deleted a few minutes after the last request.
+CREATE TABLE app.ai_view_frames (
+  camera_id uuid PRIMARY KEY REFERENCES app.cameras(id) ON DELETE CASCADE,
+  tenant_id uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  taken_at  timestamptz NOT NULL DEFAULT now(),
+  jpeg      bytea NOT NULL
+);
 
 -- The picture kept for a plate read (the same evidence store, so it follows the same retention).
 ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence(id) ON DELETE SET NULL;

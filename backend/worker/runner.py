@@ -19,6 +19,8 @@ class LiveSettings:
     config_refresh: float = 30.0        # how often to ask the backend for new settings (so frame-rate changes apply within this time)
     health_interval: float = 15.0
     flush_interval: float = 2.0
+    ai_poll_interval: float = 5.0       # how often to ask whether anyone is looking at "what the AI sees" (a very small request)
+    ai_frame_interval: float = 3.0      # while someone is, how often to draw and send the picture
     hold_seconds: float = 3.0           # stay fast this long after the last person or vehicle was seen
     use_motion: bool = True
     retry_delay: float = 2.0            # wait between attempts to reach the backend at start-up
@@ -67,7 +69,8 @@ async def run_live(*, backend, sink, reader_factory, pipeline_factory, settings:
     seen = total_processed = 0
     last_state = None
     t0 = clock()
-    next_flush = next_health = next_refresh = t0
+    next_flush = next_health = next_refresh = next_ai_poll = next_ai_frame = t0
+    ai_on = False
     exit_reason = "stopped"
     log.info("live: %s policy=%s", cfg.name, policy)
 
@@ -104,6 +107,11 @@ async def run_live(*, backend, sink, reader_factory, pipeline_factory, settings:
                         async with cpu:
                             obs = await asyncio.to_thread(pipeline.process, fr.image, fr.ts)
                     controller.observe(obs, ts)
+                    if ai_on and now >= next_ai_frame and hasattr(backend, "ai_frame"):       # only while someone is looking: otherwise nothing is drawn
+                        next_ai_frame = now + settings.ai_frame_interval
+                        jpeg = await asyncio.to_thread(pipeline.annotate, fr.image, controller.average_fps())
+                        if jpeg and await backend.ai_frame(jpeg) is False:
+                            ai_on = False
 
             if now >= next_flush:                            # on a timer, so a quiet or silent camera still delivers what it has
                 await sink.flush()
@@ -111,6 +119,9 @@ async def run_live(*, backend, sink, reader_factory, pipeline_factory, settings:
                 if sink.fatal:
                     exit_reason = f"sink:{sink.fatal}"
                     break
+            if now >= next_ai_poll and hasattr(backend, "ai_view"):
+                next_ai_poll = now + settings.ai_poll_interval
+                ai_on = bool(await backend.ai_view())
             state = _report_state(reader)
             if now >= next_health or state != last_state:        # on a timer, and at once whenever the stream comes up or goes down
                 last_state = state

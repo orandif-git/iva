@@ -46,6 +46,22 @@ class WorkerBackend:
         r = await self._call("GET", "config")
         return r.json() if r.status_code == 200 else None
 
+    async def ai_view(self) -> bool:
+        """Is anyone looking at this camera's annotated picture? Asked every few seconds; a failure just means no."""
+        try:
+            r = await self._call("GET", "ai-view")
+        except BackendUnavailable:
+            return False
+        return r.status_code == 200 and bool(r.json().get("on"))
+
+    async def ai_frame(self, jpeg: bytes) -> bool | None:
+        """Sends the annotated picture. False when nobody is looking any more, None when it could not be delivered."""
+        try:
+            r = await self._call("POST", "ai-frame", content=jpeg)
+        except BackendUnavailable:
+            return None
+        return True if r.status_code == 204 else (False if r.status_code == 409 else None)
+
     async def source(self):
         """Where the video comes from: an RTSP address (text), a RelaySource, or None if there is none (or the camera may not be analysed).
         Never log the result: an address contains the camera password."""

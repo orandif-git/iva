@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from ..crypto import vault
 from ..deps import ServiceCtx, service_ctx
@@ -165,3 +165,37 @@ async def frame_status(camera_id: UUID, body: FrameStatusIn, ctx: ServiceCtx = D
         secs = min((datetime.now(timezone.utc) - prev["stream_seen_at"]).total_seconds(), 60.0)
         await billing.add_frames(ctx.conn, prev["tenant_id"], prev["timezone"], int(body.analysis_fps * max(secs, 0)))
     return {"active": row["enabled"] and row["tenant_status"] not in ("suspended", "cancelled")}
+
+
+# ------------------------------------------------------------------------------ "what the AI sees"
+@router.get("/cameras/{camera_id}/ai-view")
+async def ai_view_wanted(camera_id: UUID, ctx: ServiceCtx = Depends(service_ctx)):
+    """Is anyone looking at this camera's annotated picture right now? The worker asks every few seconds and only draws and uploads while the answer is yes."""
+    row = await ctx.conn.fetchrow("SELECT coalesce(ai_view_until > now(), false) AS on FROM app.cameras WHERE id=$1", camera_id)
+    if not row:
+        raise ApiError(404, "unknown_camera", "No such camera.")
+    return {"on": row["on"]}
+
+
+@router.post("/cameras/{camera_id}/ai-frame", status_code=204)
+async def ai_view_frame(camera_id: UUID, request: Request, ctx: ServiceCtx = Depends(service_ctx)):
+    """The annotated picture. Kept as one row per camera, overwritten each time, and only accepted while someone is looking."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > 600_000:
+        raise ApiError(413, "too_large", "The picture is too large.")
+    data = b""
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > 600_000:
+            raise ApiError(413, "too_large", "The picture is too large.")
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise ApiError(415, "not_a_jpeg", "Send a JPEG picture.")
+    cam = await ctx.conn.fetchrow("SELECT tenant_id, coalesce(ai_view_until > now(), false) AS on FROM app.cameras WHERE id=$1", camera_id)
+    if not cam:
+        raise ApiError(404, "unknown_camera", "No such camera.")
+    if not cam["on"]:
+        raise ApiError(409, "not_wanted", "Nobody is looking at this camera's picture now.")
+    await ctx.conn.execute(
+        """INSERT INTO app.ai_view_frames (camera_id, tenant_id, taken_at, jpeg) VALUES ($1,$2, now(), $3)
+           ON CONFLICT (camera_id) DO UPDATE SET taken_at=now(), jpeg=$3""", camera_id, cam["tenant_id"], data)
+    await ctx.conn.execute("DELETE FROM app.ai_view_frames WHERE taken_at < now() - interval '10 minutes'")        # never kept

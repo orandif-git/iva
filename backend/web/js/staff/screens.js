@@ -1,6 +1,6 @@
 // Staff console screens: Today, Customers, Fleet and More. The rest are in money.js, messaging.js and admin.js.
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
-import { chips, empty, field, formSheet, ic, kpi, note, openSheet, closeSheet, pill, reasonSheet, sec, seg, skeleton, toast, toggle } from "../app/ui.js";
+import { chips, empty, field, formSheet, ic, kpi, note, onSheetClose, openSheet, closeSheet, pill, reasonSheet, sec, seg, skeleton, toast, toggle } from "../app/ui.js";
 import { ago, back, CUS_STATUS, fmtDateTime, gh, group, hero, initials, kv, money, REC_STATUS, row, statusPill, title, cap, INV_STATUS } from "./common.js";
 import { moneyScreens, invoiceSheet } from "./money.js";
 import { messagingScreens } from "./messaging.js";
@@ -242,13 +242,45 @@ async function speedTab(X, c, after) {
     const own = Object.values(cam.override).some((v) => v != null);
     const behind = cam.enabled && cam.stream_state === "streaming" && (cam.frames_dropped || 0) > 0;
     return row({ icon: "cam", title: cam.name, sub: `${fps(cam.effective)} · ${own ? "set for this camera" : "follows the customer"}${cam.analysis_fps != null && cam.enabled ? ` · analysing ${Number(cam.analysis_fps).toFixed(1)} fps` : ""}`,
-      right: h("span", { class: "rowend" }, behind ? pill("Falling behind", "warn") : cam.stream_state === "streaming" ? pill("Keeping up", "ok") : pill(cam.enabled ? cap(cam.stream_state) : "Paused", ""), X.isOwner ? ic("chev", "chev") : null), onclick: X.isOwner ? () => cameraSpeed(X, c, cam, after) : undefined });
+      right: h("span", { class: "rowend" }, behind ? pill("Falling behind", "warn") : cam.stream_state === "streaming" ? pill("Keeping up", "ok") : pill(cam.enabled ? cap(cam.stream_state) : "Paused", ""), ic("chev", "chev")), onclick: () => cameraSheet(X, c, cam, after) });
   });
   return h("div", {}, h("p", { class: "sub" }, "How many pictures a second the AI looks at. Higher follows people better in a crowd, but the server's processor does more work for every camera."),
     group(kv("Counting", tp.mode === "fixed" ? "Always the same speed" : "Faster when someone is in view"), kv("When quiet", `${tp.idle_fps} fps`), kv("When busy", `${tp.active_fps} fps`), kv("If set to always the same", `${tp.fixed_fps} fps`)),
     X.isOwner ? h("div", { class: "acts2" }, h("button", { class: "btn sec2 block", type: "button", onclick: () => customerSpeed(X, c, tp, after) }, "Change the customer's speed")) : h("p", { class: "sub" }, "Only an owner can change these."),
     gh("Cameras"), group(...(rows.length ? rows : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No cameras yet."))])),
     h("p", { class: "sub" }, "Above about 10 fps one camera can be more than a small server can analyse. “Falling behind” means pictures were dropped, so lower the speed or add processor power."));
+}
+
+function cameraSheet(X, c, cam, after) {
+  const rows = [row({ icon: "eye", title: "What the AI sees", sub: "The picture with boxes around the people and vehicles it found, the counting line and the running count.", onclick: () => aiView(X, cam, () => cameraSheet(X, c, cam, after)) })];
+  if (X.isOwner) rows.push(row({ icon: "edit", title: "Change speed", sub: `Now: ${fps(cam.effective)}`, onclick: () => cameraSpeed(X, c, cam, after) }));
+  openSheet(cam.name, group(...rows), h("p", { class: "sub" }, `${cam.stream_state === "streaming" ? "Receiving video" : "Not receiving video right now"}${cam.analysis_fps != null && cam.enabled ? ` · analysing ${Number(cam.analysis_fps).toFixed(1)} fps` : ""}`));
+}
+
+/** The annotated picture, drawn by the camera's worker only while this is open: it asks every 10 seconds to keep going, and the worker stops by itself soon after we stop asking. */
+function aiView(X, cam, backTo) {
+  const frame = h("div", { class: "scene" }, h("div", { class: "none" }, "Asking this camera's worker\u2026 the first picture appears in about 5 seconds."));
+  const stamp = h("p", { class: "sub" }, "");
+  let alive = true, img = null, url = null;
+  const ask = async () => { try { await X.api.post(`/admin/v1/cameras/${cam.id}/ai-view`); } catch (e) { if (alive && !img) mount(frame, h("div", { class: "none" }, errText(e))); } };
+  const pull = async () => {
+    try {
+      const blob = await X.api.get(`/admin/v1/cameras/${cam.id}/ai-view/image`, { blob: true });
+      if (!alive) return;
+      const next = URL.createObjectURL(blob);
+      if (!img) { img = h("img", { src: next, alt: `What the AI sees on ${cam.name}`, draggable: "false" }); mount(frame, img); } else img.src = next;
+      if (url) URL.revokeObjectURL(url);
+      url = next;
+      stamp.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", second: "2-digit" });
+    } catch { /* not ready yet: try again */ }
+  };
+  const t1 = setInterval(ask, 10000), t2 = setInterval(pull, 2500);
+  openSheet(cam.name, frame, stamp,
+    h("p", { class: "sub" }, "Green boxes are people, blue-green boxes are vehicles, the yellow line is the counting line, and the white arrow points the way that counts as IN. The top bar shows the running count since the worker started."),
+    note("This is only made while this window is open, a new picture about every 3 seconds. It adds no work the rest of the time, and nothing is saved.", ""),
+    h("div", { class: "acts" }, h("button", { class: "btn gray", type: "button", onclick: () => { closeSheet(); setTimeout(backTo, 450); } }, "Back")));
+  onSheetClose(() => { alive = false; clearInterval(t1); clearInterval(t2); if (url) URL.revokeObjectURL(url); });      // after the sheet opens, so it only fires when this sheet goes away
+  ask().then(pull);
 }
 
 function speedFields(cur, allowBlank) {

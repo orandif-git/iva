@@ -127,6 +127,10 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 > | POST | `/admin/v1/storage/test` | owner | Try settings without saving; a blank secret uses the saved one |
 > | GET | `/v1/plates/{id}/image` | customer | The picture taken when the plate was read (404 when none, or after the retention period) |
 >
+> | POST | `/admin/v1/cameras/{id}/ai-view` | owner, support | Open or keep open "what the AI sees" for a camera (call every ~10 s while it is on screen; it switches itself off 45 s after the last call) |
+> | GET | `/admin/v1/cameras/{id}/ai-view/image` | owner, support | The latest annotated picture (boxes, counting line, running count); 404 until the worker has sent one. Never stored beyond a few minutes. |
+> | GET, POST | `/internal/v1/cameras/{id}/ai-view`, `/ai-frame` | worker | Is anyone looking? / the annotated JPEG (accepted only while someone is) |
+>
 > Recorders are connected, renamed and removed by the customer. Staff can list them (`GET /admin/v1/recorders`) and read their connection details, nothing more.
 
 
