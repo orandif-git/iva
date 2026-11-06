@@ -110,12 +110,13 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
                 if entry:
                     entry_id, dwell = entry["id"], int((e.seen_at - entry["seen_at"]).total_seconds())
 
+            picture = e.evidence_id if e.evidence_id and await conn.fetchval("SELECT 1 FROM app.evidence WHERE id=$1 AND tenant_id=$2", e.evidence_id, tenant) else None
             await conn.execute(
                 """INSERT INTO app.plate_events (tenant_id, camera_id, seen_at, track_id, plate_text, plate_raw, confidence, vehicle_type,
-                                                 direction, snapshot_key, review_status, entry_event_id, dwell_seconds)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::app.direction,$10,$11::app.review_status,$12,$13)""",
+                                                 direction, snapshot_key, review_status, entry_event_id, dwell_seconds, evidence_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::app.direction,$10,$11::app.review_status,$12,$13,$14)""",
                 tenant, e.camera_id, e.seen_at, e.track_id, res.text, e.plate_raw, e.confidence, e.vehicle_type, e.direction,
-                e.snapshot_key, review, entry_id, dwell)
+                e.snapshot_key, review, entry_id, dwell, picture)
 
             if review == "auto":
                 alert_id = await alert_if_blocked(conn, tenant, res.text, e.camera_id, cam["name"], e.direction, e.snapshot_key, e.evidence_id, expect_clip=True)

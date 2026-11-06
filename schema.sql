@@ -87,6 +87,19 @@ CREATE TABLE platform.plans (
   price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep'))
 );
 
+-- Where evidence pictures, clips and reports are kept. One row, set in the owner console. With no row the GI_EVIDENCE_* settings apply.
+-- The R2 secret is encrypted like every other secret here.
+CREATE TABLE platform.storage_settings (
+  id                boolean PRIMARY KEY DEFAULT true CHECK (id),
+  backend           text NOT NULL CHECK (backend IN ('local','r2')),
+  account_id        text,
+  bucket            text,
+  endpoint_url      text,
+  access_key_id     text,
+  secret_ciphertext bytea,
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+
 -- How WhatsApp and email are sent. Owned by the platform, not by tenants. Secrets (API keys, SMTP password) are encrypted.
 CREATE TABLE platform.messaging_providers (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -445,6 +458,9 @@ CREATE TABLE app.evidence (
 );
 CREATE INDEX evidence_expiry_idx ON app.evidence (expires_at);
 
+-- The picture kept for a plate read (the same evidence store, so it follows the same retention).
+ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence(id) ON DELETE SET NULL;
+
 -- One rule per kind of alert per tenant. The customer switches each on or off, picks the channels and the people, and sets any limits.
 CREATE TABLE app.alert_rules (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -689,7 +705,7 @@ GRANT USAGE ON SCHEMA app TO app_user, platform_admin, service_worker;
 GRANT USAGE ON SCHEMA platform TO platform_admin, service_worker, app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, platform_admin, service_worker;
 GRANT SELECT ON platform.plans TO app_user, service_worker;
-GRANT SELECT ON platform.messaging_providers, platform.message_templates TO service_worker;
+GRANT SELECT ON platform.messaging_providers, platform.message_templates, platform.storage_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
 GRANT DELETE ON platform.plans, platform.messaging_providers, platform.message_templates TO platform_admin;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;

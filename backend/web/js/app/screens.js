@@ -1,6 +1,6 @@
 // The screens of the customer app. Each takes the shared context X and returns the nodes for the page.
 import { ago, clear, errText, fmtDateTime, fmtNum, h, istDay, mount, qs } from "../lib.js";
-import { barChart, chips, confirmSheet, empty, field, ic, kpi, legend, loadPicture, note, openSheet, closeSheet, pictureFrame, pill, sec, seg, toast, toggle } from "./ui.js";
+import { barChart, chips, confirmSheet, empty, field, ic, kpi, legend, loadPicture, note, onSheetClose, openSheet, closeSheet, pictureFrame, pill, sec, seg, toast, toggle } from "./ui.js";
 import { recorderScreens } from "./recorders.js";
 
 const TZ = "Asia/Kolkata";
@@ -195,7 +195,12 @@ function plateRow(X, p, cams) {
     h("div", { class: "center" }, h("time", {}, fmtDateTime(p.seen_at)), flag ? h("div", {}, flag) : null));
 }
 function plateSheet(X, p, cam) {
-  openSheet("Number plate", h("div", { class: "center" }, h("span", { class: "plate" + (p.blocked ? " bad" : "") }, p.plate_text || "unreadable")),
+  const pic = h("div", { class: "scene" }, h("div", { class: "none" }, p.has_snapshot ? "Getting the picture\u2026" : "No picture was saved for this read."));
+  let url = null;
+  if (p.has_snapshot) X.api.get(`/v1/plates/${p.id}/image`, { blob: true }).then((b) => { url = URL.createObjectURL(b); mount(pic, h("img", { src: url, alt: `Picture taken when ${p.plate_text || "this plate"} was read`, draggable: "false" })); },
+    () => mount(pic, h("div", { class: "none" }, "The picture is no longer stored.")));
+  onSheetClose(() => { if (url) URL.revokeObjectURL(url); });
+  openSheet("Number plate", pic, h("div", { class: "center" }, h("span", { class: "plate" + (p.blocked ? " bad" : "") }, p.plate_text || "unreadable")),
     h("dl", { class: "dl" }, h("dt", {}, "Seen"), h("dd", {}, fmtDateTime(p.seen_at)), h("dt", {}, "Camera"), h("dd", {}, cam?.name || "—"), h("dt", {}, "Direction"), h("dd", {}, p.direction ? (p.direction === "in" ? "In" : "Out") : "—"),
       h("dt", {}, "Vehicle"), h("dd", {}, p.vehicle_type ? cap(p.vehicle_type) : "—"), h("dt", {}, "Confidence"), h("dd", {}, p.confidence != null ? p.confidence + "%" : "—"),
       p.dwell_seconds != null ? [h("dt", {}, "Time inside"), h("dd", {}, Math.round(p.dwell_seconds / 60) + " min")] : null),

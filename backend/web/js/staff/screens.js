@@ -6,7 +6,7 @@ import { moneyScreens, invoiceSheet } from "./money.js";
 import { messagingScreens } from "./messaging.js";
 import { adminScreens } from "./admin.js";
 
-export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", messaging: "Messaging", maintenance: "Maintenance", audit: "Audit log", staff: "Staff and roles", more: "More" };
+export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", messaging: "Messaging", maintenance: "Maintenance", storage: "Storage", audit: "Audit log", staff: "Staff and roles", more: "More" };
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
 
@@ -265,7 +265,7 @@ export async function recorderDetail(X, id) {
 // ------------------------------------------------------------------------------------------------------- More
 async function more(X) {
   const me = X.state.me;
-  const items = [["plans", "Plans", "tag", "Prices and what each plan includes", X.isOwner], ["messaging", "Messaging", "chat", "Email and WhatsApp", true], ["maintenance", "Maintenance", "wrench", "Data retention and job runs", X.isOwner], ["audit", "Audit log", "log", "Every staff action", true], ["staff", "Staff and roles", "shield", "Who can do what", X.isOwner]].filter((i) => i[4]);
+  const items = [["plans", "Plans", "tag", "Prices and what each plan includes", X.isOwner], ["storage", "Storage", "cloud", "Where evidence pictures and clips are kept", X.isOwner], ["messaging", "Messaging", "chat", "Email and WhatsApp", true], ["maintenance", "Maintenance", "wrench", "Data retention and job runs", X.isOwner], ["audit", "Audit log", "log", "Every staff action", true], ["staff", "Staff and roles", "shield", "Who can do what", X.isOwner]].filter((i) => i[4]);
   const cur = X.theme.get();
   return [title("More", `${me.name} · ${me.role}`), group(...items.map((i) => row({ icon: i[2], title: i[1], sub: i[3], href: "#/" + i[0] }))),
     gh("Appearance"), h("div", { class: "card" }, seg([["light", "Light"], ["auto", "Auto"], ["dark", "Dark"]], cur, (v) => X.theme.set(v))),

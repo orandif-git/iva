@@ -12,10 +12,10 @@ const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", 
 // What each person can open. The server enforces the same rules; hiding is only for tidiness.
 const NAV = [
   ["today", "Today", "today", null], ["customers", "Customers", "users", null], ["fleet", "Fleet", "server", null], ["billing", "Billing", "card", "owner"],
-  ["plans", "Plans", "tag", "owner"], ["messaging", "Messaging", "chat", null], ["maintenance", "Maintenance", "wrench", "owner"], ["audit", "Audit log", "log", null], ["staff", "Staff and roles", "shield", "owner"],
+  ["plans", "Plans", "tag", "owner"], ["storage", "Storage", "cloud", "owner"], ["messaging", "Messaging", "chat", null], ["maintenance", "Maintenance", "wrench", "owner"], ["audit", "Audit log", "log", null], ["staff", "Staff and roles", "shield", "owner"],
 ];
 const TABS = ["today", "customers", "fleet", "billing"];
-const MORE = ["plans", "messaging", "maintenance", "audit", "staff"];
+const MORE = ["plans", "storage", "messaging", "maintenance", "audit", "staff"];
 const allowed = (need) => !need || state.me?.role === need;
 const desk = () => matchMedia("(min-width: 780px)").matches;
 

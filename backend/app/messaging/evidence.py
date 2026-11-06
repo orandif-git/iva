@@ -69,24 +69,72 @@ class R2Store:
 
 
 _store = None
+_override = None            # the settings made in the owner console (a dict), or None to use the GI_EVIDENCE_* settings
+_signature = None
+
+
+def _build(cfg: dict):
+    if cfg["backend"] == "r2":
+        if not (cfg.get("bucket") and cfg.get("access_key_id") and cfg.get("secret_access_key") and (cfg.get("account_id") or cfg.get("endpoint_url"))):
+            raise RuntimeError("Evidence storage is set to r2 but the R2 settings are incomplete.")
+        return R2Store(cfg.get("account_id") or "", cfg["access_key_id"], cfg["secret_access_key"], cfg["bucket"], cfg.get("endpoint_url") or "")
+    return LocalStore(cfg.get("local_dir") or get_settings().evidence_local_dir)
+
+
+def _env_config() -> dict:
+    s = get_settings()
+    return {"backend": s.evidence_backend, "account_id": s.r2_account_id, "bucket": s.r2_bucket, "endpoint_url": s.r2_endpoint_url,
+            "access_key_id": s.r2_access_key_id, "secret_access_key": s.r2_secret_access_key}
 
 
 def store():
     global _store
     if _store is None:
-        s = get_settings()
-        if s.evidence_backend == "r2":
-            if not (s.r2_bucket and s.r2_access_key_id and s.r2_secret_access_key and (s.r2_account_id or s.r2_endpoint_url)):
-                raise RuntimeError("Evidence storage is set to r2 but the R2 settings are incomplete.")
-            _store = R2Store(s.r2_account_id, s.r2_access_key_id, s.r2_secret_access_key, s.r2_bucket, s.r2_endpoint_url)
-        else:
-            _store = LocalStore(s.evidence_local_dir)
+        _store = _build(_override if _override is not None else _env_config())
     return _store
 
 
 def set_store(x) -> None:
     global _store
     _store = x
+
+
+def configure(cfg: dict | None) -> None:
+    """Use these settings (from the owner console) from now on, or the GI_EVIDENCE_* settings when None."""
+    global _override, _store, _signature
+    _override, _store = cfg, None
+    _signature = tuple(sorted(cfg.items())) if cfg else None
+
+
+async def reload_from_console() -> bool:
+    """Reads the console's storage settings and switches to them when they changed. Returns True when something changed."""
+    from ..crypto import vault
+    from ..db import db
+    async with db.service_tx() as conn:
+        r = await conn.fetchrow("SELECT backend, account_id, bucket, endpoint_url, access_key_id, secret_ciphertext FROM platform.storage_settings")
+    cfg = None
+    if r:
+        cfg = {"backend": r["backend"], "account_id": r["account_id"], "bucket": r["bucket"], "endpoint_url": r["endpoint_url"], "access_key_id": r["access_key_id"],
+               "secret_access_key": vault().decrypt(bytes(r["secret_ciphertext"]), "storage") if r["secret_ciphertext"] else None}
+    sig = tuple(sorted(cfg.items())) if cfg else None
+    if sig == _signature:
+        return False
+    configure(cfg)
+    return True
+
+
+async def refresh_forever(every: float = 30.0) -> None:
+    """Picks up a change made in the console, including one made by another copy of the API."""
+    import logging
+    while True:
+        try:
+            if await reload_from_console():
+                logging.getLogger("gateinsight").info("Evidence storage settings changed")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger("gateinsight").exception("Could not read the evidence storage settings")
+        await asyncio.sleep(every)
 
 
 def storage_key(tenant_id, evidence_id, kind: str, when=None) -> str:

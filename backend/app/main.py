@@ -12,9 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from . import errors
 from .config import get_settings
 from .db import db
-from .routers import (auth as auth_routes, admin_users, admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_plans, admin_staff, admin_recorders, admin_rtsp, admin_tenants, customer_alerts, customer_billing, customer_cameras, customer_events,
+from .routers import (auth as auth_routes, admin_users, admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_plans, admin_staff, admin_storage, admin_recorders, admin_rtsp, admin_tenants, customer_alerts, customer_billing, customer_cameras, customer_events,
                       customer_recorders, customer_reports, internal, internal_evidence, internal_events, public_messaging)
-from .messaging import delivery
+from .messaging import delivery, evidence as delivery_evidence
 from .services import billing, maintenance, reports, sweeper
 
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     if not s.staff_require_mfa:
         logging.getLogger("gateinsight").warning("Staff sign in with a password only (GI_STAFF_REQUIRE_MFA=false). Use a long, unique password and turn two-step back on when you can.")
     await db.init(s.database_url, s.db_pool_min, s.db_pool_max)
-    tasks = [asyncio.create_task(sweeper.run_forever()), asyncio.create_task(maintenance.run_forever()), asyncio.create_task(delivery.run_forever()), asyncio.create_task(reports.run_forever()), asyncio.create_task(billing.run_forever())]
+    tasks = [asyncio.create_task(sweeper.run_forever()), asyncio.create_task(delivery_evidence.refresh_forever()), asyncio.create_task(maintenance.run_forever()), asyncio.create_task(delivery.run_forever()), asyncio.create_task(reports.run_forever()), asyncio.create_task(billing.run_forever())]
     try:
         yield
     finally:
@@ -80,7 +80,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.include_router(auth_routes.customer)
     app.include_router(auth_routes.staff)
-    for r in (admin_users, admin_plans, admin_staff, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, customer_recorders, customer_cameras, customer_events, customer_alerts, customer_reports, customer_billing,
+    for r in (admin_users, admin_plans, admin_staff, admin_storage, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, customer_recorders, customer_cameras, customer_events, customer_alerts, customer_reports, customer_billing,
               internal, internal_events, internal_evidence, public_messaging):
         app.include_router(r.router)
 

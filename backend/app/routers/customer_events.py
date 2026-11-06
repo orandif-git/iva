@@ -3,11 +3,12 @@ from typing import Literal
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
+from ..messaging import evidence
 from ..pagination import decode_cursor, encode_cursor
 from ..schemas import FootfallPoint, ListEntryIn, ListEntryOut, PlateDetail, PlateOut, PlateReview
 from ..services.plate_events import alert_if_blocked, find_entry
@@ -88,7 +89,7 @@ class PlatesPage(BaseModel):
 
 
 _PLATE_COLS = """p.id, p.camera_id, p.seen_at, p.plate_text, p.confidence::int AS confidence, p.vehicle_type, p.direction::text AS direction,
-  p.review_status::text AS review_status, p.dwell_seconds, p.entry_event_id, (p.snapshot_key IS NOT NULL) AS has_snapshot,
+  p.review_status::text AS review_status, p.dwell_seconds, p.entry_event_id, (p.evidence_id IS NOT NULL) AS has_snapshot,
   EXISTS (SELECT 1 FROM app.vehicle_lists v WHERE v.plate_text = p.plate_text AND v.list_type = 'blocked') AS blocked"""
 
 
@@ -159,6 +160,18 @@ async def plate_detail(plate_id: int, ctx: CustomerCtx = Depends(customer_ctx())
     else:
         exit_ = await ctx.conn.fetchrow(f"SELECT {_PLATE_COLS} FROM app.plate_events p WHERE p.entry_event_id = $1", plate_id)
     return PlateDetail(**row, entry=PlateOut(**entry) if entry else None, exit=PlateOut(**exit_) if exit_ else None)
+
+
+@router.get("/plates/{plate_id}/image")
+async def plate_image(plate_id: int, ctx: CustomerCtx = Depends(customer_ctx())):
+    """The picture taken when this plate was read, from the evidence store (R2 or this server's disk). Only the customer's own pictures can be fetched."""
+    row = await ctx.conn.fetchrow("SELECT e.storage_key, e.content_type FROM app.plate_events p JOIN app.evidence e ON e.id = p.evidence_id WHERE p.id = $1", plate_id)
+    if not row:
+        raise ApiError(404, "picture_not_found", "There is no picture for this read. It may have been deleted after the retention period.")
+    data = await evidence.store().get(row["storage_key"])
+    if data is None:
+        raise ApiError(404, "picture_not_found", "There is no picture for this read. It may have been deleted after the retention period.")
+    return Response(data, media_type=row["content_type"], headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
 
 
 @router.patch("/plates/{plate_id}", response_model=PlateOut)

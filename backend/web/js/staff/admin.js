@@ -1,6 +1,6 @@
 // Maintenance, Audit log, and Staff and roles.
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
-import { chips, empty, field, formSheet, ic, note, openSheet, closeSheet, pill, reasonSheet, toast } from "../app/ui.js";
+import { chips, empty, field, formSheet, ic, note, openSheet, closeSheet, pill, reasonSheet, seg, toast } from "../app/ui.js";
 import { ago, back, cap, fmtDateTime, gh, group, initials, kv, row, title } from "./common.js";
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
@@ -87,4 +87,46 @@ async function staff(X) {
       h("tbody", {}, ROLE_ROWS.map((r) => h("tr", {}, h("td", {}, r[0]), ...r.slice(1).map((v) => h("td", { class: "c" }, v ? h("span", { class: "yes" }, "●") : h("span", { class: "muted" }, "–")))))))))];
 }
 
-export const adminScreens = { maintenance, audit, staff };
+// ---------------------------------------------------------------------------------------------------- Storage
+const mb = (b) => (b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : (b / 1e6).toFixed(1) + " MB");
+
+async function storage(X) {
+  if (!X.isOwner) return [title("Storage", ""), noaccess()];
+  const s = await X.api.get("/admin/v1/storage");
+  const mode = { v: s.backend };
+  const r2 = h("div", { class: "stack" });
+  const acct = h("input", { class: "mono", type: "text", value: s.account_id || "", placeholder: "32 letters and numbers", autocomplete: "off" });
+  const bucket = h("input", { class: "mono", type: "text", value: s.bucket || "", placeholder: "ivision-evidence", autocomplete: "off" });
+  const endpoint = h("input", { class: "mono", type: "text", value: s.endpoint_url || "", placeholder: "Leave empty to use the account ID", autocomplete: "off" });
+  const keyId = h("input", { class: "mono", type: "text", value: s.access_key_id || "", autocomplete: "off" });
+  const secret = h("input", { type: "password", autocomplete: "new-password", placeholder: s.has_secret ? "Saved. Type a new one only to replace it." : "Paste the secret access key" });
+  const why = h("input", { type: "text", placeholder: "For example: move evidence to R2", autocomplete: "off", "aria-label": "Reason" });
+  const res = h("div"), err = h("div");
+  const save = h("button", { class: "btn", type: "button", disabled: true }, "Save settings"), test = h("button", { class: "btn gray", type: "button" }, "Test these settings");
+  const body = () => ({ backend: mode.v, ...(mode.v === "r2" ? { account_id: acct.value, bucket: bucket.value, endpoint_url: endpoint.value, access_key_id: keyId.value, ...(secret.value ? { secret_access_key: secret.value } : {}) } : {}) });
+  const drawR2 = () => mount(r2, mode.v !== "r2" ? note("Pictures, clips and reports are kept on this server's disk. That works, but they use the server's space and are lost if the server is lost. R2 is safer for real customers.", "warn") : [
+    h("div", { class: "card" }, field("Account ID", acct, "Cloudflare, then R2: shown on the right of the R2 page."), field("Bucket name", bucket, "Create a private bucket first. Never make it public."), field("Access key ID", keyId, "R2, then Manage API tokens. Give the token Object Read and Write on this bucket only."),
+      field("Secret access key", secret, "Shown by Cloudflare once when you create the token. We keep it encrypted and never show it again."), field("Custom address (optional)", endpoint, "Only if Cloudflare gave you a different address. It must start with https://."))]);
+  const modeSeg = seg([["r2", "Cloudflare R2"], ["local", "This server's disk"]], mode.v, (v) => { mode.v = v; drawR2(); });
+  drawR2();
+  why.oninput = () => { save.disabled = why.value.trim().length < 5; };
+  test.onclick = async () => {
+    test.disabled = true; clear(res);
+    try { const r = await X.api.post("/admin/v1/storage/test", body()); res.append(note(`It works. A test file was written, read back and deleted in ${r.milliseconds} ms.`, "ok")); }
+    catch (e) { res.append(note(errText(e), "err")); }
+    test.disabled = false;
+  };
+  save.onclick = async () => {
+    save.disabled = true; clear(err);
+    try { await X.api.put("/admin/v1/storage", { ...body(), reason: why.value.trim() }); toast("Storage saved"); X.refresh(); }
+    catch (e) { err.append(note(errText(e), "err")); save.disabled = false; }
+  };
+  return [back("More", "#/more"), title("Storage", "Where evidence pictures, clips and reports are kept"),
+    gh("Right now"), group(kv("Kept in", s.backend === "r2" ? `Cloudflare R2${s.bucket ? " · " + s.bucket : ""}` : "This server's disk"), kv("Set in", s.source === "console" ? "This console" : "The server's settings file"),
+      kv("Files stored", fmtNum(s.files)), kv("Space used", mb(s.bytes)), kv("Next to expire", s.next_expiry ? fmtDateTime(s.next_expiry) : "none")),
+    gh("Change where they are kept"), h("div", { class: "card stack" }, modeSeg, r2, h("div", { class: "gap" }, res),
+      note("Files already stored stay where they are and are deleted when their retention period ends. New ones go to the place you save here. Saving only works if a test file can be written, read back and deleted."),
+      field("Reason (saved in the audit log)", why), err, h("div", { class: "two" }, test, save))];
+}
+
+export const adminScreens = { maintenance, audit, staff, storage };
