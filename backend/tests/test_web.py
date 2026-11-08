@@ -382,3 +382,9 @@ async def test_a_camera_picture_is_shared_for_the_configured_time_only(monkeypat
     await snapshot.get(cam, {}, None, now)
     assert len(calls) == 2
     snapshot._cache.clear()
+
+
+async def test_the_app_manifest_may_be_loaded_so_the_app_can_be_installed(client):
+    for path in ("/", "/staff/"):
+        csp = (await client.get(path)).headers["content-security-policy"]
+        assert "manifest-src 'self'" in csp

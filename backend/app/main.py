@@ -20,7 +20,7 @@ from .services import billing, maintenance, reports, sweeper
 logging.basicConfig(level=logging.INFO)
 
 # The web pages load only their own scripts and styles and talk only to this server, so a page cannot be made to load or send anything elsewhere.
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; "
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; manifest-src 'self'; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 _DOCS = ("/docs", "/openapi.json")
 # A request that came through a proxy (the website's front door) carries one of these headers; our own services call the API directly and do not.
