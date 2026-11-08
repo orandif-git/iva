@@ -216,3 +216,24 @@ async def set_staff_password_with_token(conn, raw: str, password: str) -> None:
         raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask an owner for a new one.")
     await conn.execute("UPDATE platform.staff_users SET password_hash=$2, failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], h)
     await revoke_all(conn, "staff", u["id"])
+
+
+# ------------------------------------------------------------------------------- one sign-in for everyone
+async def sign_in(conn, email: str, password: str, tenant_slug: str | None, code: str | None, ip: str | None) -> dict | ApiError:
+    """One form for customers and staff. Staff are checked first; a customer is checked when the email is not a staff account.
+    A staff member who has the right password but has not entered their code gets {"next": "code"}, and nothing else is revealed:
+    that answer is only given after the password is right, so someone who guesses an address learns nothing."""
+    s = get_settings()
+    email_n = email.strip().lower()
+    staff = await conn.fetchrow("SELECT id, password_hash, status, locked_until FROM platform.staff_users WHERE email = $1", email_n)
+    if staff and staff["password_hash"] and staff["status"] == "active" and not (staff["locked_until"] and staff["locked_until"] > _now()):
+        if not code and s.staff_require_mfa and await passwords.verify_async(password, staff["password_hash"]):
+            return {"next": "code"}
+        result = await staff_login(conn, email, password, code or "", ip)
+        if not isinstance(result, ApiError):
+            result["kind"] = "staff"
+            return result
+    result = await customer_login(conn, email, password, tenant_slug, ip)
+    if not isinstance(result, ApiError):
+        result["kind"] = "customer"
+    return result

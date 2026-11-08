@@ -131,6 +131,8 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 > | GET | `/admin/v1/cameras/{id}/ai-view/image` | owner, support | The latest annotated picture (boxes, counting line, running count); 404 until the worker has sent one. Never stored beyond a few minutes. |
 > | GET, POST | `/internal/v1/cameras/{id}/ai-view`, `/ai-frame` | worker | Is anyone looking? / the annotated JPEG (accepted only while someone is) |
 >
+> | POST | `/v1/auth/sign-in` | public | **One sign-in for everyone.** `{ email, password, tenant?, code? }`. Staff are checked first, then customers. Answers `{ kind: "staff" \| "customer", access_token, refresh_token, ... }`, or `{ next: "code" }` when a staff member has the right password and still needs their authenticator code. A wrong password always gets the same plain answer. |
+>
 > Recorders are connected, renamed and removed by the customer. Staff can list them (`GET /admin/v1/recorders`) and read their connection details, nothing more.
 
 

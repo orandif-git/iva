@@ -150,17 +150,29 @@ function showSignIn(message) {
   const email = h("input", { type: "email", autocomplete: "username", required: true, autofocus: true });
   const pw = h("input", { type: "password", autocomplete: "current-password", required: true });
   const org = h("input", { type: "text", autocomplete: "organization", placeholder: "for example sharma-auto" });
+  const code = h("input", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 8, placeholder: "6-digit code" });
   const orgField = field("Organisation short name", org, "Your email is used in more than one organisation. Ask your administrator for the short name.");
-  orgField.classList.add("hide");
+  const codeField = field("Authenticator code", code, "Staff sign in with the 6-digit code from their authenticator app.");
+  orgField.classList.add("hide"); codeField.classList.add("hide");
   const err = h("div"), btn = h("button", { class: "btn block", type: "submit" }, "Sign in");
   const form = h("form", { class: "card", onsubmit: busy(btn, async (e) => {
     e.preventDefault(); clear(err);
     try {
-      api.setTokens(await api.call("POST", "/v1/auth/login", { email: email.value, password: pw.value, ...(org.value ? { tenant: org.value } : {}) }));
-      pw.value = "";
+      const r = await api.call("POST", "/v1/auth/sign-in", { email: email.value, password: pw.value, ...(org.value ? { tenant: org.value } : {}), ...(code.value ? { code: code.value } : {}) });
+      if (r.next === "code") { codeField.classList.remove("hide"); code.focus(); err.append(note("Enter the 6-digit code from your authenticator app.", "warn")); return; }
+      pw.value = ""; code.value = "";
+      if (r.kind === "staff") {                                   // staff go to the staff console, in this same tab
+        sessionStorage.setItem("gi_staff_rt", r.refresh_token);
+        location.href = "/staff/";
+        return;
+      }
+      api.setTokens(r);
       boot();
-    } catch (x) { if (x.code === "choose_account") orgField.classList.remove("hide"); err.append(note(x.message, "err")); }
-  }) }, message ? note(message, "ok") : null, field("Email", email), field("Password", pw), orgField, err, btn);
+    } catch (x) {
+      if (x.code === "choose_account") orgField.classList.remove("hide");
+      err.append(note(x.message, "err"));
+    }
+  }) }, message ? note(message, "ok") : null, field("Email", email), field("Password", pw), orgField, codeField, err, btn);
   authPage(form, h("p", { class: "sub" }, "Forgotten your password? Ask your administrator or Jas\u00a0iVision support for a new link."));
 }
 
