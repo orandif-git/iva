@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from ..db import db
 from ..deps import CustomerCtx, client_ip, customer_ctx
 from ..errors import ApiError
-from ..schemas import ChangePasswordIn, LoginIn, RefreshIn, SetPasswordIn, StaffLoginIn
+from ..schemas import ChangePasswordIn, LoginIn, RefreshIn, SetPasswordIn, SignInIn, StaffLoginIn
 from ..services import auth, passwords
 
 customer = APIRouter(prefix="/v1/auth", tags=["sign-in"])
@@ -109,3 +109,13 @@ async def staff_refresh(body: RefreshIn, response: Response):
 async def staff_logout(body: RefreshIn):
     async with db.admin_tx() as conn:
         await auth.logout(conn, "staff", body.refresh_token)
+
+
+@customer.post("/sign-in")
+async def sign_in(body: SignInIn, request: Request, response: Response):
+    """The one sign-in form. The answer says who the person is (kind: customer or staff), so the page knows where to send them,
+    or says a code is needed ({"next": "code"}) for a staff member."""
+    _no_store(response)
+    async with db.admin_tx() as conn:
+        result = await auth.sign_in(conn, body.email, body.password, body.tenant, body.code, client_ip(request))
+    return _raise_if_error(result)

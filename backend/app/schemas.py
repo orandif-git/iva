@@ -389,6 +389,13 @@ class LoginIn(Strict):
     tenant: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None     # only needed if the email is in several organisations
 
 
+class SignInIn(Strict):
+    email: Email
+    password: Secret
+    tenant: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None
+    code: Annotated[str, StringConstraints(strip_whitespace=True, max_length=8)] | None = None
+
+
 class StaffLoginIn(Strict):
     email: Email
     password: Secret
