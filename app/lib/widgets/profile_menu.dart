@@ -1,0 +1,181 @@
+import 'package:flutter/material.dart';
+
+import '../models.dart';
+import '../repo.dart';
+import '../theme.dart';
+import 'brand.dart';
+
+enum ThemeChoice { light, dark, auto }
+
+/// The round profile button at the top right. It opens the menu: who you are, appearance (Light, Dark, Auto), settings, change password, sign out.
+class ProfileButton extends StatelessWidget {
+  const ProfileButton({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSettings, required this.onSignOut});
+  final Me? me;
+  final ThemeChoice choice;
+  final ValueChanged<ThemeChoice> onChoice;
+  final Repository repo;
+  final VoidCallback onSettings;
+  final void Function(String? message) onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = me?.name ?? '';
+    return Semantics(
+      button: true,
+      label: 'Profile and settings',
+      child: InkResponse(
+        radius: 26,
+        onTap: () => _open(context),
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle),
+          child: Text(name.isEmpty ? '·' : name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+        ),
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    Widget content(BuildContext ctx) => ProfileMenu(me: me, choice: choice, onChoice: onChoice, repo: repo, onSettings: () { Navigator.of(ctx).pop(); onSettings(); }, onSignOut: (m) { Navigator.of(ctx).pop(); onSignOut(m); });
+    if (wide) {
+      showDialog<void>(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (ctx) => Align(alignment: Alignment.topRight, child: Padding(padding: const EdgeInsets.fromLTRB(0, 70, 28, 0), child: Material(color: Colors.transparent, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 340), child: DecoratedBox(decoration: BoxDecoration(color: Tok.of(ctx).surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Tok.of(ctx).line), boxShadow: Tok.of(ctx).lift), child: content(ctx)))))),
+      );
+    } else {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Tok.of(context).surface,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        builder: (ctx) => SafeArea(child: content(ctx)),
+      );
+    }
+  }
+}
+
+class ProfileMenu extends StatefulWidget {
+  const ProfileMenu({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSettings, required this.onSignOut});
+  final Me? me;
+  final ThemeChoice choice;
+  final ValueChanged<ThemeChoice> onChoice;
+  final Repository repo;
+  final VoidCallback onSettings;
+  final void Function(String? message) onSignOut;
+  @override
+  State<ProfileMenu> createState() => _ProfileMenuState();
+}
+
+class _ProfileMenuState extends State<ProfileMenu> {
+  late ThemeChoice choice = widget.choice;
+
+  String get role => switch (widget.me?.role) { 'admin' => 'Owner or manager', 'regular' => 'Team member', _ => '' };
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final m = widget.me;
+    Widget row(IconData icon, String label, VoidCallback onTap, {Color? color}) => InkWell(
+          onTap: onTap,
+          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (color == null) Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))])),
+        );
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (m != null && m.name.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          child: Row(children: [
+            Container(width: 48, height: 48, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(m.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 19))),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17)), Text(m.business, style: TextStyle(color: t.fg2, fontSize: 13.5)), if (role.isNotEmpty) Text(role, style: TextStyle(color: t.fg2, fontSize: 12.5))])),
+          ]),
+        ),
+      Divider(height: 1, color: t.line),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('APPEARANCE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: .6, color: t.fg2)),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ThemeChoice>(
+              showSelectedIcon: false,
+              segments: const [ButtonSegment(value: ThemeChoice.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined, size: 18)), ButtonSegment(value: ThemeChoice.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 18)), ButtonSegment(value: ThemeChoice.auto, label: Text('Auto'), icon: Icon(Icons.brightness_auto_outlined, size: 18))],
+              selected: {choice},
+              onSelectionChanged: (v) { setState(() => choice = v.first); widget.onChoice(v.first); },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('Auto follows your phone or computer.', style: TextStyle(color: t.fg2, fontSize: 12.5)),
+        ]),
+      ),
+      Divider(height: 1, color: t.line),
+      row(Icons.tune_rounded, 'Settings', widget.onSettings),
+      Divider(height: 1, indent: 18, color: t.line),
+      row(Icons.lock_outline_rounded, 'Change password', () => _changePassword(context)),
+      Divider(height: 1, indent: 18, color: t.line),
+      row(Icons.logout_rounded, 'Sign out', () => widget.onSignOut(null), color: t.crit),
+      const SizedBox(height: 6),
+    ]);
+  }
+
+  Future<void> _changePassword(BuildContext context) async {
+    final ok = await showDialog<bool>(context: context, builder: (_) => _PasswordDialog(repo: widget.repo));
+    if (ok == true) widget.onSignOut('Your password was changed. Please sign in again.');
+  }
+}
+
+class _PasswordDialog extends StatefulWidget {
+  const _PasswordDialog({required this.repo});
+  final Repository repo;
+  @override
+  State<_PasswordDialog> createState() => _PasswordDialogState();
+}
+
+class _PasswordDialogState extends State<_PasswordDialog> {
+  final cur = TextEditingController(), a = TextEditingController(), b = TextEditingController();
+  bool busy = false;
+  String? error;
+
+  Future<void> _save() async {
+    if (a.text != b.text) return setState(() => error = 'The two new passwords are not the same.');
+    if (a.text.length < 10) return setState(() => error = 'Use at least 10 characters. A few words together is easy to remember and hard to guess.');
+    setState(() { busy = true; error = null; });
+    try {
+      await widget.repo.changePassword(cur.text, a.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiError catch (e) {
+      setState(() { busy = false; error = e.message; });
+    } catch (_) {
+      setState(() { busy = false; error = 'We could not reach the server.'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return AlertDialog(
+      title: const Text('Change password'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: cur, obscureText: true, autofillHints: const [AutofillHints.password], decoration: const InputDecoration(labelText: 'Current password')),
+            const SizedBox(height: 12),
+            TextField(controller: a, obscureText: true, autofillHints: const [AutofillHints.newPassword], decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 10 characters')),
+            const SizedBox(height: 12),
+            TextField(controller: b, obscureText: true, decoration: const InputDecoration(labelText: 'Type it again')),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
+            const SizedBox(height: 8),
+            Text('You will be signed out everywhere and sign in again with the new password.', style: TextStyle(color: t.fg2, fontSize: 12.5)),
+          ]),
+        ),
+      ),
+      actions: [TextButton(onPressed: busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')), FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Saving…' : 'Change password'))],
+    );
+  }
+}

@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 
 /// iVision Clear: the colours mean something. Blue = you can act, green = fine, amber = look soon, red = fix now, violet and cyan = the AI is involved.
 class Tok {
-  final Color bg, surface, surface2, line, fg, fg2, brand, brandDeep, brandSoft, okInk, okSoft, warnInk, warnSoft, crit, critSoft, ai, aiSoft, shadow;
-  const Tok({required this.bg, required this.surface, required this.surface2, required this.line, required this.fg, required this.fg2, required this.brand, required this.brandDeep,
+  final Color bg, surface, surface2, line, fg, fg2, brand, accent, brandDeep, brandSoft, okInk, okSoft, warnInk, warnSoft, crit, critSoft, ai, aiSoft, shadow;
+  const Tok({required this.bg, required this.surface, required this.surface2, required this.line, required this.fg, required this.fg2, required this.brand, required this.accent, required this.brandDeep,
       required this.brandSoft, required this.okInk, required this.okSoft, required this.warnInk, required this.warnSoft, required this.crit, required this.critSoft,
       required this.ai, required this.aiSoft, required this.shadow});
 
   static const light = Tok(
       bg: Color(0xFFF2F5FA), surface: Color(0xFFFFFFFF), surface2: Color(0xFFEDF1F8), line: Color(0xFFE0E6F0), fg: Color(0xFF0B1220), fg2: Color(0xFF52627A),
-      brand: Color(0xFF1F5EE6), brandDeep: Color(0xFF0A3D73), brandSoft: Color(0xFFE4EDFE), okInk: Color(0xFF0B6B3A), okSoft: Color(0xFFDDF4E6), warnInk: Color(0xFF7A4700), warnSoft: Color(0xFFFFF0D1),
+      brand: Color(0xFF0B6FB8), accent: Color(0xFF138BE0), brandDeep: Color(0xFF0A3D73), brandSoft: Color(0xFFE3F1FC), okInk: Color(0xFF0B6B3A), okSoft: Color(0xFFDDF4E6), warnInk: Color(0xFF7A4700), warnSoft: Color(0xFFFFF0D1),
       crit: Color(0xFFC42B20), critSoft: Color(0xFFFDE4E1), ai: Color(0xFF5B3DE0), aiSoft: Color(0xFFEEEAFF), shadow: Color(0x140B1B3A));
   static const dark = Tok(
       bg: Color(0xFF080E16), surface: Color(0xFF111A26), surface2: Color(0xFF182433), line: Color(0xFF243447), fg: Color(0xFFE8EEF6), fg2: Color(0xFF9AACC0),
-      brand: Color(0xFF6EA2FF), brandDeep: Color(0xFF0C1F3D), brandSoft: Color(0xFF16284A), okInk: Color(0xFF56D390), okSoft: Color(0xFF10301F), warnInk: Color(0xFFF2B057), warnSoft: Color(0xFF352610),
+      brand: Color(0xFF5FB4F5), accent: Color(0xFF3BA3F0), brandDeep: Color(0xFF0C1F3D), brandSoft: Color(0xFF16284A), okInk: Color(0xFF56D390), okSoft: Color(0xFF10301F), warnInk: Color(0xFFF2B057), warnSoft: Color(0xFF352610),
       crit: Color(0xFFFF8A7D), critSoft: Color(0xFF3A1915), ai: Color(0xFFB5A2FF), aiSoft: Color(0xFF251E4D), shadow: Color(0x66000000));
 
   static Tok of(BuildContext c) => Theme.of(c).brightness == Brightness.dark ? dark : light;

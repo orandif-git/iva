@@ -15,7 +15,7 @@ class ReportsPage extends StatelessWidget {
           if (snap.hasError) return Center(child: Text('${snap.error}'));
           if (!snap.hasData) return const Loading();
           final list = snap.data!;
-          return ListView(padding: const EdgeInsets.all(16), children: [
+          return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, navClear), children: [
             Section(
               title: 'Scheduled reports',
               subtitle: 'Sent by email on a schedule. Create and change them in the current app for now.',
@@ -29,37 +29,50 @@ class ReportsPage extends StatelessWidget {
       );
 }
 
+/// People who get alerts, and where the rest of the settings live. Appearance, password and sign out are in the profile menu.
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.repo, required this.dark, required this.onTheme, required this.onSignOut});
+  const SettingsPage({super.key, required this.repo});
   final Repository repo;
-  final bool dark;
-  final ValueChanged<bool> onTheme;
-  final VoidCallback onSignOut;
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      Section(
-        title: 'People who get alerts',
-        subtitle: 'They receive alerts on WhatsApp.',
-        child: FutureBuilder(
-          future: repo.people(),
-          builder: (context, snap) {
-            if (!snap.hasData) return const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator());
-            final list = snap.data!;
-            return Column(children: [
-              if (list.isEmpty) Text('Nobody yet. Add people in the current app (More, Alerts) so alerts have somewhere to go.', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600)),
-              for (final p in list) ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(backgroundColor: t.brand, foregroundColor: Colors.white, child: Text(p.name.isEmpty ? '?' : p.name[0])), title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)), subtitle: Text(p.phone)),
-            ]);
-          },
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings'), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: SelectionArea(
+            child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 40), children: [
+              const GroupLabel('People who get alerts'),
+              FutureBuilder(
+                future: repo.people(),
+                builder: (context, snap) {
+                  if (snap.hasError) return Text('${snap.error}');
+                  if (!snap.hasData) return const Padding(padding: EdgeInsets.all(24), child: Loading());
+                  final list = snap.data!;
+                  if (list.isEmpty) return const EmptyState(icon: Icons.person_add_alt_1_outlined, title: 'Nobody yet', text: 'Add people in the current app (More, Alerts) so alerts have somewhere to go. They receive alerts on WhatsApp.');
+                  return Group(children: [
+                    for (final p in list)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(children: [
+                          Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(p.name.isEmpty ? '?' : p.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+                          const SizedBox(width: 14),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)), Text(p.phone, style: TextStyle(color: t.fg2, fontSize: 13))])),
+                          const Pill('WhatsApp', Level.ok),
+                        ]),
+                      ),
+                  ]);
+                },
+              ),
+              const GroupLabel('More'),
+              Group(children: [
+                Padding(padding: const EdgeInsets.all(16), child: Text('Recorders, billing, and creating or changing reports are still in the current app at the main address. They move here next.', style: TextStyle(color: t.fg2))),
+              ]),
+            ]),
+          ),
         ),
       ),
-      const SizedBox(height: 14),
-      Card(child: ListTile(title: const Text('Appearance'), subtitle: const Text('Light is the default.'), trailing: SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Light')), ButtonSegment(value: true, label: Text('Dark'))], selected: {dark}, onSelectionChanged: (v) => onTheme(v.first)))),
-      const SizedBox(height: 14),
-      Align(alignment: Alignment.centerLeft, child: OutlinedButton(onPressed: onSignOut, child: const Text('Sign out'))),
-      const SizedBox(height: 10),
-      Text('Recorders, billing and the other settings are still in the current app at the main address.', style: TextStyle(color: t.fg2, fontSize: 13)),
-    ]);
+    );
   }
 }

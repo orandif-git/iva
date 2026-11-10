@@ -6,7 +6,9 @@ import 'package:http/testing.dart';
 import 'package:ivision_app/api_client.dart';
 import 'package:ivision_app/geometry/polygon.dart';
 import 'package:ivision_app/main.dart';
+import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/widgets/profile_menu.dart';
 import 'package:ivision_app/widgets/area_editor.dart';
 
 Future<void> phone(WidgetTester t) async {
@@ -17,6 +19,7 @@ Future<void> phone(WidgetTester t) async {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  profileTests();
   testWidgets('Home says everything is working, then names the problems', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
@@ -26,8 +29,9 @@ void main() {
     await t.pumpWidget(const SizedBox());
     await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: MockRepository(problems: true)));
     await t.pumpAndSettle();
-    expect(find.textContaining('things need your attention'), findsOneWidget);
-    expect(find.text('Review'), findsOneWidget);
+    expect(find.textContaining('things need attention'), findsOneWidget);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.textContaining('Stockroom camera'), findsWidgets);
   });
 
   testWidgets('Done removes an alert from Needs you', (t) async {
@@ -89,7 +93,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Alerts').last);
     await t.pumpAndSettle();
-    await t.tap(find.text('New alert'));
+    await t.tap(find.text('New'));
     await t.pumpAndSettle();
     await t.tap(find.text('Smart Alerts'));
     await t.pumpAndSettle();
@@ -115,7 +119,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Alerts').last);
     await t.pumpAndSettle();
-    await t.tap(find.text('New alert'));
+    await t.tap(find.text('New'));
     await t.pumpAndSettle();
     await t.tap(find.text('System Alerts'));
     await t.pumpAndSettle();
@@ -150,3 +154,55 @@ void main() {
 }
 
 FilledButton tester(WidgetTester t, String label) => t.widget<FilledButton>(find.ancestor(of: find.text(label), matching: find.byType(FilledButton)).first);
+
+void profileTests() {
+  testWidgets('the top bar has the logo and a profile button, and no duplicate title', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    expect(find.bySemanticsLabel('Jas iVision'), findsWidgets);
+    expect(find.byType(ProfileButton), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget, reason: 'only the tab says Home');
+    expect(find.byIcon(Icons.dark_mode_outlined), findsNothing, reason: 'the light/dark switch lives in the profile menu');
+  });
+
+  testWidgets('the profile menu has Light, Dark, Auto, Settings, Change password and Sign out', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(ProfileButton));
+    await t.pumpAndSettle();
+    for (final x in ['Priya', 'Green Valley Store', 'APPEARANCE', 'Light', 'Dark', 'Auto', 'Settings', 'Change password', 'Sign out']) {
+      expect(find.text(x), findsWidgets, reason: x);
+    }
+    await t.tap(find.text('Dark'));
+    await t.pumpAndSettle();
+    expect(Theme.of(t.element(find.text('Appearance').evaluate().isEmpty ? find.text('Sign out') : find.text('Appearance'))).brightness, Brightness.dark);
+    expect((await SharedPreferences.getInstance()).getString('gi_next_theme'), 'dark');
+  });
+
+  testWidgets('the theme starts on light, whatever the device says, and remembers a choice', (t) async {
+    SharedPreferences.setMockInitialValues({'gi_next_theme': 'auto'});
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    expect(t.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.system);
+    SharedPreferences.setMockInitialValues({});
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: MockRepository()));
+    await t.pumpAndSettle();
+    expect(t.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.light);
+  });
+
+  test('repeats of the same alert in the same place fold into one row, newest first', () {
+    final now = DateTime(2026, 11, 10, 18);
+    AlertItem a(String id, String rule, String where, int hoursAgo, {AlertState st = AlertState.open}) => AlertItem(id: id, title: 'Too many people', body: '', rule: rule, where: where, when: '', at: now.subtract(Duration(hours: hoursAgo)), state: st, smart: true);
+    final groups = groupAlerts([a('1', 'people_in_area', 'Aisle 1', 5), a('2', 'people_in_area', 'Aisle 1', 1), a('3', 'people_in_area', 'Aisle 2', 3), a('4', 'camera_offline', 'Aisle 1', 2)]);
+    expect(groups.length, 3);
+    expect(groups.first.latest.id, '2');
+    expect(groups.first.count, 2);
+    expect(repeatsLine(groups.first), startsWith('Aisle 1 · 2 times, last'));
+    expect(isRecent(a('9', 'x', 'y', 30), now: now), isFalse);
+    expect(isRecent(a('9', 'x', 'y', 3), now: now), isTrue);
+  });
+}
