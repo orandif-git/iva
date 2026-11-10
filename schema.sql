@@ -29,7 +29,7 @@ CREATE TYPE app.tenant_role       AS ENUM ('admin','regular');
 CREATE TYPE app.recorder_brand    AS ENUM ('hikvision','dahua','other');
 CREATE TYPE app.recorder_protocol AS ENUM ('isup','auto_register','gb28181','rtsp','cloud_api');
 CREATE TYPE app.link_status       AS ENUM ('never','online','offline');
-CREATE TYPE app.zone_kind         AS ENUM ('count_line','anpr_zone');
+CREATE TYPE app.zone_kind         AS ENUM ('count_line','anpr_zone','area_count','queue_area','staff_area');
 CREATE TYPE app.review_status     AS ENUM ('auto','needs_review','confirmed','corrected');
 CREATE TYPE app.direction         AS ENUM ('in','out');
 CREATE TYPE app.list_type         AS ENUM ('blocked','allowed');
@@ -96,6 +96,8 @@ CREATE TABLE platform.alert_switches (
   changed_by uuid,
   changed_at timestamptz NOT NULL DEFAULT now()
 );
+-- The area alerts start switched off: the platform owner turns them on once they have been tried on real footage.
+INSERT INTO platform.alert_switches (alert_type, enabled) VALUES ('people_in_area', false), ('queue_long', false), ('phone_use', false);
 
 -- Where evidence pictures, clips and reports are kept. One row, set in the owner console. With no row the GI_EVIDENCE_* settings apply.
 -- The R2 secret is encrypted like every other secret here.
@@ -326,6 +328,7 @@ CREATE TABLE app.cameras (
   enabled       boolean NOT NULL DEFAULT true,
   use_footfall  boolean NOT NULL DEFAULT false,
   use_anpr      boolean NOT NULL DEFAULT false,
+  use_areas     boolean NOT NULL DEFAULT false,          -- counts people in marked areas, queues and phone use in staff areas; switched on by saving an area
   stream        text NOT NULL DEFAULT 'sub' CHECK (stream IN ('sub','main')),
   last_frame_at timestamptz,
   ai_view_until timestamptz,                         -- while this is in the future, the worker sends annotated pictures (someone is looking at "what the AI sees")
@@ -347,7 +350,7 @@ CREATE TABLE app.cameras (
   source_set_at   timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (recorder_id, channel_no),
-  CHECK (use_footfall OR use_anpr OR NOT enabled),
+  CHECK (use_footfall OR use_anpr OR use_areas OR NOT enabled),
   CONSTRAINT cameras_kind_check CHECK (
     (connection = 'recorder' AND recorder_id IS NOT NULL AND channel_no IS NOT NULL) OR (connection = 'rtsp' AND recorder_id IS NULL AND channel_no IS NULL))
 );
@@ -361,6 +364,8 @@ CREATE TABLE app.camera_zones (
   kind         app.zone_kind NOT NULL,
   points       jsonb NOT NULL,                         -- [[x,y],[x,y],...]
   in_direction jsonb,                                  -- unit vector that counts as "in", for count_line
+  name         text,                                   -- an area's name, for example "Billing counter"
+  params       jsonb NOT NULL DEFAULT '{}',            -- an area's thresholds, for example {"limit": 8, "minutes": 2}
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX zones_camera_idx ON app.camera_zones (camera_id);
@@ -452,6 +457,19 @@ CREATE TABLE app.tenant_alert_grants (
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, alert_type)
 );
+
+-- What the worker saw in a marked area, every ten seconds or so. Short-lived: the alerts look at the last few minutes only.
+CREATE TABLE app.zone_samples (
+  zone_id    uuid NOT NULL REFERENCES app.camera_zones(id) ON DELETE CASCADE,
+  tenant_id  uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  at         timestamptz NOT NULL,
+  people     integer NOT NULL CHECK (people >= 0),
+  wait_seconds real,                                    -- queue area: how long the person who has waited longest has been there
+  phone_seconds real,                                   -- staff area: how long a phone has been in use without a break
+  evidence_id uuid,                                     -- a picture taken when the phone threshold was reached
+  PRIMARY KEY (zone_id, at)
+);
+CREATE INDEX zone_samples_tenant_idx ON app.zone_samples (tenant_id, at DESC);
 
 -- When a recorder went online or offline. Lets us see a connection that keeps dropping, and tell the customer when something is back.
 CREATE TABLE app.recorder_link_events (

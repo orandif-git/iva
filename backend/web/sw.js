@@ -1,9 +1,9 @@
 // Jas iVision service worker. Keeps the app's own files so it opens instantly, and keeps the last copy of a few read-only
 // pages of data so the app still shows something when the network is down. It never keeps sign-in tokens, camera pictures,
 // file exports or anything from the admin or internal areas, and the saved data is deleted when the person signs out.
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `gi-shell-${VERSION}`, API = `gi-api-${VERSION}`;
-const PRECACHE = ["/", "/css/app.css", "/js/lib.js", "/js/app/main.js", "/js/app/ui.js", "/js/app/shell.js", "/js/app/alertrules.js", "/js/app/table.js", "/js/app/theme.js", "/js/app/screens.js", "/js/app/recorders.js",
+const PRECACHE = ["/", "/css/app.css", "/js/lib.js", "/js/app/main.js", "/js/app/ui.js", "/js/app/shell.js", "/js/app/alertrules.js", "/js/app/areas.js", "/js/app/table.js", "/js/app/theme.js", "/js/app/screens.js", "/js/app/recorders.js",
   "/img/logo-compact.svg", "/img/logo-compact-on-dark.svg", "/img/logo.svg", "/img/logo-on-dark.svg", "/img/favicon.svg", "/img/site.webmanifest"];
 // Read-only data worth showing offline. Everything else under /v1 always goes to the network.
 const SAVE = [/^\/v1\/me$/, /^\/v1\/cameras(\/[\w-]+\/zones)?$/, /^\/v1\/recorders(\/[\w-]+(\/channels)?)?$/, /^\/v1\/footfall(\/summary)?$/, /^\/v1\/plates$/,

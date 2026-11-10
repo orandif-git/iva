@@ -12,7 +12,7 @@ from ..schemas import CameraCreate, CameraOut, CameraPatch, ZoneOut, ZonesPut
 
 router = APIRouter(prefix="/v1", tags=["customer: cameras"])
 
-CAM_COLS = "c.id, c.connection, c.recorder_id, c.channel_no, c.name, c.enabled, c.use_footfall, c.use_anpr, c.stream, c.last_frame_at, c.stream_state"
+CAM_COLS = "c.id, c.connection, c.recorder_id, c.channel_no, c.name, c.enabled, c.use_footfall, c.use_anpr, c.use_areas, c.stream, c.last_frame_at, c.stream_state"
 
 
 async def _plan_features(conn, tenant_id) -> dict:
@@ -67,8 +67,8 @@ async def patch_camera(camera_id: UUID, body: CameraPatch, ctx: CustomerCtx = De
     if not ch:
         raise ApiError(422, "nothing_to_change", "Send at least one field to change.")
     merged = {**dict(cur), **ch}
-    if merged["enabled"] and not (merged["use_footfall"] or merged["use_anpr"]):
-        raise ApiError(422, "use_required", "Choose at least one use: footfall or number plates.")
+    if merged["enabled"] and not (merged["use_footfall"] or merged["use_anpr"] or merged["use_areas"]):
+        raise ApiError(422, "use_required", "Choose at least one use: footfall, number plates or marked areas.")
     if ch.get("use_anpr") and not (await _plan_features(ctx.conn, ctx.tenant_id)).get("anpr"):
         raise ApiError(403, "plan_feature_missing", "Number plate reading is not included in your plan.")
     if ch.get("enabled") and not cur["enabled"]:
@@ -92,7 +92,7 @@ async def delete_camera(camera_id: UUID, ctx: CustomerCtx = Depends(customer_ctx
 @router.get("/cameras/{camera_id}/zones", response_model=list[ZoneOut])
 async def get_zones(camera_id: UUID, ctx: CustomerCtx = Depends(customer_ctx())):
     await _camera(ctx, camera_id)
-    return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 ORDER BY kind", camera_id)]
+    return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 AND kind IN ('count_line','anpr_zone') ORDER BY kind", camera_id)]
 
 
 @router.put("/cameras/{camera_id}/zones", response_model=list[ZoneOut])
@@ -106,13 +106,13 @@ async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx = Depends(
             raise ApiError(422, "bad_line", "A counting line has exactly two points.")
         if z.kind == "anpr_zone" and len(z.points) < 3:
             raise ApiError(422, "bad_zone", "A plate zone needs at least three points.")
-    await ctx.conn.execute("DELETE FROM app.camera_zones WHERE camera_id=$1", camera_id)
+    await ctx.conn.execute("DELETE FROM app.camera_zones WHERE camera_id=$1 AND kind IN ('count_line','anpr_zone')", camera_id)
     for z in body.zones:
         await ctx.conn.execute(
             "INSERT INTO app.camera_zones (tenant_id, camera_id, kind, points, in_direction) VALUES ($1,$2,$3::app.zone_kind,$4,$5)",
             ctx.tenant_id, camera_id, z.kind, z.points, z.in_direction)
     await ctx.audit("zones.update", "camera", camera_id, {"kinds": kinds})
-    return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 ORDER BY kind", camera_id)]
+    return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 AND kind IN ('count_line','anpr_zone') ORDER BY kind", camera_id)]
 
 
 @router.get("/cameras/{camera_id}/snapshot")

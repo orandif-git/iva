@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 
 from ..deps import ServiceCtx, service_ctx
-from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PlateBatch, Rejected
+from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PlateBatch, Rejected, ZoneBatch
+from ..services import areas as area_rules
 from ..services.alerts import raise_alert
 from ..services.plate_events import alert_if_blocked, find_entry
 from ..services.plates import clean_plate
@@ -19,7 +20,7 @@ MAX_FUTURE = timedelta(minutes=5)    # allowance for clock drift on a worker
 DUP_WINDOW = timedelta(seconds=120)  # the same plate, camera and direction inside this window is one visit
 _ENSURED: set = set()                # months whose partition this process has already ensured
 
-_CAMS = """SELECT c.id, c.tenant_id, c.name, c.enabled, c.use_footfall, c.use_anpr, t.status::text AS tenant_status
+_CAMS = """SELECT c.id, c.tenant_id, c.name, c.enabled, c.use_footfall, c.use_anpr, c.use_areas, t.status::text AS tenant_status
            FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id WHERE c.id = ANY($1::uuid[])"""
 
 
@@ -29,7 +30,7 @@ def _why_rejected(cam, ts: datetime, now: datetime, flag: str) -> str | None:
     if cam["tenant_status"] in ("suspended", "cancelled"):
         return "tenant_suspended"
     if not cam["enabled"] or not cam[flag]:
-        return "footfall_not_enabled" if flag == "use_footfall" else "plates_not_enabled"
+        return {"use_footfall": "footfall_not_enabled", "use_areas": "areas_not_enabled"}.get(flag, "plates_not_enabled")
     if ts > now + MAX_FUTURE:
         return "in_future"
     if ts < now - MAX_AGE:
@@ -129,3 +130,33 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
             latest[e.camera_id] = max(latest.get(e.camera_id, e.seen_at), e.seen_at)
     await _touch(conn, latest)
     return IngestResult(accepted=accepted, duplicates=dups, rejected=rejected, clips=clips)
+
+
+@router.post("/zones", response_model=IngestResult)
+async def ingest_zones(body: ZoneBatch, ctx: ServiceCtx = Depends(service_ctx)):
+    """What the worker saw in marked areas, every ten seconds or so. Each report is stored, then each area that was reported is checked against its limits:
+    an alert is raised only when the condition is met. A report sent twice is harmless (it is stored once)."""
+    cams = {r["id"]: r for r in await ctx.conn.fetch(_CAMS, list({e.camera_id for e in body.events}))}
+    zones = {r["id"]: r for r in await ctx.conn.fetch("SELECT id, camera_id FROM app.camera_zones WHERE id = ANY($1::uuid[])", list({e.zone_id for e in body.events}))}
+    now = datetime.now(timezone.utc)
+    rejected, rows, touched = [], [], set()
+    for i, e in enumerate(body.events):
+        cam = cams.get(e.camera_id)
+        reason = _why_rejected(cam, e.at, now, "use_areas")
+        if reason is None and (e.zone_id not in zones or zones[e.zone_id]["camera_id"] != e.camera_id):
+            reason = "unknown_area"
+        if reason:
+            rejected.append(Rejected(index=i, reason=reason))
+            continue
+        rows.append((e.zone_id, cam["tenant_id"], e.at, e.people, e.wait_seconds, e.phone_seconds, e.evidence_id))
+        touched.add(e.zone_id)
+    stored = 0
+    if rows:
+        for r in rows:
+            stored += int(bool(await ctx.conn.fetchval(
+                """INSERT INTO app.zone_samples (zone_id, tenant_id, at, people, wait_seconds, phone_seconds, evidence_id) VALUES ($1,$2,$3,$4,$5,$6,
+                          (SELECT id FROM app.evidence WHERE id=$7 AND tenant_id=$2))
+                   ON CONFLICT (zone_id, at) DO NOTHING RETURNING 1""", *r)))
+        for zid in touched:
+            await area_rules.evaluate(ctx.conn, zid)
+    return IngestResult(accepted=len(rows), duplicates=len(rows) - stored, rejected=rejected)

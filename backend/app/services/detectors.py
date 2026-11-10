@@ -58,6 +58,7 @@ async def connection_unstable() -> int:
     n = 0
     async with db.service_tx() as conn:
         await conn.execute("DELETE FROM app.recorder_link_events WHERE at < now() - interval '14 days'")
+        await conn.execute("DELETE FROM app.zone_samples WHERE at < now() - interval '3 days'")
         rows = await conn.fetch(
             """SELECT e.tenant_id, e.recorder_id, r.device_id, r.name, count(*)::int AS drops FROM app.recorder_link_events e JOIN app.recorders r ON r.id = e.recorder_id
                WHERE e.status='offline' AND e.at > now() - interval '1 hour' GROUP BY 1,2,3,4 HAVING count(*) >= 2""")
