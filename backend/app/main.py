@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
@@ -97,6 +97,22 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
             return FileResponse(web / "staff" / "index.html")
         nxt = web.parent / "web_next"
         if (nxt / "index.html").is_file():          # the new customer app, built from /app (see scripts/build_app.sh)
+            if s.default_app == "next":
+                # The new app opens at the plain address. The old one is still there for support and for a person who needs it: /?classic=1 opens it and a
+                # cookie keeps it for 30 days; /?next=1 goes back. Password links (/set-password) and the staff console are untouched.
+                @app.get("/", include_in_schema=False)
+                async def front_door(request: Request):
+                    q = request.query_params
+                    if "next" in q:
+                        r = RedirectResponse("/next/", status_code=302)
+                        r.delete_cookie("gi_ui", path="/")
+                        return r
+                    if "classic" in q or request.cookies.get("gi_ui") == "classic":
+                        r = FileResponse(web / "index.html")
+                        if "classic" in q:
+                            r.set_cookie("gi_ui", "classic", max_age=30 * 86400, path="/", secure=s.env != "dev", httponly=True, samesite="lax")
+                        return r
+                    return RedirectResponse("/next/", status_code=302)
             app.mount("/next", StaticFiles(directory=nxt, html=True), name="web_next")
         app.mount("/", StaticFiles(directory=web, html=True), name="web")        # last, so it never hides an API route
     return app
