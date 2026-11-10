@@ -287,13 +287,13 @@ void profileTests() {
     expect(find.text('Needs you'), findsOneWidget, reason: 'Home is still there, no reload spinner');
   });
 
-  testWidgets('five tabs: Home, Alerts, Cameras, AI Watch, More, and they fit without overlapping', (t) async {
+  testWidgets('five tabs: Home, Cameras, AI Watch, Alerts, More, and they fit without overlapping', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
     final bar = find.byType(AppTabBar);
     var last = -1.0;
-    for (final x in ['Home', 'Alerts', 'Cameras', 'AI Watch', 'More']) {
+    for (final x in ['Home', 'Cameras', 'AI Watch', 'Alerts', 'More']) {
       final r = t.getRect(find.descendant(of: bar, matching: find.text(x)));
       expect(r.left, greaterThanOrEqualTo(last - 0.5), reason: '$x must not overlap the one before');
       expect(r.height, lessThan(16), reason: '$x stays on one line');
