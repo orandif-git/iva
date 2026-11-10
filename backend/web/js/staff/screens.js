@@ -2,6 +2,7 @@
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
 import { chips, empty, field, formSheet, ic, kpi, note, onSheetClose, openSheet, closeSheet, pill, reasonSheet, sec, seg, skeleton, toast, toggle } from "../app/ui.js";
 import { ago, back, CUS_STATUS, fmtDateTime, gh, group, hero, initials, kv, money, REC_STATUS, row, statusPill, title, cap, INV_STATUS } from "./common.js";
+import { dataTable } from "../app/table.js";
 import { moneyScreens, invoiceSheet } from "./money.js";
 import { messagingScreens } from "./messaging.js";
 import { adminScreens } from "./admin.js";
@@ -77,16 +78,27 @@ async function customers(X) {
   const st = X.mem.cus ||= { q: "", filter: "all" };
   const [r, pl] = await Promise.all([X.api.get("/admin/v1/tenants?limit=200"), X.api.get("/admin/v1/plans?include_retired=true")]);
   const items = r.items, plans = Object.fromEntries(pl.items.map((x) => [x.id, x.name]));
-  const list = h("div", { class: "group" });
+  const table = dataTable({
+    label: "Customers", rows: items, rowKey: (c) => c.id, memory: (st.table ||= {}), sort: { key: "name", dir: "asc" },
+    href: (c) => "#/customers/" + c.id, onOpen: (c) => X.go("#/customers/" + c.id),
+    empty: h("p", { class: "sub" }, "No customers match."),
+    columns: [
+      { key: "name", label: "Customer", primary: true, sort: true },
+      { key: "city", label: "City", sort: true, minor: true, render: (c) => c.city || "No city" },
+      { key: "plan", label: "Plan", sort: true, value: (c) => plans[c.plan_id] || c.plan_id, render: (c) => plans[c.plan_id] || c.plan_id },
+      { key: "cameras", label: "Cameras", sort: true, value: (c) => c.cameras_in_use, render: (c) => `${c.cameras_in_use} of ${c.camera_limit}`, align: "end" },
+      { key: "status", label: "Status", sort: true, render: (c) => statusPill(CUS_STATUS, c.status) },
+    ],
+  });
   const draw = () => {
-    const q = st.q.toLowerCase(), l = items.filter((c) => (st.filter === "all" || c.status === st.filter) && (!q || (c.name + " " + (c.city || "")).toLowerCase().includes(q)));
-    mount(list, l.length ? l.map((c) => custRow(c, () => X.go("#/customers/" + c.id), plans)) : h("div", { class: "gi static" }, h("div", { class: "muted" }, "No customers match.")));
+    const q = st.q.toLowerCase();
+    table.setRows(items.filter((c) => (st.filter === "all" || c.status === st.filter) && (!q || (c.name + " " + (c.city || "")).toLowerCase().includes(q))));
   };
   const search = h("input", { type: "search", placeholder: "Search customers", value: st.q, "aria-label": "Search customers", oninput: (e) => { st.q = e.target.value; draw(); } });
   draw();
   const filter = chips([["all", "All"], ["active", "Active"], ["trial", "Trial"], ["past_due", "Past due"], ["suspended", "Suspended"]], st.filter, (v) => { st.filter = v; draw(); });
   return [title("Customers", `${items.length} customers`, X.isOwner ? h("button", { class: "btn sm sec2", type: "button", onclick: () => newCustomer(X) }, ic("plus"), "New") : null),
-    h("label", { class: "search" }, ic("search"), search), h("div", { style: null, class: "gap" }, filter), list];
+    h("label", { class: "search" }, ic("search"), search), h("div", { class: "gap" }, filter), table];
 }
 
 async function newCustomer(X) {
@@ -315,14 +327,29 @@ function capSheet(X, c, cur, after) {
 
 // ------------------------------------------------------------------------------------------------------ Fleet
 async function fleet(X) {
-  const st = X.mem.fleet ||= { f: "all" };
+  const st = X.mem.fleet ||= { f: "all", q: "" };
   const recs = await X.api.get("/admin/v1/recorders?limit=500");
   const online = recs.filter((r) => r.status === "online").length;
-  const list = h("div", { class: "group" });
-  const draw = () => { const l = recs.filter((r) => st.f === "all" || r.status === st.f); mount(list, l.length ? l.map((r) => row({ icon: "server", title: r.name || r.device_id, sub: `${r.tenant_name} · ${r.device_id}`, right: h("span", { class: "rowend" }, statusPill(REC_STATUS, r.status), ic("chev", "chev")), onclick: () => X.go("#/fleet/" + r.id) })) : h("div", { class: "gi static" }, h("div", { class: "muted" }, "None."))); };
+  const table = dataTable({
+    label: "Recorders", rows: recs, rowKey: (r) => r.id, memory: (st.table ||= {}), sort: { key: "name", dir: "asc" },
+    href: (r) => "#/fleet/" + r.id, onOpen: (r) => X.go("#/fleet/" + r.id),
+    empty: h("p", { class: "sub" }, "No recorders match."),
+    bulk: [{ label: "Copy device IDs", run: async (picked) => { try { await navigator.clipboard.writeText(picked.map((r) => r.device_id).join("\n")); toast(`${picked.length} IDs copied`); } catch { toast("Could not copy.", true); } } }],
+    columns: [
+      { key: "name", label: "Recorder", primary: true, sort: true, value: (r) => r.name || r.device_id, render: (r) => r.name || r.device_id },
+      { key: "tenant_name", label: "Customer", sort: true },
+      { key: "device_id", label: "Device ID", minor: true, sort: true },
+      { key: "channel_count", label: "Cameras", sort: true, align: "end" },
+      { key: "seen", label: "Last heard", sort: true, minor: true, value: (r) => (r.last_heartbeat_at ? new Date(r.last_heartbeat_at).getTime() : null), render: (r) => (r.last_heartbeat_at ? ago(r.last_heartbeat_at) : "never") },
+      { key: "status", label: "Status", sort: true, render: (r) => statusPill(REC_STATUS, r.status) },
+    ],
+  });
+  const draw = () => { const q = st.q.toLowerCase(); table.setRows(recs.filter((r) => (st.f === "all" || r.status === st.f) && (!q || `${r.name || ""} ${r.device_id} ${r.tenant_name}`.toLowerCase().includes(q)))); };
   draw();
+  const search = h("input", { type: "search", placeholder: "Search recorders or customers", value: st.q, "aria-label": "Search recorders", oninput: (e) => { st.q = e.target.value; draw(); } });
   const filter = chips([["all", "All"], ["online", "Online"], ["offline", "Offline"], ["never", "Waiting"]], st.f, (v) => { st.f = v; draw(); });
-  return [title("Fleet", `${recs.length} recorders · ${online} online · read only`), h("div", { class: "gap" }, filter), list, h("p", { class: "sub" }, "Customers connect and manage their own recorders. This list is for diagnosing problems.")];
+  return [title("Fleet", `${recs.length} recorders \u00b7 ${online} online \u00b7 read only`), h("label", { class: "search" }, ic("search"), search), h("div", { class: "gap" }, filter), table,
+    h("p", { class: "sub" }, "Customers connect and manage their own recorders. This list is for diagnosing problems.")];
 }
 
 export async function recorderDetail(X, id) {

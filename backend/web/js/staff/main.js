@@ -1,6 +1,7 @@
 // Jas iVision staff console: shell, sign-in, routing, and the "open the customer's app" hand-off. Screens live in screens.js.
 import { Api, busy, clear, errText, h, mount } from "../lib.js";
 import { theme } from "../app/theme.js";
+import { openPalette, searchShortcuts, sidebar, tabbar } from "../app/shell.js";
 import { field, ic, lockupPair, logoPair, mountOverlays, note, openSheet, skeleton, toast } from "../app/ui.js";
 import { customerDetail, recorderDetail, SCREENS, TITLES } from "./screens.js";
 
@@ -15,6 +16,8 @@ const NAV = [
   ["plans", "Plans", "tag", "owner"], ["storage", "Storage", "cloud", "owner"], ["messaging", "Messaging", "chat", null], ["maintenance", "Maintenance", "wrench", "owner"], ["audit", "Audit log", "log", null], ["staff", "Staff and roles", "shield", "owner"],
 ];
 const TABS = ["today", "customers", "fleet", "billing"];
+// The sidebar groups the same pages by what they are for. Pages a role may not open are left out, and so are groups left empty.
+const GROUPS = [["", ["today"]], ["Customers", ["customers", "fleet"]], ["Money", ["billing", "plans"]], ["Support", ["messaging", "audit"]], ["System", ["storage", "maintenance", "staff"]]];
 const MORE = ["plans", "storage", "messaging", "maintenance", "audit", "staff"];
 const allowed = (need) => !need || state.me?.role === need;
 const desk = () => matchMedia("(min-width: 780px)").matches;
@@ -88,18 +91,19 @@ async function render(keep = false) {
 function shell() {
   const page = h("div", { class: "page" }), cbar = h("div", { class: "cbar", "aria-hidden": "true" });
   const scroll = h("main", { class: "scroll", id: "main" }, page);
-  const btn = (k, label, icon) => h("button", { type: "button", "data-tab": k, onclick: () => X.go("#/" + k), "aria-label": label }, ic(icon), h("span", { class: "l" }, label));
   const navItems = NAV.filter((n) => allowed(n[3]));
-  const phoneTabs = TABS.map((k) => navItems.find((n) => n[0] === k)).filter(Boolean);
-  const tabbar = h("nav", { class: "tabbar", "aria-label": "Main" }, phoneTabs.map((n) => btn(n[0], n[1], n[2])), btn("more", "More", "more"));
+  const item = (k) => { const n = navItems.find((x) => x[0] === k); return n && { key: n[0], label: n[1], icon: n[2] }; };
+  const groups = GROUPS.map(([label, keys]) => ({ label, items: keys.map(item).filter(Boolean) })).filter((g) => g.items.length);
+  const go = (href) => X.go(href);
+  const tabbarEl = tabbar(go, [...TABS.map(item).filter(Boolean), { key: "more", label: "More", icon: "more" }]);
   const insp = h("aside", { class: "insp", hidden: true });
-  const sb = h("aside", { class: "sb" }, h("a", { href: "#/today", "aria-label": "Jas iVision staff home" }, logoPair("logo")),
-    h("div", { class: "site" }, h("span", { class: "ico" }, ic("server")), h("span", {}, h("b", {}, "Production"), h("small", {}, location.host))),
-    h("nav", { "aria-label": "Sidebar" }, navItems.map((n) => btn(n[0], n[1], n[2]))),
-    h("div", { class: "foot" }, h("div", {}, `${state.me.name} · ${state.me.role}`)));
-  const tb = h("header", { class: "tb" }, h("button", { class: "kbd", type: "button", onclick: openPalette }, ic("search"), "Search customers, recorders, pages", h("kbd", {}, "Ctrl K")), h("span", { class: "grow" }),
+  const side = sidebar({ go, groups, storeKey: "gi_staff_rail",
+    head: [h("a", { href: "#/today", "aria-label": "Jas iVision staff home" }, logoPair("logo")), h("div", { class: "site" }, h("span", { class: "ico" }, ic("server")), h("span", {}, h("b", {}, "Production"), h("small", {}, location.host)))],
+    foot: [h("div", { class: "usage" }, `${state.me.name} \u00b7 ${state.me.role}`)] });
+  const sb = side.el;
+  const tb = h("header", { class: "tb" }, h("button", { class: "kbd", type: "button", onclick: () => search() }, ic("search"), h("span", { class: "kl" }, "Search customers, recorders, pages"), h("kbd", {}, "Ctrl K")), h("span", { class: "grow" }),
     h("button", { class: "avatar", type: "button", "aria-label": "Account", onclick: () => X.go("#/more") }, (state.me.name || "?").trim().slice(0, 1).toUpperCase()));
-  const root = h("div", { class: "ax" }, sb, h("div", { class: "main" }, tb, cbar, scroll, tabbar), insp);
+  const root = h("div", { class: "ax" }, sb, h("div", { class: "main" }, tb, cbar, scroll, tabbarEl), insp);
   mount(host, root);
   mountOverlays(root);
   scroll.addEventListener("scroll", () => cbar.classList.toggle("on", scroll.scrollTop > 56), { passive: true });
@@ -107,37 +111,28 @@ function shell() {
     root, page, scroll, cbar, insp,
     mark: (key) => {
       const tab = TABS.includes(key) ? key : "more";
-      root.querySelectorAll(".tabbar [data-tab]").forEach((b) => (b.getAttribute("data-tab") === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
-      root.querySelectorAll(".sb [data-tab]").forEach((b) => (b.getAttribute("data-tab") === key ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
+      side.mark(key);
+      tabbarEl.querySelectorAll("[data-tab]").forEach((b) => (b.getAttribute("data-tab") === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
     },
   };
   // "More" is a real page on the phone listing the rest; on a desktop the sidebar already has everything.
-  root.querySelector('.tabbar [data-tab="more"]').onclick = () => X.go("#/more");
+  tabbarEl.querySelector('[data-tab="more"]').onclick = () => X.go("#/more");
 }
 
 // ----------------------------------------------------------------------------------------------- search
-async function openPalette() {
-  const input = h("input", { type: "search", placeholder: "Search customers, recorders or pages", autocomplete: "off", "aria-label": "Search" }), list = h("div");
-  const pages = NAV.filter((n) => allowed(n[3])).map((n) => ({ label: "Go to " + n[1], icon: n[2], href: "#/" + n[0] }));
-  let items = pages, sel = 0;
-  const draw = () => mount(list, items.slice(0, 8).map((it, n) => h("div", { class: "palrow", "aria-selected": String(n === sel), onclick: () => pick(it) }, ic(it.icon), it.label)));
-  const pick = (it) => { document.querySelector(".layer .xbtn")?.click(); X.go(it.href); };
-  const filter = () => { const q = input.value.trim().toLowerCase(); items = ALL.filter((b) => b.label.toLowerCase().includes(q)); sel = 0; draw(); };
-  let ALL = pages;
-  Promise.all([api.get("/admin/v1/tenants?limit=200").catch(() => ({ items: [] })), api.get("/admin/v1/recorders?limit=200").catch(() => [])]).then(([t, r]) => {
-    ALL = [...pages, ...t.items.map((c) => ({ label: c.name, icon: "users", href: "#/customers/" + c.id })), ...r.map((x) => ({ label: `${x.name || x.device_id} · ${x.tenant_name}`, icon: "server", href: "#/fleet/" + x.id }))];
-    filter();
+// Staff can search pages, every customer and every recorder (the lists the pages already use).
+function search() {
+  openPalette({
+    placeholder: "Search customers, recorders or pages", recentKey: "gi_staff_recent", go: (href) => X.go(href),
+    pages: NAV.filter((n) => allowed(n[3])).map((n) => ({ label: n[1], icon: n[2], href: "#/" + n[0] })),
+    load: async () => {
+      const [t, r] = await Promise.all([api.get("/admin/v1/tenants?limit=200").catch(() => ({ items: [] })), api.get("/admin/v1/recorders?limit=200").catch(() => [])]);
+      return [{ section: "Customers", icon: "users", items: t.items.map((c) => ({ label: c.name, sub: c.city || null, href: "#/customers/" + c.id })) },
+        { section: "Recorders", icon: "server", items: r.map((x) => ({ label: x.name || x.device_id, sub: x.tenant_name, href: "#/fleet/" + x.id })) }];
+    },
   });
-  input.oninput = filter;
-  input.onkeydown = (e) => {
-    if (e.key === "ArrowDown") { sel = Math.min(sel + 1, Math.min(items.length, 8) - 1); draw(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
-    else if (e.key === "Enter" && items[sel]) pick(items[sel]);
-  };
-  openSheet("Search", h("div", { class: "field" }, input), list);
-  draw();
 }
-addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && ui) { e.preventDefault(); openPalette(); } });
+searchShortcuts(() => !!ui, search);
 
 // ------------------------------------------------------------------------------- open the customer's app
 const waiting = new Set();

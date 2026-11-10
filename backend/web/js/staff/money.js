@@ -1,6 +1,7 @@
 // Billing (invoices) and Plans. Owner only.
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
 import { chips, empty, field, formSheet, ic, kpi, note, openSheet, closeSheet, pill, reasonSheet, toast, toggle } from "../app/ui.js";
+import { dataTable } from "../app/table.js";
 import { back, gh, group, INV_STATUS, kv, money, row, statusPill, title, fmtDateTime } from "./common.js";
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
@@ -45,8 +46,18 @@ async function billing(X) {
   const st = X.mem.bill ||= { month: lastMonths(2)[1], f: "all" };
   const [sum, inv] = await Promise.all([X.api.get(`/admin/v1/billing/summary${qs({ month: st.month })}`), X.api.get(`/admin/v1/billing/invoices${qs({ month: st.month, limit: 200 })}`)]);
   const i = sum.invoices || {};
-  const list = h("div", { class: "group" });
-  const draw = () => { const l = inv.filter((x) => st.f === "all" || (st.f === "overdue" ? x.overdue : x.status === st.f)); mount(list, l.length ? l.map((x) => row({ icon: "doc", title: x.tenant, sub: `${x.number || "Draft"} · ${monthName(x.period_month.slice(0, 7))}`, right: h("span", { class: "rowend" }, h("b", {}, money(x.total_paise)), statusPill(INV_STATUS, x.overdue ? "overdue" : x.status), ic("chev", "chev")), onclick: () => invoiceSheet(X, x, () => X.refresh()) })) : h("div", { class: "gi static" }, h("div", { class: "muted" }, "No invoices match."))); };
+  const table = dataTable({
+    label: "Invoices", rows: inv, rowKey: (x) => x.id, memory: (st.table ||= {}), sort: { key: "tenant", dir: "asc" },
+    onOpen: (x) => invoiceSheet(X, x, () => X.refresh()), empty: h("p", { class: "sub" }, "No invoices match."),
+    columns: [
+      { key: "tenant", label: "Customer", primary: true, sort: true },
+      { key: "number", label: "Invoice", sort: true, minor: true, render: (x) => x.number || "Draft" },
+      { key: "period", label: "Month", sort: true, minor: true, value: (x) => x.period_month, render: (x) => monthName(x.period_month.slice(0, 7)) },
+      { key: "total", label: "Total", sort: true, align: "end", value: (x) => x.total_paise, render: (x) => money(x.total_paise) },
+      { key: "status", label: "Status", sort: true, value: (x) => (x.overdue ? "overdue" : x.status), render: (x) => statusPill(INV_STATUS, x.overdue ? "overdue" : x.status) },
+    ],
+  });
+  const draw = () => table.setRows(inv.filter((x) => st.f === "all" || (st.f === "overdue" ? x.overdue : x.status === st.f)));
   draw();
   const month = h("select", { "aria-label": "Month", onchange: (e) => { st.month = e.target.value; X.refresh(); } }, lastMonths(8).map((m) => h("option", { value: m, selected: m === st.month }, monthName(m))));
   const act = async (label, path, body, done) => { try { const r = await X.api.post(path, body); toast(done(r)); X.refresh(); } catch (e) { toast(errText(e), true); } };
@@ -56,7 +67,7 @@ async function billing(X) {
     row({ icon: "bell", title: "Send reminders", sub: "Runs the overdue rules now", onclick: () => { closeSheet(); act("d", "/admin/v1/billing/dunning/run", {}, () => "Reminders sent"); } })));
   return [title("Billing", monthName(st.month), h("button", { class: "btn sm sec2", type: "button", onclick: menu }, "Actions")), field("Month", month),
     h("div", { class: "kpis" }, kpi("Billed", money(i.billed), "issued and paid"), kpi("Collected", money(i.collected)), kpi("Outstanding", money(i.outstanding), `${money(i.overdue)} overdue`), kpi("Drafts", fmtNum(i.drafts || 0), "not yet issued")),
-    h("div", { class: "gap" }, chips([["all", "All"], ["draft", "Draft"], ["issued", "Issued"], ["overdue", "Overdue"], ["paid", "Paid"]], st.f, (v) => { st.f = v; draw(); })), list];
+    h("div", { class: "gap" }, chips([["all", "All"], ["draft", "Draft"], ["issued", "Issued"], ["overdue", "Overdue"], ["paid", "Paid"]], st.f, (v) => { st.f = v; draw(); })), table];
 }
 
 // ------------------------------------------------------------------------------------------------------ Plans

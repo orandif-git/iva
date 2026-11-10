@@ -2,6 +2,7 @@
 import { Api, busy, clear, errText, h, mount } from "../lib.js";
 import { screens, title } from "./screens.js";
 import { theme } from "./theme.js";
+import { openPalette, searchShortcuts, sidebar, tabbar } from "./shell.js";
 import { dropPictures, empty, field, ic, logoPair, lockupPair, mountOverlays, note, openSheet, closeSheet, toast } from "./ui.js";
 
 const host = document.getElementById("app");
@@ -31,6 +32,12 @@ const ROUTES = [
   [/^#\/alerts$/, "alerts", "alerts"], [/^#\/more$/, "more", "more"], [/^#\/recorders$/, "recorders", "more"], [/^#\/recorders\/new$/, "newRecorder", "more"],
   [/^#\/recorders\/([\w-]+)$/, "recorderPage", "more"], [/^#\/reports$/, "reports", "more"],
 ];
+// The menu. Customers have one flat block of everyday pages and a short "Manage" block.
+const GROUPS = [
+  { items: [{ key: "today", label: "Today", icon: "today" }, { key: "cameras", label: "Cameras", icon: "cam" }, { key: "activity", label: "Activity", icon: "activity" }, { key: "alerts", label: "Alerts", icon: "bell" }] },
+  { label: "Manage", items: [{ key: "recorders", label: "Recorders", icon: "server" }, { key: "reports", label: "Reports", icon: "doc" }] },
+];
+const NAV_KEY = { recorders: "recorders", newRecorder: "recorders", recorderPage: "recorders", reports: "reports" };
 let ui = null, token = 0, leaveFns = [];
 const X = {
   api, state, mem, theme, install,
@@ -66,7 +73,7 @@ async function render(keepScroll = false) {
   const hit = ROUTES.map(([re, fn, tab]) => [hash.match(re), fn, tab]).find(([m]) => m);
   if (!hit) { location.hash = "#/today"; return; }
   const [m, fn, tab] = hit;
-  ui.mark(tab);
+  ui.mark(tab, NAV_KEY[fn] || tab);
   const t0 = Date.now(), prev = ui.scroll.scrollTop;
   if (!keepScroll) mount(ui.page, h("div", { class: "skel blk" }));
   let nodes;
@@ -87,20 +94,20 @@ function shell() {
   const page = h("div", { class: "page" }), cbar = h("div", { class: "cbar", "aria-hidden": "true" });
   const ptr = h("div", { class: "ptr" }, "Release to refresh");
   const scroll = h("main", { class: "scroll", id: "main" }, page);
-  const navBtn = (k, label, icon, href, cls) => h("button", { type: "button", "data-tab": k, onclick: () => X.go(href), "aria-label": label }, ic(icon), h("span", { class: "l" }, label));
-  const tabbar = h("nav", { class: "tabbar", "aria-label": "Main" }, TABS.map(([k, l, i, href]) => navBtn(k, l, i, href)));
+  const go = (href) => X.go(href);
+  const tabbarEl = tabbar(go, TABS.map(([key, label, icon, href]) => ({ key, label, icon, href })));
   const cams = state.me.tenant;
-  const sb = h("aside", { class: "sb" }, h("a", { href: "#/today", "aria-label": "Jas iVision home" }, logoPair("logo")),
-    h("div", { class: "site" }, h("div", {}, h("b", {}, cams.name), h("small", {}, "Plan " + cams.plan_name))),
-    h("nav", { "aria-label": "Sidebar" }, [...TABS, ["recorders", "Recorders", "server", "#/recorders"], ["reports", "Reports", "doc", "#/reports"]].map(([k, l, i, href]) => navBtn(k, l, i, href))),
-    h("div", { class: "foot" }, h("div", {}, `Cameras ${cams.cameras_in_use} of ${cams.camera_limit}`), h("div", { class: "meter" }, h("i", { class: "m" }))));
+  const side = sidebar({ go, groups: GROUPS, storeKey: "gi_rail",
+    head: [h("a", { href: "#/today", "aria-label": "Jas iVision home" }, logoPair("logo")), h("div", { class: "site" }, h("div", {}, h("b", {}, cams.name), h("small", {}, "Plan " + cams.plan_name)))],
+    foot: [h("div", { class: "usage" }, `Cameras ${cams.cameras_in_use} of ${cams.camera_limit}`), h("div", { class: "meter" }, h("i", { class: "m" }))] });
+  const sb = side.el;
   const meter = sb.querySelector(".meter i");
   meter.style.width = Math.min(100, Math.round((cams.cameras_in_use / Math.max(1, cams.camera_limit)) * 100)) + "%";
-  const palBtn = h("button", { class: "kbd", type: "button", onclick: () => openPalette() }, ic("search"), "Search or jump to\u2026", h("kbd", {}, "Ctrl K"));
+  const palBtn = h("button", { class: "kbd", type: "button", onclick: () => search() }, ic("search"), h("span", { class: "kl" }, "Search or jump to\u2026"), h("kbd", {}, "Ctrl K"));
   const tb = h("header", { class: "tb" }, palBtn, h("span", { class: "grow" }), h("button", { class: "ib", type: "button", "aria-label": "Alerts", onclick: () => X.go("#/alerts") }, ic("bell")),
     h("button", { class: "avatar", type: "button", "aria-label": "Account", onclick: () => X.go("#/more") }, (state.me.user.name || "?").trim().slice(0, 1).toUpperCase()));
   tb.querySelector(".grow").setAttribute("class", "grow");
-  const root = h("div", { class: "ax" }, sb, h("div", { class: "main" }, tb, cbar, ptr, scroll, tabbar));
+  const root = h("div", { class: "ax" }, sb, h("div", { class: "main" }, tb, cbar, ptr, scroll, tabbarEl));
   mount(host, root);
   mountOverlays(root);
   scroll.addEventListener("scroll", () => cbar.classList.toggle("on", scroll.scrollTop > 56), { passive: true });
@@ -111,33 +118,28 @@ function shell() {
   scroll.addEventListener("touchend", () => { if (ptr.classList.contains("on")) { ptr.classList.remove("on"); render(true); } y0 = null; });
   ui = {
     root, page, scroll, cbar,
-    mark: (tab) => root.querySelectorAll("[data-tab]").forEach((b) => (b.getAttribute("data-tab") === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"))),
+    mark: (tab, navKey) => {
+      side.mark(navKey);
+      tabbarEl.querySelectorAll("[data-tab]").forEach((b) => (b.getAttribute("data-tab") === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
+    },
     setOffline: () => {},
   };
 }
 
-// ---------------------------------------------------------------------------------------------------- palette
-function openPalette() {
-  const input = h("input", { type: "search", placeholder: "Search cameras, recorders or pages", autocomplete: "off", "aria-label": "Search" }), list = h("div");
-  const base = [...TABS.map(([, l, i, href]) => ({ label: l, icon: i, href })), { label: "Recorders", icon: "server", href: "#/recorders" }, { label: "Reports", icon: "doc", href: "#/reports" }];
-  let items = base, sel = 0;
-  const draw = () => mount(list, items.slice(0, 8).map((it, n) => h("div", { class: "palrow", "aria-selected": String(n === sel), onclick: () => pick(it) }, ic(it.icon), it.label)));
-  const pick = (it) => { closeSheet(); X.go(it.href); };
-  Promise.all([api.get("/v1/cameras").catch(() => []), api.get("/v1/recorders").catch(() => [])]).then(([cams, recs]) => {
-    base.push(...cams.map((c) => ({ label: c.name, icon: "cam", href: "#/cameras/" + c.id })), ...recs.map((r) => ({ label: r.name || r.device_id, icon: "server", href: "#/recorders/" + r.id })));
-    filter();
+// ---------------------------------------------------------------------------------------------------- search
+// A customer can search their own pages, cameras and recorders. The lists come from the same calls the pages use, which only ever return this customer's data.
+function search() {
+  openPalette({
+    placeholder: "Search cameras, recorders or pages", recentKey: "gi_recent", go: (href) => X.go(href),
+    pages: [...TABS.filter(([k]) => k !== "more").map(([, label, icon, href]) => ({ label, icon, href })), { label: "Recorders", icon: "server", href: "#/recorders" }, { label: "Reports", icon: "doc", href: "#/reports" }],
+    load: async () => {
+      const [cams, recs] = await Promise.all([api.get("/v1/cameras").catch(() => []), api.get("/v1/recorders").catch(() => [])]);
+      return [{ section: "Cameras", icon: "cam", items: cams.map((c) => ({ label: c.name, href: "#/cameras/" + c.id })) },
+        { section: "Recorders", icon: "server", items: recs.map((r) => ({ label: r.name || r.device_id, sub: r.device_id, href: "#/recorders/" + r.id })) }];
+    },
   });
-  const filter = () => { const q = input.value.trim().toLowerCase(); items = base.filter((b) => b.label.toLowerCase().includes(q)); sel = 0; draw(); };
-  input.oninput = filter;
-  input.onkeydown = (e) => {
-    if (e.key === "ArrowDown") { sel = Math.min(sel + 1, Math.min(items.length, 8) - 1); draw(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
-    else if (e.key === "Enter" && items[sel]) pick(items[sel]);
-  };
-  openSheet("Search", h("div", { class: "field" }, input), list);
-  draw();
 }
-addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && ui) { e.preventDefault(); openPalette(); } });
+searchShortcuts(() => !!ui, search);
 
 // ------------------------------------------------------------------------------------------------------ sign-in
 function authPage(...body) {
