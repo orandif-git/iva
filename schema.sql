@@ -531,6 +531,23 @@ CREATE TABLE app.ai_view_frames (
   jpeg      bytea NOT NULL
 );
 
+-- Live view and AI view from the customer app. A session is one person watching one camera for a limited time (see services/live.py).
+CREATE TABLE app.live_sessions (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id  uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  camera_id  uuid NOT NULL REFERENCES app.cameras(id) ON DELETE CASCADE,
+  user_id    uuid NOT NULL,
+  mode       text NOT NULL CHECK (mode IN ('live','ai')),
+  started_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,                      -- closes by itself at this time unless extended
+  max_end_at timestamptz NOT NULL,                      -- the hard limit, however many times it is extended
+  extensions integer NOT NULL DEFAULT 0,
+  ended_at   timestamptz,
+  ended_why  text
+);
+CREATE INDEX live_sessions_tenant_idx ON app.live_sessions (tenant_id, started_at DESC);
+CREATE INDEX live_sessions_active_idx ON app.live_sessions (tenant_id) WHERE ended_at IS NULL;
+
 -- The picture kept for a plate read (the same evidence store, so it follows the same retention).
 ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence(id) ON DELETE SET NULL;
 
@@ -566,7 +583,8 @@ CREATE TABLE app.alerts (
   clip_wait_until timestamptz,                                              -- WhatsApp waits for the clip until then; NULL = no clip expected
   created_at      timestamptz NOT NULL DEFAULT now(),
   acknowledged_by uuid,
-  acknowledged_at timestamptz
+  acknowledged_at timestamptz,
+  snoozed_until   timestamptz                                                -- hidden from "Needs you" until then
 );
 CREATE INDEX alerts_tenant_time_idx ON app.alerts (tenant_id, created_at DESC);
 CREATE INDEX alerts_dedupe_idx ON app.alerts (tenant_id, dedupe_key, created_at DESC) WHERE dedupe_key IS NOT NULL;

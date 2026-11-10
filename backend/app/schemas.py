@@ -214,11 +214,36 @@ class ZoneIn(Strict):
         return pts
 
 
+def _ccw(a, b, c):
+    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def check_shape(pts) -> None:
+    """A drawn area must be a real shape: no two corners on top of each other, no edges that cross, and not a sliver (at least 0.5% of the picture)."""
+    n = len(pts)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(pts[i][0] - pts[j][0]) < 1e-4 and abs(pts[i][1] - pts[j][1]) < 1e-4:
+                raise ValueError("two corners are in the same place")
+    edges = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j == i + 1 or (i == 0 and j == n - 1):
+                continue                                   # edges that share a corner may touch there
+            (a, b), (c, d) = edges[i], edges[j]
+            if _ccw(a, b, c) * _ccw(a, b, d) < 0 and _ccw(c, d, a) * _ccw(c, d, b) < 0:
+                raise ValueError("the edges of the area cross each other")
+    area = abs(sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))) / 2
+    if area < 0.005:
+        raise ValueError("the area is too small")
+
+
+
 class AreaIn(Strict):
     id: UUID | None = None                      # send the id of an area to keep and change it; leave it out for a new one
     kind: Literal["area_count", "queue_area", "staff_area"]
     name: str = Field(min_length=1, max_length=60)
-    points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=3, max_length=24)
+    points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=3, max_length=12)
     params: dict = Field(default_factory=dict)
 
     @field_validator("points")
@@ -227,6 +252,7 @@ class AreaIn(Strict):
         for p in pts:
             if not all(0.0 <= c <= 1.0 for c in p):
                 raise ValueError("points must be normalised between 0 and 1")
+        check_shape(pts)
         return pts
 
     @field_validator("name")
