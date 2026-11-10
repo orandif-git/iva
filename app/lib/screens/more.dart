@@ -9,13 +9,15 @@ import '../theme.dart';
 import '../widgets/brand.dart';
 import '../widgets/profile_menu.dart';
 import 'common.dart';
+import '../push.dart';
 import 'recorders.dart';
 
 /// More: the two things you open now and then. Reports and Settings sit here so the bar stays at five.
 class MorePage extends StatefulWidget {
-  const MorePage({super.key, required this.repo, required this.onSignOut});
+  const MorePage({super.key, required this.repo, required this.onSignOut, this.push});
   final Repository repo;
   final void Function(String? message) onSignOut;
+  final PushRegistration? push;
   @override
   State<MorePage> createState() => _MorePageState();
 }
@@ -62,7 +64,7 @@ class _MorePageState extends State<MorePage> {
         child: ListView(padding: EdgeInsets.fromLTRB(16, 14, 16, navClear), children: [
           Group(children: [
             row(Icons.bar_chart_rounded, 'Reports', reportsSub, () => _open(_ReportsScreen(widget.repo))),
-            row(Icons.tune_rounded, 'Settings', 'Your plan, people and recorders', () => _open(SettingsPage(repo: widget.repo, onSignOut: widget.onSignOut))),
+            row(Icons.tune_rounded, 'Settings', 'Your plan, people and recorders', () => _open(SettingsPage(repo: widget.repo, onSignOut: widget.onSignOut, push: widget.push))),
           ]),
         ]),
       ),
@@ -344,9 +346,10 @@ class _Pick extends StatelessWidget {
 
 /// Settings: who you are and your plan, who gets alerts, your recorders, how alerts reach you, and your account.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.repo, required this.onSignOut});
+  const SettingsPage({super.key, required this.repo, required this.onSignOut, this.push});
   final Repository repo;
   final void Function(String? message) onSignOut;
+  final PushRegistration? push;
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -464,7 +467,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   const GroupLabel('How alerts reach you'),
                   Group(children: [
                     _InfoLine(Icons.chat_outlined, 'WhatsApp', 'Alerts and reports arrive as WhatsApp messages. This is on for everyone above who has a mobile number.'),
-                    _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'Coming with the installed phone app, in addition to WhatsApp.'),
+                    _PushLine(push: widget.push),
                   ]),
                   const GroupLabel('Account'),
                   Group(children: [
@@ -483,6 +486,58 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Push notifications on this device: off until the person turns them on (a browser only allows its permission box after a tap).
+class _PushLine extends StatefulWidget {
+  const _PushLine({required this.push});
+  final PushRegistration? push;
+  @override
+  State<_PushLine> createState() => _PushLineState();
+}
+
+class _PushLineState extends State<_PushLine> {
+  bool busy = false;
+  String? note;
+
+  Future<void> _turnOn() async {
+    setState(() { busy = true; note = null; });
+    final r = await widget.push!.enable();
+    if (mounted) setState(() { busy = false; note = r; });
+  }
+
+  Future<void> _turnOff() async {
+    await widget.push!.stop();
+    if (mounted) setState(() => note = 'Notifications are off for this device.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final p = widget.push;
+    if (p == null || !p.service.supported) {
+      return const _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'Coming with the installed phone app, in addition to WhatsApp.');
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: p.on,
+      builder: (context, on, _) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.notifications_active_outlined, size: 22, color: on ? t.okInk : t.fg2),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Push notifications', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5)),
+              Text(on ? 'On for this device, in addition to WhatsApp.' : 'Get new alerts on this device, in addition to WhatsApp.', style: TextStyle(color: t.fg2, fontSize: 13, height: 1.35)),
+            ])),
+            const SizedBox(width: 10),
+            if (on) OutlinedButton(onPressed: _turnOff, child: const Text('Turn off')) else FilledButton(onPressed: busy ? null : _turnOn, child: Text(busy ? 'Turning on…' : 'Turn on')),
+          ]),
+          if (note != null) Padding(padding: const EdgeInsets.only(left: 36, top: 8), child: Text(note!, style: TextStyle(color: t.fg2, fontSize: 13))),
+        ]),
       ),
     );
   }

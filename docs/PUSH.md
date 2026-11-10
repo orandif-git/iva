@@ -20,9 +20,15 @@ person signs out. WhatsApp is unchanged: push is an extra, never a replacement.
 
    Then restart both services.
 4. **Run the new database migration** (adds the devices table): `backend/migrations/013_push_devices.sql`.
-5. **The app side (needs the Firebase app config):** register the Android, iOS and web apps in the Firebase console, then run `flutterfire configure` in `app/`
-   and add `firebase_core` and `firebase_messaging`. Write one small class that implements `PushService` (in `app/lib/push.dart`) and returns the device
-   token from `FirebaseMessaging.instance.getToken()`, then pass it to `IVisionApp(push: ...)` in `main.dart`. For iPhones you also upload an Apple push key
-   (APNs) in the Firebase console; that needs an Apple developer account.
+5. **The app side is built** (Firebase project `ivision-ade8d`): browsers and Android phones can register. The values in `app/web/push.js`, `app/web/firebase-messaging-sw.js`,
+   `app/lib/firebase_push_io.dart` and `app/android/app/google-services.json` are public project identifiers, not secrets. The Firebase scripts the browser needs are kept
+   on our own server (`app/web/firebase/`), and the page's security policy allows only the three Google addresses a browser needs to get its push address.
+6. **Turn it on, per device:** sign in, open **More → Settings → Push notifications → Turn on**, and allow notifications in the box that appears. (A browser only allows that
+   box after a tap, which is why it is a button and not automatic.) A device that already allowed it registers by itself after sign-in. To test, make an alert happen
+   (for example switch off a camera) and wait for it; warning and critical alerts are pushed, not "info" ones.
+7. **iPhone** is not set up: it needs an Apple Developer account, then an APNs key uploaded in the Firebase console (Project settings, Cloud Messaging), and the iPhone Firebase config.
 
-Everything else (asking the server whether push is on, giving it the token after sign-in, removing it on sign-out) is already in the app and tested.
+Everything else (asking the server whether push is on, giving it the token, removing it on sign-out) is in the app and tested.
+
+**Not yet checked on a real device:** a real notification arriving. The pieces are tested one by one (server, registration, the browser worker starting under the security policy), but
+the first end-to-end test is yours, on a phone and a browser.

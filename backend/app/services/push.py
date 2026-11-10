@@ -54,6 +54,9 @@ async def send(token: str, title: str, body: str, data: dict[str, str]) -> str:
     s = get_settings()
     msg = {"message": {"token": token, "notification": {"title": title[:100], "body": body[:200]}, "data": data,
                        "android": {"priority": "HIGH"}, "apns": {"headers": {"apns-priority": "10"}}}}
+    base = s.public_base_url.rstrip("/")
+    if base.startswith("https://"):                      # a tap on a browser notification opens the app (browsers only accept an https link here)
+        msg["message"]["webpush"] = {"fcm_options": {"link": f"{base}/next/"}}
     try:
         at = await access_token()
         async with _client() as c:

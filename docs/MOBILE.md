@@ -41,7 +41,7 @@ This build is signed with a test key, so it works for trying but cannot be uploa
 
 ## Push notifications on phones
 
-See `docs/PUSH.md`. The phone apps need the Firebase config files (`google-services.json` for Android, an APNs key for iPhone) added once the Firebase project exists.
+See `docs/PUSH.md`. Android already has its Firebase file (`app/android/app/google-services.json`) and turns push on from Settings. iPhone push needs an APNs key from your Apple account.
 
 ## Building on your own computer
 
