@@ -115,8 +115,9 @@ class _ShellState extends State<Shell> {
   int wizardKey = 0;
   CameraItem? alertFor;
 
-  static const _defs = [NavIcons.home, NavIcons.alerts, NavIcons.cameras, NavIcons.aiWatch, NavIcons.more];
-  static const _subtitles = ['How your business is doing right now', 'What happened, and what needs you', 'Every camera, and live view when you need it', 'What iVision watches for, and who hears about it', 'Reports and settings'];
+  static const _defs = [NavIcons.home, NavIcons.cameras, NavIcons.aiWatch, NavIcons.alerts, NavIcons.more];
+  static const _subtitles = ['How your business is doing right now', 'Every camera, and live view when you need it', 'What iVision watches for, and who hears about it', 'What happened, and what needs you', 'Reports and settings'];
+  static const _home = 0, _cams = 1, _watch = 2, _alerts = 3;
   final _visited = <int>{0};        // a place is built the first time you open it, then keeps where you were
   final _refresh = ValueNotifier<int>(0);
 
@@ -130,16 +131,16 @@ class _ShellState extends State<Shell> {
   void _badge() => widget.repo.health().then((h) { if (mounted) setState(() => openAlerts = h.openAlerts); }).catchError((_) {});
 
   Widget _page(int i) => switch (i) {
-        0 => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(1), onOpenCameras: () => _go(2)),
-        1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge, onOpenWatch: () => _go(3)),
-        2 => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(1); tab = 1; })),
-        3 => ManageAlertsPage(repo: widget.repo, embedded: true),
+        _home => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(_alerts), onOpenCameras: () => _go(_cams)),
+        _cams => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(_alerts); tab = _alerts; })),
+        _watch => ManageAlertsPage(repo: widget.repo, embedded: true),
+        _alerts => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge, onOpenWatch: () => _go(_watch)),
         _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m)),
       };
 
   void _go(int i) {
-    setState(() { tab = i; _visited.add(i); if (i != 1) alertFor = null; });
-    if (i == 0 || i == 1) _refresh.value++;        // Home and Alerts show fresh numbers each time you come back
+    setState(() { tab = i; _visited.add(i); if (i != _alerts) alertFor = null; });
+    if (i == _home || i == _alerts) _refresh.value++;        // Home and Alerts show fresh numbers each time you come back
     _badge();
   }
 
@@ -164,7 +165,7 @@ class _ShellState extends State<Shell> {
     final t = Tok.of(context);
     // Switching places is instant and each keeps its scroll position and what it loaded, like WhatsApp and the iPhone's own apps.
     final body = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
-    final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, badge: i == 1 ? openAlerts : 0)];
+    final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, badge: i == _alerts ? openAlerts : 0, custom: _defs[i].custom)];
     if (wide) {
       return Scaffold(
         body: Row(children: [
@@ -174,7 +175,7 @@ class _ShellState extends State<Shell> {
             child: SafeArea(
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 const Padding(padding: EdgeInsets.fromLTRB(22, 26, 22, 22), child: Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 52))),
-                for (var i = 0; i < _defs.length; i++) _NavItem(icon: tab == i ? _defs[i].selected : _defs[i].icon, label: _defs[i].label, badge: i == 1 ? openAlerts : 0, selected: tab == i, onTap: () => _go(i)),
+                for (var i = 0; i < _defs.length; i++) _NavItem(def: _defs[i], badge: i == _alerts ? openAlerts : 0, selected: tab == i, onTap: () => _go(i)),
                 const Spacer(),
                 Padding(padding: const EdgeInsets.fromLTRB(22, 4, 22, 20), child: Text(tagline, style: TextStyle(color: t.fg2.withValues(alpha: .85), fontSize: 11.5, fontStyle: FontStyle.italic))),
               ]),
@@ -215,9 +216,8 @@ class _ShellState extends State<Shell> {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap, this.badge = 0});
-  final IconData icon;
-  final String label;
+  const _NavItem({required this.def, required this.selected, required this.onTap, this.badge = 0});
+  final NavDef def;
   final bool selected;
   final int badge;
   final VoidCallback onTap;
@@ -229,7 +229,7 @@ class _NavItem extends StatelessWidget {
       child: Semantics(
         button: true,
         selected: selected,
-        label: label,
+        label: def.label,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
@@ -240,9 +240,9 @@ class _NavItem extends StatelessWidget {
             decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(14)),
             child: Row(children: [
               AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12, left: -6), decoration: BoxDecoration(color: t.accent, borderRadius: BorderRadius.circular(4))),
-              Icon(icon, color: selected ? t.brand : t.fg2, size: 22),
+              def.glyph(selected, selected ? t.brand : t.fg2, 24),
               const SizedBox(width: 14),
-              Expanded(child: Text(label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15))),
+              Expanded(child: Text(def.label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15))),
               if (badge > 0) Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1), decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(10)), child: Text(badge > 99 ? '99+' : '$badge', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700))),
             ]),
           ),
