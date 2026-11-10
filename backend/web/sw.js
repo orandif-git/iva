@@ -1,7 +1,7 @@
 // Jas iVision service worker. Keeps the app's own files so it opens instantly, and keeps the last copy of a few read-only
 // pages of data so the app still shows something when the network is down. It never keeps sign-in tokens, camera pictures,
 // file exports or anything from the admin or internal areas, and the saved data is deleted when the person signs out.
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = `gi-shell-${VERSION}`, API = `gi-api-${VERSION}`;
 const PRECACHE = ["/", "/css/app.css", "/js/lib.js", "/js/app/main.js", "/js/app/ui.js", "/js/app/shell.js", "/js/app/alertrules.js", "/js/app/areas.js", "/js/app/table.js", "/js/app/theme.js", "/js/app/screens.js", "/js/app/recorders.js",
   "/img/logo-compact.svg", "/img/logo-compact-on-dark.svg", "/img/logo.svg", "/img/logo-on-dark.svg", "/img/favicon.svg", "/img/site.webmanifest"];
@@ -24,7 +24,7 @@ self.addEventListener("fetch", (e) => {
     if (SAVE.some((re) => re.test(p))) e.respondWith(networkThenSaved(req));
     return;                                                     // everything else: the network, untouched
   }
-  if (p.startsWith("/admin") || p.startsWith("/internal") || p.startsWith("/staff") || p.startsWith("/evidence") || p === "/set-password") return;
+  if (p.startsWith("/admin") || p.startsWith("/internal") || p.startsWith("/staff") || p.startsWith("/next") || p.startsWith("/evidence") || p === "/set-password") return;
   if (req.mode === "navigate") { e.respondWith(fetch(req).catch(() => caches.match("/"))); return; }
   e.respondWith(staleWhileRevalidate(req));
 });

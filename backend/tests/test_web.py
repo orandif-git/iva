@@ -1,4 +1,5 @@
 """The web pages are served safely, the camera picture endpoint works, and cameras can choose their stream."""
+import pathlib
 import stat
 import sys
 import uuid
@@ -33,6 +34,25 @@ async def test_pages_are_served_with_a_strict_content_policy(client, path):
     assert r.headers["referrer-policy"] == "no-referrer" and r.headers["cache-control"] == "no-cache"
     assert "<script" not in r.text.replace('<script type="module" src="/js/', "")             # only our own module script, no inline code
     assert "style=" not in r.text
+
+
+async def test_the_new_customer_app_is_served_at_next_with_the_policy_it_needs_and_nothing_else_loosens(client):
+    r = await client.get("/next/")
+    assert r.status_code == 200 and "flutter_bootstrap.js" in r.text
+    csp = r.headers["content-security-policy"]
+    assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and "connect-src 'self'" in csp
+    assert "script-src 'self' 'wasm-unsafe-eval'" in csp and "unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")
+    assert (await client.get("/next/main.dart.js")).status_code == 200
+    assert (await client.get("/next/canvaskit/canvaskit.wasm")).status_code == 200
+    for path in ("/", "/staff/", "/set-password"):                  # every other page keeps the strict policy
+        h = (await client.get(path)).headers["content-security-policy"]
+        assert "wasm-unsafe-eval" not in h and "'unsafe-inline'" not in h
+    assert (await client.get("/v1/health-summary")).status_code == 401          # the API is not hidden by the new pages
+
+
+def test_the_old_service_worker_leaves_the_new_app_alone():
+    sw = (pathlib.Path(__file__).resolve().parents[1] / "web" / "sw.js").read_text()
+    assert 'p.startsWith("/next")' in sw
 
 
 async def test_scripts_and_styles_are_served_and_nothing_outside_the_web_folder(client):
