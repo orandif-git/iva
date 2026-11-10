@@ -134,7 +134,7 @@ class _ShellState extends State<Shell> {
         _home => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(_alerts), onOpenCameras: () => _go(_cams)),
         _cams => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(_alerts); tab = _alerts; })),
         _watch => ManageAlertsPage(repo: widget.repo, embedded: true),
-        _alerts => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge, onOpenWatch: () => _go(_watch)),
+        _alerts => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge),
         _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m)),
       };
 
