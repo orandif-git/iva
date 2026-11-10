@@ -8,7 +8,7 @@ from ..config import get_settings
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from . import alert_catalog
+from . import alert_catalog, push
 from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20
@@ -74,9 +74,10 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     ep = await conn.fetchrow("SELECT active, payload_template FROM platform.webhook_endpoints WHERE alert_type=$1", rule_type)
     if wait_until and ep and ep["active"] and "{clip_url}" in ep["payload_template"]:
         hold = wait_until            # only worth holding the event back when its payload carries the clip
+    quiet = bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
     if rule and rule["recipients"]:
-        quiet = in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
         await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold)
+    await push.notify_alert(conn, tenant_id, alert_id, title, body or payload["location"], severity or meta["severity"], quiet)
     return alert_id
 
 

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 import 'models.dart';
+import 'push.dart';
 import 'repo.dart';
 import 'scope.dart';
 import 'screens/more.dart';
@@ -33,9 +34,10 @@ const _pageTransitions = PageTransitionsTheme(builders: {
 });
 
 class IVisionApp extends StatefulWidget {
-  const IVisionApp({super.key, this.repo, this.client});
+  const IVisionApp({super.key, this.repo, this.client, this.push = const NoPush()});
   final Repository? repo; // given: no sign-in (demo and tests)
   final ApiClient? client;
+  final PushService push;        // where this device's push address comes from (nothing until the Firebase project exists)
   @override
   State<IVisionApp> createState() => _IVisionAppState();
 }
@@ -45,12 +47,14 @@ class _IVisionAppState extends State<IVisionApp> {
   Repository? repo;
   bool starting = false;
   String? note;
+  PushRegistration? _push;
   static const _themeKey = 'gi_next_theme';
 
   @override
   void initState() {
     super.initState();
     repo = widget.repo;
+    if (repo != null) _startPush();
     _loadTheme();
     final c = widget.client;
     if (repo == null && c != null) {
@@ -58,6 +62,7 @@ class _IVisionAppState extends State<IVisionApp> {
       c.restore().then((_) {
         if (!mounted) return;
         setState(() { starting = false; if (c.signedIn) repo = ApiRepository(c); });
+        if (c.signedIn) _startPush();
       });
     }
   }
@@ -77,8 +82,20 @@ class _IVisionAppState extends State<IVisionApp> {
     } catch (_) {}
   }
 
-  void _signedIn() => setState(() { repo = ApiRepository(widget.client!); note = null; });
+  void _startPush() {
+    final r = repo;
+    if (r == null) return;
+    _push = PushRegistration(r, widget.push)..start();
+  }
+
+  void _signedIn() {
+    setState(() { repo = ApiRepository(widget.client!); note = null; });
+    _startPush();
+  }
+
   Future<void> _signOut([String? message]) async {
+    await _push?.stop();
+    _push = null;
     await repo?.signOut();
     if (mounted) setState(() { repo = widget.repo; note = message; });
   }
