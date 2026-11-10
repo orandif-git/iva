@@ -10,8 +10,9 @@ import 'wizard.dart';
 
 /// Alerts is for what HAPPENED: the inbox. Deciding what to watch for is a separate place (Manage alerts), reached from the card at the top.
 class AlertsPage extends StatefulWidget {
-  const AlertsPage({super.key, required this.repo, this.startWizardFor, this.onChanged, this.refresh});
+  const AlertsPage({super.key, required this.repo, this.startWizardFor, this.onChanged, this.refresh, required this.onOpenWatch});
   final Repository repo;
+  final VoidCallback onOpenWatch;      // the AI Watch tab: what you are watching for
   final CameraItem? startWizardFor;
   final VoidCallback? onChanged;
   final Listenable? refresh;
@@ -51,10 +52,7 @@ class _AlertsPageState extends State<AlertsPage> {
     if (saved == true) _reload();
   }
 
-  Future<void> _manage() async {
-    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => ManageAlertsPage(repo: widget.repo)));
-    _reload();
-  }
+  void _manage() => widget.onOpenWatch();
 
   @override
   Widget build(BuildContext context) {
@@ -135,8 +133,9 @@ class _WatchingCard extends StatelessWidget {
 
 /// Manage alerts: what you are watching for, switched on or off, and a way to add more.
 class ManageAlertsPage extends StatefulWidget {
-  const ManageAlertsPage({super.key, required this.repo});
+  const ManageAlertsPage({super.key, required this.repo, this.embedded = false});
   final Repository repo;
+  final bool embedded;      // true when it is the AI Watch tab (no screen of its own, no back arrow)
   @override
   State<ManageAlertsPage> createState() => _ManageAlertsPageState();
 }
@@ -152,16 +151,33 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
+    final newAlert = FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(44, 40), padding: const EdgeInsets.symmetric(horizontal: 14)), onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded, size: 20), label: const Text('New alert'));
+    final list = _list(t);
+    if (widget.embedded) {
+      return Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 16, 4),
+          child: Row(children: [
+            Expanded(child: Text('AI Watch', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -.4))),
+            newAlert,
+          ]),
+        ),
+        Expanded(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: list))),
+      ]);
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage alerts'),
-        actions: [Padding(padding: const EdgeInsets.only(right: 12), child: FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(44, 40), padding: const EdgeInsets.symmetric(horizontal: 14)), onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded, size: 20), label: const Text('New alert')))],
+        actions: [Padding(padding: const EdgeInsets.only(right: 12), child: newAlert)],
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: FutureBuilder(
+      body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: list)),
+    );
+  }
+
+  Widget _list(Tok t) {
+    return Builder(
+      builder: (context) => FutureBuilder(
             future: mine,
             builder: (context, snap) {
               if (snap.hasError) return Center(child: Text('${snap.error}'));
@@ -183,15 +199,13 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
                       ]),
                     ),
                   );
-              return ListView(padding: const EdgeInsets.fromLTRB(16, 6, 16, 40), children: [
+              return ListView(padding: EdgeInsets.fromLTRB(16, 6, 16, widget.embedded ? navClear : 40), children: [
                 if (on.isEmpty && off.isEmpty) EmptyState(icon: Icons.notifications_none_rounded, title: 'No alerts on yet', text: 'Choose what you want to hear about. We message you on WhatsApp.', action: FilledButton.icon(onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded), label: const Text('New alert'))),
                 if (on.isNotEmpty) ...[const GroupLabel('On'), Group(children: [for (final m in on) row(m)])],
                 if (off.isNotEmpty) ...[const GroupLabel('Off'), Group(children: [for (final m in off) row(m)])],
               ]);
             },
           ),
-        ),
-      ),
     );
   }
 }

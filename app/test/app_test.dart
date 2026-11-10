@@ -175,13 +175,13 @@ void profileTests() {
     expect(find.byIcon(Icons.dark_mode_outlined), findsNothing, reason: 'the light/dark switch lives in the profile menu');
   });
 
-  testWidgets('the profile menu has Light, Dark, Auto, Settings, Change password and Sign out', (t) async {
+  testWidgets('the profile menu has Light, Dark, Auto, Change password and Sign out', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
     await t.tap(find.byType(ProfileButton));
     await t.pumpAndSettle();
-    for (final x in ['Priya', 'Green Valley Store', 'APPEARANCE', 'Light', 'Dark', 'Auto', 'Settings', 'Change password', 'Sign out']) {
+    for (final x in ['Priya', 'Green Valley Store', 'APPEARANCE', 'Light', 'Dark', 'Auto', 'Change password', 'Sign out']) {
       expect(find.text(x), findsWidgets, reason: x);
     }
     await t.tap(find.text('Dark'));
@@ -266,7 +266,8 @@ void profileTests() {
     expect(find.text('New alert'), findsNothing, reason: 'the inbox has no set-up button');
     await t.tap(find.text('Manage'));
     await t.pumpAndSettle();
-    expect(find.text('Manage alerts'), findsOneWidget);
+    expect(find.text('AI Watch'), findsWidgets);
+    expect(find.text('Manage alerts'), findsNothing, reason: 'AI Watch is a tab, not a pushed screen');
     expect(find.text('New alert'), findsOneWidget);
     expect(find.text('ON'), findsOneWidget);
     await t.tap(find.byType(Switch).first);
@@ -278,14 +279,27 @@ void profileTests() {
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
     expect(find.text('Needs you'), findsOneWidget);
-    await t.tap(find.text('Reports'));
+    await t.tap(find.text('Cameras').last);
     await t.pump(); // one frame: no fade to wait for
-    expect(find.textContaining('SENT ON WHATSAPP'.toUpperCase()), findsNothing, reason: 'still loading its own data');
     await t.pumpAndSettle();
-    expect(find.textContaining('Sent on WhatsApp on a schedule'.toUpperCase()), findsOneWidget);
-    await t.tap(find.text('Home'));
+    await t.tap(find.text('Home').last);
     await t.pump();
     expect(find.text('Needs you'), findsOneWidget, reason: 'Home is still there, no reload spinner');
+  });
+
+  testWidgets('five tabs: Home, Alerts, Cameras, AI Watch, More, and they fit without overlapping', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    final bar = find.byType(AppTabBar);
+    var last = -1.0;
+    for (final x in ['Home', 'Alerts', 'Cameras', 'AI Watch', 'More']) {
+      final r = t.getRect(find.descendant(of: bar, matching: find.text(x)));
+      expect(r.left, greaterThanOrEqualTo(last - 0.5), reason: '$x must not overlap the one before');
+      expect(r.height, lessThan(16), reason: '$x stays on one line');
+      last = r.right;
+    }
+    expect(find.descendant(of: bar, matching: find.text('Reports')), findsNothing);
   });
 
   testWidgets('the tab bar floats above the page as a rounded pill', (t) async {
@@ -329,7 +343,7 @@ void profileTests() {
     final repo = MockRepository();
     await t.pumpWidget(IVisionApp(repo: repo));
     await t.pumpAndSettle();
-    await t.tap(find.byType(ProfileButton));
+    await t.tap(find.text('More').last);
     await t.pumpAndSettle();
     await t.tap(find.text('Settings'));
     await t.pumpAndSettle();
@@ -383,6 +397,10 @@ void profileTests() {
     final repo = MockRepository();
     await t.pumpWidget(IVisionApp(repo: repo));
     await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    expect(find.text('Your plan, people and recorders'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
     await t.tap(find.text('Reports'));
     await t.pumpAndSettle();
     expect(find.text('Sent on WhatsApp on a schedule'.toUpperCase()), findsOneWidget);
