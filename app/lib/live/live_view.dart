@@ -32,6 +32,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
   Uint8List? image;
   String? error;
   Timer? _tick, _frames;
+  StreamSubscription<Uint8List>? _video;      // moving pictures; if it cannot start or drops, a picture every second takes over
   bool _busy = false;
 
   @override
@@ -57,6 +58,8 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
   void _stopTimers() {
     _tick?.cancel();
     _frames?.cancel();
+    _video?.cancel();
+    _video = null;
   }
 
   Future<void> _start() async {
@@ -68,11 +71,39 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
       session = s;
       image = null;
       _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
-      _frames = Timer.periodic(const Duration(seconds: 1), (_) => _pull());
+      if (mode == LiveMode.live) { _openVideo(s); } else { _startPictures(); }
     } catch (e) {
       error = e.toString();
     }
     if (mounted) setState(() => _busy = false);
+  }
+
+  void _startPictures() {
+    _frames?.cancel();
+    _frames = Timer.periodic(const Duration(seconds: 1), (_) => _pull());
+  }
+
+  Future<void> _openVideo(LiveSession s) async {
+    try {
+      final v = await widget.repo.liveStream(s);
+      if (!mounted || session != s) return;
+      if (v == null) return _startPictures();
+      _video = v.listen(
+        (b) { if (mounted) setState(() => image = b); },
+        onError: (_) => _fallBack(s),
+        onDone: () => _fallBack(s),
+        cancelOnError: true,
+      );
+    } catch (_) {
+      _fallBack(s);
+    }
+  }
+
+  /// The video stopped before the view's time was up (a weak connection, or the server was busy): carry on with pictures.
+  void _fallBack(LiveSession s) {
+    if (!mounted || session != s || (clock?.ended ?? true)) return;
+    _video = null;
+    _startPictures();
   }
 
   void _onTick() {

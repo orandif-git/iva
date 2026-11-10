@@ -5,6 +5,8 @@ For now the pictures are refreshed stills (about one a second), which every reco
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from typing import Literal
 
 from cryptography.exceptions import InvalidTag
@@ -13,7 +15,7 @@ from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
 from ..schemas import Strict
 from ..crypto import vault
-from ..services import live, snapshot
+from ..services import live, live_stream, snapshot
 
 router = APIRouter(prefix="/v1", tags=["customer: live view"])
 LIVE_FRAME_MAX_AGE = 1.5          # seconds; a picture newer than this is reused, so a few viewers cost the recorder one picture
@@ -72,6 +74,36 @@ async def frame(session_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin
             raise ApiError(500, "source_unreadable", "The stored address failed its integrity check.")
     jpeg = await snapshot.get(cam_id, row, decrypt, max_age=LIVE_FRAME_MAX_AGE)
     return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/live/{session_id}/stream")
+async def stream(session_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin"), scope="function")):
+    """Moving pictures for a live view (not AI view, which uses /frame): a multipart stream of JPEGs that ends when the view's time is up.
+    If the video cannot be started the answer is an ordinary error, and the app falls back to refreshed pictures."""
+    s = await live.open_session(ctx.conn, session_id)
+    await _mine(ctx, session_id)
+    if s["mode"] != "live":
+        raise ApiError(409, "use_frames", "AI view is drawn picture by picture. Use the frame address.")
+    cam_id = s["camera_id"]
+    row = await ctx.conn.fetchrow(
+        """SELECT c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol
+           FROM app.cameras c LEFT JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", cam_id)
+
+    def decrypt():
+        try:
+            return vault().decrypt(bytes(row["source_ciphertext"]), str(cam_id))
+        except InvalidTag:
+            raise ApiError(500, "source_unreadable", "The stored address failed its integrity check.")
+    place = live_stream.slot()
+    if place is None:
+        raise ApiError(429, "video_busy", "Too many cameras are being watched right now. Try again in a moment.")
+    try:
+        url, fmt = await snapshot.source_for(row, decrypt)
+    except BaseException:
+        place.release()
+        raise
+    return StreamingResponse(live_stream.stream(session_id, url, fmt, place), media_type=f"multipart/x-mixed-replace; boundary={live_stream.BOUNDARY}",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, background=BackgroundTask(place.release))
 
 
 @router.get("/live-history")

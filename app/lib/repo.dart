@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'api_client.dart';
 import 'live/live_rules.dart';
+import 'live/jpeg_splitter.dart';
 import 'models.dart';
 
 export 'api_client.dart' show ApiError;
@@ -50,6 +51,8 @@ abstract class Repository {
 
   /// The current picture, or null when the demo should draw its own.
   Future<Uint8List?> frame(LiveSession s);
+  /// Moving pictures for a live view, or null when the server cannot give them (the screen then refreshes a picture every second).
+  Future<Stream<Uint8List>?> liveStream(LiveSession s);
   Future<void> signOut();
 
   /// This device stays signed in. With [signOutOthers] every other device and browser is signed out and signs in again with the new password.
@@ -265,6 +268,18 @@ class ApiRepository implements Repository {
   }
 
   @override
+  Future<Stream<Uint8List>?> liveStream(LiveSession s) async {
+    try {
+      final body = await api.stream('/v1/live/${s.id}/stream');
+      final cut = JpegSplitter();
+      return body.expand((chunk) => cut.add(chunk));
+    } on ApiError catch (e) {
+      if (e.status == 410) rethrow;
+      return null;                    // busy, offline or not supported: pictures instead
+    }
+  }
+
+  @override
   Future<void> signOut() => api.signOut();
 
   @override
@@ -414,6 +429,8 @@ class MockRepository implements Repository {
   Future<void> stopLive(LiveSession s) async {}
   @override
   Future<Uint8List?> frame(LiveSession s) async => null;
+  @override
+  Future<Stream<Uint8List>?> liveStream(LiveSession s) async => null;
   @override
   Future<void> signOut() async {}
   bool? lastSignOutOthers;

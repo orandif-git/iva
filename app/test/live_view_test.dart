@@ -1,11 +1,30 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ivision_app/live/jpeg_splitter.dart';
 import 'package:ivision_app/live/live_view.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
 
 class Spy extends MockRepository {
   final calls = <String>[];
+  Stream<Uint8List>? video;      // set to give live view moving pictures
+  bool videoAsked = false;
+  int pulls = 0;           // refreshed pictures asked for
+  @override
+  Future<Stream<Uint8List>?> liveStream(LiveSession s) async {
+    videoAsked = true;
+    return video;
+  }
+
+  @override
+  Future<Uint8List?> frame(LiveSession s) async {
+    pulls++;
+    return null;
+  }
+
   @override
   Future<LiveSession> startLive(String id, mode) {
     calls.add('start ${mode.name}');
@@ -110,5 +129,59 @@ void main() {
     expect(fill, greaterThan(fit * 2), reason: 'Fill is about 60% of the screen');
     expect(enlarge, greaterThan(fill), reason: 'Enlarge uses the phone height, about 72%');
     expect(enlarge / 844, greaterThan(0.6));
+  });
+
+  test('the splitter cuts pictures however the network chunks them', () {
+    final a = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9], b = [0xFF, 0xD8, 9, 9, 0xFF, 0x00, 9, 0xFF, 0xD9];
+    final header = 'Content-Type: image/jpeg\r\n\r\n'.codeUnits;
+    final all = [...header, ...a, 13, 10, ...header, ...b];
+    for (final size in [1, 2, 3, 5, 7, 100]) {
+      final cut = JpegSplitter();
+      final got = <List<int>>[];
+      for (var i = 0; i < all.length; i += size) { got.addAll(cut.add(all.sublist(i, i + size > all.length ? all.length : i + size))); }
+      expect(got.length, 2, reason: 'chunks of $size');
+      expect(got[0], a);
+      expect(got[1], b);
+    }
+  });
+
+  testWidgets('live view uses moving pictures when it can, and does not also fetch stills', (t) async {
+    tall(t);
+    final repo = Spy();
+    final ctrl = StreamController<Uint8List>();
+    addTearDown(ctrl.close);
+    repo.video = ctrl.stream;
+    await t.pumpWidget(host(repo));
+    await t.tap(find.text('Start live view'));
+    await t.pump();
+    await t.pump();
+    await t.pump(const Duration(seconds: 3));
+    expect(repo.videoAsked, true);
+    expect(repo.pulls, 0, reason: 'no refreshed pictures while the video runs');
+  });
+
+  testWidgets('if the video drops, live view carries on with a picture every second', (t) async {
+    tall(t);
+    final repo = Spy();
+    final ctrl = StreamController<Uint8List>();
+    repo.video = ctrl.stream;
+    await t.pumpWidget(host(repo));
+    await t.tap(find.text('Start live view'));
+    await t.pump();
+    await t.pump();
+    await ctrl.close();                                  // the connection ends before the time is up
+    await t.pump(const Duration(seconds: 3));
+    expect(repo.pulls, greaterThan(0));
+  });
+
+  testWidgets('when the server cannot give video, live view uses pictures from the start', (t) async {
+    tall(t);
+    final repo = Spy();                                    // video stays null
+    await t.pumpWidget(host(repo));
+    await t.tap(find.text('Start live view'));
+    await t.pump();
+    await t.pump();
+    await t.pump(const Duration(seconds: 3));
+    expect(repo.pulls, greaterThan(0));
   });
 }
