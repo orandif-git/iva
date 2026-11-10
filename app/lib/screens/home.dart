@@ -10,7 +10,8 @@ import 'common.dart';
 
 /// Home answers one question: is everything OK? The answer first, then what is wrong, what needs you, today's numbers and the health of the system.
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.repo, required this.me, required this.onOpenAlerts, required this.onOpenCameras});
+  const HomePage({super.key, required this.repo, required this.me, required this.onOpenAlerts, required this.onOpenCameras, this.refresh});
+  final Listenable? refresh; // changes when the person comes back to this place
   final Repository repo;
   final Me? me;
   final VoidCallback onOpenAlerts, onOpenCameras;
@@ -21,12 +22,26 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<(Health, List<AlertItem>, Footfall)> data = _load();
 
+  @override
+  void initState() {
+    super.initState();
+    widget.refresh?.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    widget.refresh?.removeListener(_reload);
+    super.dispose();
+  }
+
   Future<(Health, List<AlertItem>, Footfall)> _load() async {
     final r = await Future.wait([widget.repo.health(), widget.repo.alerts(), widget.repo.today()]);
     return (r[0] as Health, r[1] as List<AlertItem>, r[2] as Footfall);
   }
 
-  void _reload() => setState(() { data = _load(); });
+  void _reload() {
+    if (mounted) setState(() { data = _load(); });
+  }
 
   @override
   Widget build(BuildContext context) {

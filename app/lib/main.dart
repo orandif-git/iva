@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,6 +21,16 @@ const _demo = bool.fromEnvironment('DEMO');
 const _base = String.fromEnvironment('API_BASE');
 
 void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base)));
+
+/// Screens slide in from the right and can be dragged back from the left edge, on every platform, the way iPhone apps (and WhatsApp on iPhone) do.
+const _pageTransitions = PageTransitionsTheme(builders: {
+  TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+  TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+  TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+  TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+  TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+  TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+});
 
 class IVisionApp extends StatefulWidget {
   const IVisionApp({super.key, this.repo, this.client});
@@ -76,8 +87,8 @@ class _IVisionAppState extends State<IVisionApp> {
   Widget build(BuildContext context) => MaterialApp(
         title: 'Jas iVision',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
+        theme: buildTheme(Brightness.light).copyWith(pageTransitionsTheme: _pageTransitions),
+        darkTheme: buildTheme(Brightness.dark).copyWith(pageTransitionsTheme: _pageTransitions),
         themeMode: switch (choice) { ThemeChoice.light => ThemeMode.light, ThemeChoice.dark => ThemeMode.dark, ThemeChoice.auto => ThemeMode.system },
         home: starting
             ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
@@ -104,12 +115,10 @@ class _ShellState extends State<Shell> {
   int wizardKey = 0;
   CameraItem? alertFor;
 
-  static const _tabs = [
-    (Icons.home_outlined, Icons.home_rounded, 'Home', 'How your business is doing right now'),
-    (Icons.notifications_none_rounded, Icons.notifications_rounded, 'Alerts', 'What happened, and what you are watching for'),
-    (Icons.videocam_outlined, Icons.videocam_rounded, 'Cameras', 'Every camera, and live view when you need it'),
-    (Icons.insert_chart_outlined_rounded, Icons.insert_chart_rounded, 'Reports', 'Summaries sent to your email'),
-  ];
+  static const _defs = [NavIcons.home, NavIcons.alerts, NavIcons.cameras, NavIcons.reports];
+  static const _subtitles = ['How your business is doing right now', 'What happened, and what needs you', 'Every camera, and live view when you need it', 'Summaries sent to you on WhatsApp'];
+  final _visited = <int>{0};        // a place is built the first time you open it, then keeps where you were
+  final _refresh = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -120,15 +129,16 @@ class _ShellState extends State<Shell> {
 
   void _badge() => widget.repo.health().then((h) { if (mounted) setState(() => openAlerts = h.openAlerts); }).catchError((_) {});
 
-  Widget get page => switch (tab) {
-        0 => HomePage(repo: widget.repo, me: me, onOpenAlerts: () => _go(1), onOpenCameras: () => _go(2)),
-        1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, startWizardFor: alertFor, onChanged: _badge),
-        2 => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; tab = 1; })),
+  Widget _page(int i) => switch (i) {
+        0 => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(1), onOpenCameras: () => _go(2)),
+        1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge),
+        2 => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(1); tab = 1; })),
         _ => ReportsPage(repo: widget.repo),
       };
 
   void _go(int i) {
-    setState(() { tab = i; alertFor = null; });
+    setState(() { tab = i; _visited.add(i); if (i != 1) alertFor = null; });
+    if (i == 0 || i == 1) _refresh.value++;        // Home and Alerts show fresh numbers each time you come back
     _badge();
   }
 
@@ -153,8 +163,9 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final t = Tok.of(context);
-    final body = SelectionArea(child: AnimatedSwitcher(duration: const Duration(milliseconds: 220), switchInCurve: Curves.easeOut, transitionBuilder: (c, a) => FadeTransition(opacity: a, child: c), child: KeyedSubtree(key: ValueKey(tab), child: page)));
-    final navItems = [for (var i = 0; i < _tabs.length; i++) NavDef(_tabs[i].$1, _tabs[i].$2, _tabs[i].$3, badge: i == 1 ? openAlerts : 0)];
+    // Switching places is instant and each keeps its scroll position and what it loaded, like WhatsApp and the iPhone's own apps.
+    final body = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
+    final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, badge: i == 1 ? openAlerts : 0)];
     if (wide) {
       return Scaffold(
         body: Row(children: [
@@ -164,7 +175,7 @@ class _ShellState extends State<Shell> {
             child: SafeArea(
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 const Padding(padding: EdgeInsets.fromLTRB(22, 26, 22, 22), child: Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 52))),
-                for (var i = 0; i < _tabs.length; i++) _NavItem(icon: tab == i ? _tabs[i].$2 : _tabs[i].$1, label: _tabs[i].$3, badge: i == 1 ? openAlerts : 0, selected: tab == i, onTap: () => _go(i)),
+                for (var i = 0; i < _defs.length; i++) _NavItem(icon: tab == i ? _defs[i].selected : _defs[i].icon, label: _defs[i].label, badge: i == 1 ? openAlerts : 0, selected: tab == i, onTap: () => _go(i)),
                 const Spacer(),
                 Padding(padding: const EdgeInsets.fromLTRB(22, 4, 22, 20), child: Text(tagline, style: TextStyle(color: t.fg2.withValues(alpha: .85), fontSize: 11.5, fontStyle: FontStyle.italic))),
               ]),
@@ -177,8 +188,8 @@ class _ShellState extends State<Shell> {
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Row(children: [
                   Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(tab == 0 ? _greeting : _tabs[tab].$3, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.6)),
-                    Text(tab == 0 ? _today : _tabs[tab].$4, style: TextStyle(color: t.fg2, fontSize: 14)),
+                    Text(tab == 0 ? _greeting : _defs[tab].label, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.6)),
+                    Text(tab == 0 ? _today : _subtitles[tab], style: TextStyle(color: t.fg2, fontSize: 14)),
                   ])),
                   _profile(),
                 ]),
@@ -199,7 +210,7 @@ class _ShellState extends State<Shell> {
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
       ),
       body: body,
-      bottomNavigationBar: GlassNav(items: navItems, index: tab, onTap: _go),
+      bottomNavigationBar: AppTabBar(items: navItems, index: tab, onTap: _go),
     );
   }
 }

@@ -45,12 +45,16 @@ SAMPLE = {
     "used": "42", "limit": "50", "invoice": "INV-2026-0042", "due_date": "15 Nov", "device": "iPhone", "place": "Surat", "summary": "7 cameras working, 1 needs a look",
     "plate": "GJ05AB1234", "direction": "in", "hours": "8", "confidence": "62", "people": "54", "area": "Billing counter", "length": "8", "minutes": "3", "wait_minutes": "6", "seconds": "25",
     "image_url": "https://ivision.example/e/Xk3q/image.jpg", "clip_url": "https://ivision.example/e/Xk3q/clip.mp4",
+    "report": "Footfall summary", "period": "3 Nov to 9 Nov", "document_url": "https://ivision.example/e/Xk3q/report.xlsx",
 }
 
 
 def default_template(alert_type: str) -> str:
     """The payload a new endpoint starts with. The owner edits it; every shortcode of the alert can be added."""
     meta = cat.CATALOG[alert_type]
+    if alert_type == "report_ready":
+        return ("{\n  \"phone_number\": \"{to_phone}\",\n  \"template_name\": \"system_report_ready_v1\",\n  \"customer\": \"{customer}\",\n  \"report\": \"{report}\",\n"
+                "  \"period\": \"{period}\",\n  \"document_url\": \"{document_url}\"\n}")
     lines = ['"phone_number": "{to_phone}"', f'"template_name": "{cat.event_name(alert_type).replace(".", "_")}_v1"', '"customer": "{customer}"', '"camera": "{camera}"',
              '"time": "{time}"', '"details": "{details}"']
     for k in cat.MEDIA_SHORTCODES.get(meta["media"], []):
@@ -116,7 +120,7 @@ def sign(secret: str, timestamp: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
 
 
-def values_for(*, tenant_name: str, alert_id, title: str, event: str, details: dict, person_name: str, phone: str, image_url: str = "", clip_url: str = "") -> dict[str, str]:
+def values_for(*, tenant_name: str, alert_id, title: str, event: str, details: dict, person_name: str, phone: str, image_url: str = "", clip_url: str = "", document_url: str = "") -> dict[str, str]:
     """The value of every shortcode for one person and one alert. A shortcode with nothing to show is an empty string."""
     v = {k: "" for k in SAMPLE}
     for k, x in (details or {}).items():
@@ -124,7 +128,7 @@ def values_for(*, tenant_name: str, alert_id, title: str, event: str, details: d
             v[k] = str(x)
     v.update({"customer": tenant_name, "camera": (details or {}).get("location", ""), "time": (details or {}).get("time", ""), "details": (details or {}).get("details", ""),
               "title": title or (details or {}).get("event", ""), "to_name": person_name or "", "to_phone": re.sub(r"\D", "", phone or ""), "event_type": event, "alert_id": str(alert_id),
-              "image_url": image_url, "clip_url": clip_url})
+              "image_url": image_url, "clip_url": clip_url, "document_url": document_url})
     return v
 
 

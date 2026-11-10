@@ -139,11 +139,11 @@ async def test_only_the_owner_sees_and_changes_webhooks(client, make, world):
 
 async def test_standard_endpoints_cover_every_built_alert_and_can_be_run_again(client, world, su):
     items = (await client.get("/admin/v1/webhooks", headers=world["admin"])).json()["items"]
-    assert {e["alert_type"] for e in items} == set(cat_mod.BUILT)
+    assert {e["alert_type"] for e in items} == set(cat_mod.WEBHOOK_TYPES) and "report_ready" in {e["alert_type"] for e in items}
     blocked = next(e for e in items if e["alert_type"] == "blocked_plate")
     assert blocked["event"] == "smart.blocked_plate" and blocked["ai"] is True and blocked["active"] is True and "clip_url" in blocked["shortcodes"] and "clip_url" in blocked["payload_template"]
     again = (await client.post("/admin/v1/webhooks/standard", json={"url": world["url"]}, headers=world["admin"])).json()
-    assert again["created"] == [] and len(again["skipped"]) == len(cat_mod.BUILT)
+    assert again["created"] == [] and len(again["skipped"]) == len(cat_mod.WEBHOOK_TYPES)
     stored = await su.fetchval("SELECT headers_ciphertext FROM platform.webhook_endpoints WHERE alert_type='camera_offline'")
     assert b"RECEIVER-TOKEN-1" not in bytes(stored)                                                           # header values are encrypted at rest
     audit = await su.fetch("SELECT after::text AS after FROM platform.audit_log WHERE action LIKE 'webhook.%'")

@@ -28,8 +28,8 @@ async def fire(tenant_id, rule_type="camera_offline"):
 def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     fams = {c["family"] for c in cat.CATALOG.values()}
     assert fams == {"system", "smart"}
-    assert len(cat.CATALOG) == 23
-    assert {k for k, v in cat.CATALOG.items() if v["built"]} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "plan_limit", "message_allowance", "payment_due",
+    assert len(cat.LISTED) == 23 and len(cat.CATALOG) == 24 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready"]       # report_ready is a system event, not a customer alert
+    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "plan_limit", "message_allowance", "payment_due",
                                                                   "new_sign_in", "daily_summary", "blocked_plate", "vehicle_overstay", "crowding", "low_confidence_plate", "people_in_area", "queue_long", "phone_use"}
     assert cat.event_name("camera_offline") == "system.camera_offline" and cat.event_name("blocked_plate") == "smart.blocked_plate"
     assert cat.alert_for_event("smart.crowding") == "crowding" and cat.alert_for_event("system.nothing") is None
@@ -41,7 +41,7 @@ async def test_staff_see_the_catalogue_with_what_is_built(client, make):
     r = await client.get("/admin/v1/alert-catalog", headers=(await make.staff("support"))["headers"])
     assert r.status_code == 200
     items = {i["type"]: i for i in r.json()["items"]}
-    assert len(items) == len(cat.CATALOG) and items["blocked_plate"]["ai"] is True and items["camera_offline"]["ai"] is False
+    assert len(items) == len(cat.LISTED) and "report_ready" not in items and items["blocked_plate"]["ai"] is True and items["camera_offline"]["ai"] is False
     assert items["disk_fault"]["built"] is False and items["disk_fault"]["enabled"] is False
     assert items["camera_offline"]["enabled"] is True and items["camera_offline"]["event"] == "system.camera_offline"
     assert (await client.get("/admin/v1/alert-catalog")).status_code == 401

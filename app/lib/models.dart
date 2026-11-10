@@ -84,6 +84,7 @@ class Person {
   final String? email;
   const Person(this.id, this.name, this.phone, {this.email});
   bool get hasEmail => (email ?? '').isNotEmpty;
+  bool get hasPhone => phone.isNotEmpty;
 }
 
 const reportTypes = {

@@ -313,5 +313,6 @@ Alerts inbox: `GET /v1/alerts?state=open|snoozed|done` (each alert has `state`, 
 `POST /v1/alert-types/{type}/test` (`{recipient_id}`, admin) sends one test message to one person; it is marked as a test and never appears in the inbox.
 `GET /v1/health-summary`: `status` (`ok` or `attention`), `issues`, `recorders`, `cameras`, `messages`, `data`, `open_alerts`.
 Drawn areas: `PUT /v1/cameras/{id}/areas` takes 3 to 12 corners (0 to 1 of the picture); crossing edges, repeated corners and slivers are refused with 422.
+Reports are sent on WhatsApp: `POST /v1/report-schedules` needs recipients with a mobile number (`no_mobile_number`), and the file link is `/e/<token>/report.xlsx`.
 Live view (admin roles only): `POST /v1/cameras/{id}/live` (`{mode: "live"|"ai"}`) opens a session; `GET /v1/live/{id}` status; `POST /v1/live/{id}/extend` ("keep watching"); `DELETE /v1/live/{id}`; `GET /v1/live/{id}/frame` the current JPEG (in AI view the boxes and areas are drawn on it); `GET /v1/live-history`.
 Live closes after 120 s (up to 600 s in total), AI view after 30 s (up to 120 s in total). A person has one view at a time and a customer at most two at once. Today the pictures are refreshed stills (about one a second); smooth video can replace them without changing this API.

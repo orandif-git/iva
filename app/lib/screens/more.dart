@@ -6,7 +6,7 @@ import '../theme.dart';
 import '../widgets/brand.dart';
 import 'common.dart';
 
-/// Reports: the ones emailed on a schedule, and making one now. Download of a made report is in the current app for now.
+/// Reports: the ones sent on WhatsApp on a schedule, and making one now. Download of a made report is in the current app for now.
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key, required this.repo});
   final Repository repo;
@@ -64,13 +64,13 @@ class _ReportsPageState extends State<ReportsPage> {
 
         return ListView(padding: EdgeInsets.fromLTRB(pad, 14, pad, navClear), children: [
           Row(children: [
-            Expanded(child: Text('Reports are Excel files you can keep and share.', style: TextStyle(color: t.fg2, fontSize: 13.5))),
+            Expanded(child: Text('Reports are Excel files. We send you a link on WhatsApp.', style: TextStyle(color: t.fg2, fontSize: 13.5))),
             const SizedBox(width: 12),
             FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(44, 44)), onPressed: () => _edit(null, people), icon: const Icon(Icons.add_rounded, size: 20), label: Text(wide ? 'Schedule a report' : 'Schedule')),
           ]),
-          const GroupLabel('Emailed on a schedule'),
+          const GroupLabel('Sent on WhatsApp on a schedule'),
           if (schedules.isEmpty)
-            const EmptyState(icon: Icons.schedule_send_outlined, title: 'No scheduled reports', text: 'Choose a report, a time and who gets it, and we email it for you.')
+            const EmptyState(icon: Icons.schedule_send_outlined, title: 'No scheduled reports', text: 'Choose a report, a time and who gets it, and we send it on WhatsApp for you.')
           else
             Group(children: [
               for (final s in schedules)
@@ -119,7 +119,7 @@ class _ReportsPageState extends State<ReportsPage> {
                   ]),
                 ),
             ]),
-            Padding(padding: const EdgeInsets.fromLTRB(6, 8, 6, 0), child: Text('To download a ready report, open Reports in the current app for now.', style: TextStyle(color: t.fg2, fontSize: 12.5))),
+            Padding(padding: const EdgeInsets.fromLTRB(6, 8, 6, 0), child: Text('Scheduled reports arrive as a link on WhatsApp. To download one made here, open Reports in the current app for now.', style: TextStyle(color: t.fg2, fontSize: 12.5))),
           ],
         ]);
       },
@@ -127,7 +127,7 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 }
 
-/// Create or change a scheduled report: what, how often, when, and who gets it by email.
+/// Create or change a scheduled report: what, how often, when, and who gets it on WhatsApp.
 class ScheduleEditor extends StatefulWidget {
   const ScheduleEditor({super.key, required this.repo, required this.schedule, required this.people});
   final Repository repo;
@@ -158,7 +158,7 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
   }
 
   Future<void> _delete() async {
-    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text('Delete this scheduled report?'), content: const Text('It will stop being emailed. Reports already made are kept.'), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep it')), FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete'))]));
+    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text('Delete this scheduled report?'), content: const Text('It will stop being sent. Reports already made are kept.'), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep it')), FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete'))]));
     if (ok == true) {
       await widget.repo.deleteSchedule(widget.schedule!.id!);
       if (mounted) Navigator.of(context).pop(true);
@@ -199,12 +199,12 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
               SizedBox(width: 120, child: Center(child: Text(_clock, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)))),
               IconButton.outlined(onPressed: hour < 23 ? () => setState(() => hour++) : null, icon: const Icon(Icons.add), tooltip: 'Later'),
             ]),
-            const GroupLabel('Who gets it by email'),
-            if (widget.people.isEmpty) Text('Add people first. Reports are sent to their email address.', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600)),
+            const GroupLabel('Who gets it on WhatsApp'),
+            if (widget.people.isEmpty) Text('Add people first. Reports are sent to their WhatsApp number.', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600)),
             for (final p in widget.people)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _Pick(on: who.contains(p.id), enabled: p.hasEmail, check: true, onTap: () => setState(() => who.contains(p.id) ? who.remove(p.id) : who.add(p.id)), icon: Icons.person_outline_rounded, title: p.name, sub: p.hasEmail ? p.email! : 'No email address, so no reports'),
+                child: _Pick(on: who.contains(p.id), enabled: p.hasPhone, check: true, onTap: () => setState(() => who.contains(p.id) ? who.remove(p.id) : who.add(p.id)), icon: Icons.person_outline_rounded, title: p.name, sub: p.hasPhone ? p.phone : 'No mobile number, so no reports'),
               ),
             if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
             const SizedBox(height: 18),

@@ -1,6 +1,7 @@
 """Excel reports: what is in them, which data they use, who may make them, and how scheduled ones are queued and emailed."""
 import asyncio
 import io
+import json
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -8,7 +9,7 @@ from zoneinfo import ZoneInfo
 import openpyxl
 import pytest
 
-from app.messaging import delivery
+from app.messaging import delivery, evidence
 from app.services import report_builders as rb, reports, retention
 from tests.helpers import setup_cameras
 from tests.test_alert_delivery import bsp_server, smtp_server, world  # noqa: F401  (fixtures: working email provider)
@@ -233,8 +234,10 @@ def sched(**k):
     return {"report_type": "gate_register", "frequency": "daily", "send_at": "07:00", "recipient_ids": [], **k}
 
 
-async def person(client, u, email="owner@x.test", phone=None):
-    body = {"name": "Owner", "email": email, "consent_confirmed": True}
+async def person(client, u, email="owner@x.test", phone="98765 43210"):
+    body = {"name": "Owner", "consent_confirmed": True}
+    if email:
+        body["email"] = email
     if phone:
         body["phone"] = phone
     r = await client.post("/v1/recipients", json=body, headers=u["headers"])
@@ -246,16 +249,16 @@ async def test_schedules_are_validated_and_isolated(client, make, su, shop):
     t, u, cam = shop
     h = u["headers"]
     rid = await person(client, u)
-    sms_only = (await client.post("/v1/recipients", json={"name": "Guard", "phone": "9876543211", "consent_confirmed": True}, headers=h)).json()["id"]
+    no_phone = (await client.post("/v1/recipients", json={"name": "Mailer", "email": "mailer@x.test"}, headers=h)).json()["id"]
     ok = await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid]), headers=h)
     assert ok.status_code == 201 and ok.json()["send_at"] == "07:00" and ok.json()["recipient_ids"] == [rid]
     assert (await client.post("/v1/report-schedules", json=sched(), headers=h)).json()["error"]["code"] == "schedule_exists"
     assert (await client.post("/v1/report-schedules", json=sched(frequency="weekly"), headers=h)).json()["error"]["code"] == "weekday_needed"
     assert (await client.post("/v1/report-schedules", json=sched(frequency="monthly"), headers=h)).json()["error"]["code"] == "day_needed"
     assert (await client.post("/v1/report-schedules", json=sched(frequency="monthly", day_of_month=31), headers=h)).status_code == 422
-    assert (await client.post("/v1/report-schedules", json=sched(frequency="weekly", weekday=0, recipient_ids=[sms_only]), headers=h)).json()["error"]["code"] == "no_email"
+    assert (await client.post("/v1/report-schedules", json=sched(frequency="weekly", weekday=0, recipient_ids=[no_phone]), headers=h)).json()["error"]["code"] == "no_mobile_number"
     t2, u2, _, _ = await setup_cameras(client, make)
-    other = await person(client, u2, "other@x.test")
+    other = await person(client, u2, "other@x.test", "98765 43299")
     assert (await client.post("/v1/report-schedules", json=sched(frequency="weekly", weekday=1, recipient_ids=[other]), headers=h)).status_code == 422       # not their person
     reg = await make.user(t, "regular")
     assert (await client.post("/v1/report-schedules", json=sched(frequency="weekly", weekday=2), headers=reg["headers"])).status_code == 403
@@ -311,48 +314,91 @@ async def test_due_reports_are_queued_once_per_period(client, make, su, shop):
     await su.execute("UPDATE app.tenants SET status='active' WHERE id=$1", t)
 
 
-async def test_a_scheduled_report_is_emailed_with_the_file_attached(client, make, su, shop, world):
+async def test_a_scheduled_report_is_announced_on_whatsapp_with_a_link_to_the_file(client, make, su, shop, world):
     t, u, cam = shop
     # The schedule is set for 07:00 India time, so test at 08:00 India time tomorrow whatever the time of day it is now (a fixed offset from now
     # failed whenever the test ran between midnight and 07:00 in India).
     when = (datetime.now(IST) + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     await plate(su, t, cam, datetime.combine(when.astimezone(IST).date() - timedelta(days=1), time(9, 0), IST), "GJ14AW1013", "in")        # a read on the day it covers
-    rid = await person(client, u, "boss@x.test")
-    off = await person(client, u, "away@x.test")
+    rid = await person(client, u, "boss@x.test", "98765 43211")
+    off = await person(client, u, "away@x.test", "98765 43212")
     assert (await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid, off]), headers=u["headers"])).status_code == 201
     await su.execute("UPDATE app.recipients SET active=false WHERE id=$1", uuid.UUID(off))                   # switched off after being chosen
     await reports.queue_due(when)
     await build()
-    ns = await su.fetch("SELECT n.status::text AS status, n.recipient, n.channel::text AS ch, n.alert_id FROM app.notifications n WHERE n.tenant_id=$1 AND n.report_id IS NOT NULL", t)
-    assert [(n["recipient"], n["ch"], n["status"], n["alert_id"]) for n in ns] == [("boss@x.test", "email", "queued", None)]       # the inactive person is skipped
+    ns = await su.fetch("SELECT n.status::text AS status, n.recipient, n.channel::text AS ch, n.alert_id, n.event FROM app.notifications n WHERE n.tenant_id=$1 AND n.report_id IS NOT NULL", t)
+    assert [(n["recipient"], n["ch"], n["status"], n["alert_id"], n["event"]) for n in ns] == [("+919876543211", "whatsapp", "queued", None, "system.report_ready")]       # the inactive person is skipped
+    world["hook"].calls.clear()
     assert await delivery.run_once() == 1
     assert await su.fetchval("SELECT status::text FROM app.notifications WHERE tenant_id=$1 AND report_id IS NOT NULL", t) == "sent"
-    msg = world["smtp"].messages[-1]
-    assert msg.rcpt_tos == ["boss@x.test"]
-    import email
-    parsed = email.message_from_bytes(msg.content)
-    atts = [p for p in parsed.walk() if p.get_filename()]
-    assert len(atts) == 1 and atts[0].get_filename().startswith("gate_register_") and atts[0].get_filename().endswith(".xlsx")
-    wb = openpyxl.load_workbook(io.BytesIO(atts[0].get_payload(decode=True)))
-    assert rows_of(wb["Gate register"])[1][2] == "GJ14AW1013"                                         # the attachment is the real report
-    assert "Gate register" in parsed["Subject"] and "attached" in parsed.get_payload(0).get_payload()
+    call = world["hook"].calls[-1]
+    assert call["headers"]["x-event"] == "system.report_ready"
+    b = call["body"]
+    assert b["phone_number"] == "919876543211" and b["report"] == "Gate register" and b["period"] and "document_url" in b and b["template_name"] == "system_report_ready_v1"
+    assert "email" not in json.dumps(b).lower()
+    link = b["document_url"]
+    assert link.endswith("/report.xlsx") and "/e/" in link
+    got = await client.get("/e/" + link.split("/e/")[1])                                                   # the link works without signing in
+    assert got.status_code == 200 and got.headers["content-type"].startswith("application/vnd.openxmlformats") and "attachment" in got.headers["content-disposition"]
+    wb = openpyxl.load_workbook(io.BytesIO(got.content))
+    assert rows_of(wb["Gate register"])[1][2] == "GJ14AW1013"                                         # the file is the real report
+    assert world["smtp"].messages == []                                                               # nothing is emailed any more
 
 
-async def test_a_report_to_an_account_with_email_switched_off_is_not_sent(client, make, su, shop, world):
+async def test_a_report_link_expires_and_cannot_be_forged(client, make, su, shop, world):
     t, u, cam = shop
-    rid = await person(client, u, "boss2@x.test")
+    rid = await person(client, u, None, "98765 43213")
     await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid]), headers=u["headers"])
-    await su.execute("UPDATE app.tenants SET msg_email=false WHERE id=$1", t)
+    await reports.queue_due(datetime.now(timezone.utc) + timedelta(days=1, hours=1)); await build()
+    rep = await su.fetchrow("SELECT id FROM app.reports WHERE tenant_id=$1 AND status='ready'", t)
+    good = evidence.make_token(rep["id"], 3600)
+    assert (await client.get(f"/e/{good}/report.xlsx")).status_code == 200
+    assert (await client.get(f"/e/{evidence.make_token(rep['id'], -10)}/report.xlsx")).status_code == 410            # expired
+    assert (await client.get(f"/e/{good[:-3]}abc/report.xlsx")).status_code == 404                                  # not ours
+    assert (await client.get(f"/e/{evidence.make_token(uuid.uuid4(), 3600)}/report.xlsx")).status_code == 404       # not a report
+    await su.execute("UPDATE app.tenants SET status='suspended' WHERE id=$1", t)
+    assert (await client.get(f"/e/{good}/report.xlsx")).status_code == 404                                           # a suspended account gets nothing
+    await su.execute("UPDATE app.tenants SET status='active' WHERE id=$1", t)
+
+
+async def test_a_report_to_an_account_with_whatsapp_switched_off_is_not_sent(client, make, su, shop, world):
+    t, u, cam = shop
+    rid = await person(client, u, None, "98765 43214")
+    await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid]), headers=u["headers"])
+    await su.execute("UPDATE app.tenants SET msg_whatsapp=false WHERE id=$1", t)
     await reports.queue_due(datetime.now(timezone.utc) + timedelta(days=1, hours=1)); await build()
     n = await su.fetchrow("SELECT status::text AS s, error FROM app.notifications WHERE tenant_id=$1 AND report_id IS NOT NULL", t)
     assert n["s"] == "suppressed" and "switched off" in n["error"]
     assert (await client.get("/v1/reports", headers=u["headers"])).json()[0]["scheduled"] is True                 # still available in the app
 
 
-async def test_deleting_a_person_cancels_their_waiting_report_email(client, make, su, shop, world):
+async def test_a_report_without_a_webhook_is_recorded_as_not_sent(client, make, su, shop, world):
     t, u, cam = shop
-    rid = await person(client, u, "gone@x.test")
+    rid = await person(client, u, None, "98765 43215")
+    await su.execute("DELETE FROM platform.webhook_endpoints WHERE alert_type='report_ready'")
     await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid]), headers=u["headers"])
     await reports.queue_due(datetime.now(timezone.utc) + timedelta(days=1, hours=1)); await build()
+    n = await su.fetchrow("SELECT status::text AS s, error FROM app.notifications WHERE tenant_id=$1 AND report_id IS NOT NULL", t)
+    assert n["s"] == "suppressed" and "No webhook" in n["error"]
+
+
+async def test_deleting_a_person_cancels_their_waiting_report_message(client, make, su, shop, world):
+    t, u, cam = shop
+    rid = await person(client, u, None, "98765 43216")
+    await client.post("/v1/report-schedules", json=sched(recipient_ids=[rid]), headers=u["headers"])
+    await reports.queue_due(datetime.now(timezone.utc) + timedelta(days=1, hours=1)); await build()
+    world["hook"].calls.clear()
     assert (await client.delete(f"/v1/recipients/{rid}", headers=u["headers"])).status_code == 204
-    assert await delivery.run_once() == 0 and world["smtp"].messages == []
+    assert await delivery.run_once() == 0 and world["hook"].calls == []
+
+
+async def test_report_ready_is_a_system_event_and_not_an_alert_customers_see(client, make, su, shop, world):
+    t, u, cam = shop
+    names = {a["type"] for a in (await client.get("/v1/alert-types", headers=u["headers"])).json()}
+    assert "report_ready" not in names
+    eps = {e["alert_type"]: e for e in (await client.get("/admin/v1/webhooks", headers=world["admin"])).json()["items"]}
+    assert "report_ready" in eps and eps["report_ready"]["event"] == "system.report_ready"
+    assert {"report", "period", "document_url"} <= set(eps["report_ready"]["shortcodes"])
+    assert "{document_url}" in eps["report_ready"]["payload_template"]
+    items = (await client.get("/admin/v1/alert-catalog", headers=world["admin"])).json()["items"]
+    assert "report_ready" not in {i["type"] for i in items}
