@@ -31,20 +31,3 @@ DEFAULT_TEMPLATES = [
      "samples": ["Blocked vehicle TN72AB1234", "Main Gate", "05 Nov, 10:30 AM", "Seen entering"], "button_text": "View evidence",
      "button_url": "{base}/e/{{1}}"},
 ]
-
-# What each alert type is called to people, and how serious it is.
-ALERT_TYPES = {
-    "blocked_plate": {"title": "Blocked vehicle seen", "severity": "critical", "uses_evidence": True,
-                      "description": "A vehicle on your blocked list is read at any camera.",
-                      "params": {"clip": {"type": "boolean", "default": True}}},
-    "vehicle_overstay": {"title": "Vehicle has stayed too long", "severity": "warning", "uses_evidence": False,
-                         "description": "A vehicle entered and has not left after the time you set.", "params": {"max_hours": {"type": "number", "default": 8, "min": 1, "max": 168}}},
-    "crowding": {"title": "Too many people", "severity": "warning", "uses_evidence": False,
-                 "description": "The number of people counted inside goes above your limit.", "params": {"people": {"type": "integer", "default": 50, "min": 1, "max": 100000}}},
-    "camera_offline": {"title": "Camera offline", "severity": "warning", "uses_evidence": False,
-                       "description": "A camera stops sending video.", "params": {}},
-    "recorder_offline": {"title": "Recorder offline", "severity": "warning", "uses_evidence": False,
-                         "description": "Your DVR/NVR stops contacting us.", "params": {}},
-    "low_confidence_plate": {"title": "Plate needs checking", "severity": "info", "uses_evidence": True,
-                             "description": "A number plate could not be read with confidence and needs a person to check it.", "params": {}},
-}

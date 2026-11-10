@@ -14,10 +14,11 @@ from pydantic import Field
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
 from ..schemas import Strict
+from ..services import alert_catalog
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: plans"])
 
-SELECT = """SELECT p.id, p.name, p.price_per_camera_paise, p.stream_mode, p.features, p.active, p.price_change_policy,
+SELECT = """SELECT p.id, p.name, p.price_per_camera_paise, p.stream_mode, p.features, p.active, p.price_change_policy, p.alert_types,
                    (SELECT count(*) FROM app.tenants t WHERE t.plan_id = p.id) AS customers,
                    (SELECT count(*) FROM app.tenants t WHERE t.plan_id = p.id AND t.price_override_paise IS NOT NULL) AS customers_on_old_price
             FROM platform.plans p"""
@@ -30,6 +31,7 @@ class PlanIn(Strict):
     anpr: bool = False
     review_queue: bool = False
     price_change_policy: Literal["next", "keep"] = "next"
+    alerts: list[str] | None = Field(None, max_length=60)        # the alerts this plan includes; left out, a sensible set is chosen
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -41,13 +43,24 @@ class PlanPatch(Strict):
     review_queue: bool | None = None
     price_change_policy: Literal["next", "keep"] | None = None
     active: bool | None = None
+    alerts: list[str] | None = Field(None, max_length=60)
     reason: str = Field(min_length=5, max_length=500)
+
+
+def _alerts(types: list[str]) -> list[str]:
+    try:
+        return alert_catalog.check_types(types)
+    except ValueError as e:
+        raise ApiError(422, "unknown_alert", f"There is no alert called {e}.")
 
 
 def _out(r) -> dict:
     d = dict(r)
     f = d["features"] or {}
     d["anpr"], d["review_queue"] = bool(f.get("anpr")), bool(f.get("review_queue"))
+    types = d.pop("alert_types", None)
+    d["alerts"] = list(types) if types is not None else list(alert_catalog.BUILT)       # a plan with no list includes every alert that exists
+    d["alerts_chosen"] = types is not None
     return d
 
 
@@ -68,18 +81,19 @@ async def list_plans(include_retired: bool = False, ctx: AdminCtx = Depends(admi
 async def create_plan(body: PlanIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     base = re.sub(r"[^a-z0-9]+", "_", body.name.lower()).strip("_")[:30] or "plan"
     features = {"anpr": body.anpr, "review_queue": body.review_queue}
+    alerts = _alerts(body.alerts) if body.alerts is not None else alert_catalog.default_plan_alerts(body.anpr)
     for attempt in range(5):
         pid = base if attempt == 0 else f"{base}_{secrets.token_hex(2)}"
         try:
             await ctx.conn.execute(
-                "INSERT INTO platform.plans (id, name, price_per_camera_paise, stream_mode, features, price_change_policy) VALUES ($1,$2,$3,$4,$5,$6)",
-                pid, body.name, body.price_per_camera_paise, body.stream_mode, features, body.price_change_policy)
+                "INSERT INTO platform.plans (id, name, price_per_camera_paise, stream_mode, features, price_change_policy, alert_types) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+                pid, body.name, body.price_per_camera_paise, body.stream_mode, features, body.price_change_policy, alerts)
             break
         except asyncpg.UniqueViolationError:
             continue
     else:
         raise ApiError(409, "plan_exists", "A plan with a very similar name already exists.")
-    await ctx.audit("plan.create", target_type="plan", reason=body.reason, after={"id": pid, "name": body.name, "price_paise": body.price_per_camera_paise})
+    await ctx.audit("plan.create", target_type="plan", reason=body.reason, after={"id": pid, "name": body.name, "price_paise": body.price_per_camera_paise, "alerts": alerts})
     return _out(await _get(ctx, pid))
 
 
@@ -97,7 +111,10 @@ async def update_plan(plan_id: str, body: PlanPatch, ctx: AdminCtx = Depends(adm
     policy = body.price_change_policy or cur["price_change_policy"]
     price = cur["price_per_camera_paise"] if body.price_per_camera_paise is None else body.price_per_camera_paise
     active = cur["active"] if body.active is None else body.active
+    alerts = _alerts(body.alerts) if body.alerts is not None else None
     async with ctx.conn.transaction():
+        if alerts is not None:
+            await ctx.conn.execute("UPDATE platform.plans SET alert_types=$2 WHERE id=$1", plan_id, alerts)
         await ctx.conn.execute(
             "UPDATE platform.plans SET name=$2, price_per_camera_paise=$3, stream_mode=$4, features=$5, active=$6, price_change_policy=$7 WHERE id=$1",
             plan_id, body.name or cur["name"], price, body.stream_mode or cur["stream_mode"], f, active, policy)
@@ -108,7 +125,7 @@ async def update_plan(plan_id: str, body: PlanPatch, ctx: AdminCtx = Depends(adm
                 await ctx.conn.execute("UPDATE app.tenants SET price_override_paise=NULL WHERE plan_id=$1", plan_id)
     await ctx.audit("plan.update", target_type="plan", reason=body.reason,
                     before={"id": plan_id, "price_paise": cur["price_per_camera_paise"], "active": cur["active"]},
-                    after={"id": plan_id, "price_paise": price, "policy": policy, "active": active})
+                    after={"id": plan_id, "price_paise": price, "policy": policy, "active": active, **({"alerts": alerts} if alerts is not None else {})})
     return _out(await _get(ctx, plan_id))
 
 

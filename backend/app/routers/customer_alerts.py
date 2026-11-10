@@ -9,7 +9,8 @@ from pydantic import Field, field_validator
 
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
-from ..messaging.defaults import ALERT_TYPES
+from ..services import alert_catalog
+from ..services.alert_catalog import ALERT_TYPES
 from ..schemas import Strict
 from ..services.alerts import DEFAULT_ENABLED, fan_out
 
@@ -188,7 +189,8 @@ def check_params(rule_type: str, params: dict) -> dict:
 def _rule_out(rule_type: str, r) -> dict:
     meta = ALERT_TYPES[rule_type]
     enabled = r["enabled"] if r else rule_type in DEFAULT_ENABLED
-    return {"type": rule_type, "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
+    return {"type": rule_type, "family": meta["family"], "group": meta["group"], "ai": meta["family"] == alert_catalog.SMART,
+            "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
             "settings": {k: {**v} for k, v in meta["params"].items()}, "enabled": enabled,
             "params": (r["params"] if r else {}) or {k: v["default"] for k, v in meta["params"].items()},
             "channels": list(r["channels"]) if r else ["whatsapp"], "recipient_ids": list(r["recipients"]) if r else [],
@@ -199,12 +201,12 @@ def _rule_out(rule_type: str, r) -> dict:
 @router.get("/alert-types")
 async def alert_types(ctx: CustomerCtx = Depends(customer_ctx())):
     rows = {r["rule_type"]: r for r in await ctx.conn.fetch("SELECT * FROM app.alert_rules")}
-    return [_rule_out(t, rows.get(t)) for t in ALERT_TYPES]
+    return [_rule_out(t, rows.get(t)) for t in await alert_catalog.visible(ctx.conn, ctx.tenant_id)]
 
 
 @router.put("/alert-types/{rule_type}")
 async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    if rule_type not in ALERT_TYPES:
+    if rule_type not in await alert_catalog.visible(ctx.conn, ctx.tenant_id):       # an alert the customer does not have looks the same as one that does not exist
         raise ApiError(404, "alert_type_not_found", "That alert type does not exist.")
     params = check_params(rule_type, body.params)
     if (body.quiet_start is None) != (body.quiet_end is None):

@@ -84,7 +84,17 @@ CREATE TABLE platform.plans (
   features                jsonb NOT NULL DEFAULT '{}',   -- e.g. {"anpr": true, "review_queue": true}
   active                  boolean NOT NULL DEFAULT true,
   -- When the price changes: 'next' moves existing customers to the new price at their next invoice, 'keep' leaves them on the price they had.
-  price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep'))
+  price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep')),
+  -- The alerts this plan includes (keys of the alert catalogue). NULL means every alert that exists, which is how plans behaved before alerts were chosen per plan.
+  alert_types             text[]
+);
+
+-- The platform owner's on/off switch for each alert. No row means on. An alert that is off is hidden from every customer and raises nothing.
+CREATE TABLE platform.alert_switches (
+  alert_type text PRIMARY KEY,
+  enabled    boolean NOT NULL,
+  changed_by uuid,
+  changed_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- Where evidence pictures, clips and reports are kept. One row, set in the owner console. With no row the GI_EVIDENCE_* settings apply.
@@ -429,6 +439,15 @@ CREATE TABLE app.vehicle_lists (
 );
 
 -- People who receive alerts. They need not have a login: a security guard or a plant manager is enough.
+-- Alerts added to one customer on top of their plan, one at a time. Removing a row takes the alert away again; the customer's own settings for it are kept.
+CREATE TABLE app.tenant_alert_grants (
+  tenant_id  uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  alert_type text NOT NULL,
+  granted_by uuid,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, alert_type)
+);
+
 CREATE TABLE app.recipients (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id            uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
@@ -475,7 +494,7 @@ ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence
 CREATE TABLE app.alert_rules (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  rule_type   text NOT NULL CHECK (rule_type IN ('blocked_plate','vehicle_overstay','crowding','camera_offline','recorder_offline','low_confidence_plate')),
+  rule_type   text NOT NULL,                           -- a key of the alert catalogue (app/services/alert_catalog.py)
   enabled     boolean NOT NULL DEFAULT false,
   params      jsonb NOT NULL DEFAULT '{}',             -- thresholds, for example {"max_hours": 4} or {"people": 40, "minutes": 5}
   channels    app.channel_kind[] NOT NULL DEFAULT '{whatsapp}',
@@ -714,7 +733,7 @@ GRANT EXECUTE ON FUNCTION app.drop_old_plate_partitions(date) TO service_worker;
 GRANT USAGE ON SCHEMA app TO app_user, platform_admin, service_worker;
 GRANT USAGE ON SCHEMA platform TO platform_admin, service_worker, app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, platform_admin, service_worker;
-GRANT SELECT ON platform.plans TO app_user, service_worker;
+GRANT SELECT ON platform.plans, platform.alert_switches TO app_user, service_worker;
 GRANT SELECT ON platform.messaging_providers, platform.message_templates, platform.storage_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
 GRANT DELETE ON platform.plans, platform.messaging_providers, platform.message_templates TO platform_admin;

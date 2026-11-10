@@ -8,11 +8,12 @@ from ..config import get_settings
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from ..messaging.defaults import ALERT_TYPES
+from . import alert_catalog
+from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20
-# A rule the customer has never touched. Only blocked vehicles are on from the start, and they appear in the app until recipients are added.
-DEFAULT_ENABLED = {"blocked_plate"}
+# A rule the customer has never touched. Every System Alert that exists is on from the start, and so are blocked vehicles; they appear in the app until recipients are added.
+DEFAULT_ENABLED = {k for k in alert_catalog.BUILT if ALERT_TYPES[k]["family"] == alert_catalog.SYSTEM} | {"blocked_plate"}
 
 
 def in_quiet_hours(now_local: time, start: time | None, end: time | None) -> bool:
@@ -41,6 +42,8 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
                       evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False) -> UUID | None:
     """Returns the new alert id, or None when nothing was raised (rule off, or the same alert was raised recently)."""
     meta = ALERT_TYPES[rule_type]
+    if rule_type not in await alert_catalog.visible(conn, tenant_id):      # switched off by the platform, or not part of this customer's plan
+        return None
     rule = await conn.fetchrow("SELECT * FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2", tenant_id, rule_type)
     if (rule["enabled"] if rule else rule_type in DEFAULT_ENABLED) is False:
         return None
