@@ -11,6 +11,7 @@ import 'package:ivision_app/screens/more.dart';
 import 'package:ivision_app/screens/recorders.dart';
 import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
+import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
 import 'package:ivision_app/screens/wizard.dart';
 import 'package:ivision_app/widgets/glass_nav.dart';
@@ -496,6 +497,31 @@ void profileTests() {
     expect(find.text('What is typed into the recorder'.toUpperCase()), findsOneWidget);
   });
 
+  testWidgets('push: the device address goes to the server after sign-in when push is on, and is removed on sign-out', (t) async {
+    await phone(t);
+    final repo = MockRepository()..push = true;
+    await t.pumpWidget(IVisionApp(repo: repo, push: _FakePush('tok-123456789012345678', 'android')));
+    await t.pumpAndSettle();
+    expect(repo.registered, ['tok-123456789012345678 android']);
+    await t.tap(find.byType(ProfileButton));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Sign out'));
+    await t.pumpAndSettle();
+    expect(repo.registered, isEmpty, reason: 'forgotten on sign-out');
+  });
+
+  testWidgets('push: nothing is registered while the server has push off or the device has no address', (t) async {
+    await phone(t);
+    final off = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: off, push: _FakePush('tok-123456789012345678', 'ios')));
+    await t.pumpAndSettle();
+    expect(off.registered, isEmpty);
+    final on = MockRepository()..push = true;
+    await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: on));          // the default: no address
+    await t.pumpAndSettle();
+    expect(on.registered, isEmpty);
+  });
+
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
     await phone(t);
     final repo = MockRepository();
@@ -552,4 +578,13 @@ void profileTests() {
     expect(isRecent(a('9', 'x', 'y', 30), now: now), isFalse);
     expect(isRecent(a('9', 'x', 'y', 3), now: now), isTrue);
   });
+}
+
+class _FakePush implements PushService {
+  _FakePush(this._t, this.platform);
+  final String _t;
+  @override
+  final String platform;
+  @override
+  Future<String?> token() async => _t;
 }

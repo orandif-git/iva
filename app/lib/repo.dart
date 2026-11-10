@@ -53,6 +53,9 @@ abstract class Repository {
   Future<Uint8List?> frame(LiveSession s);
   /// Moving pictures for a live view, or null when the server cannot give them (the screen then refreshes a picture every second).
   Future<Stream<Uint8List>?> liveStream(LiveSession s);
+  Future<bool> pushEnabled();
+  Future<void> registerDevice(String token, String platform);
+  Future<void> removeDevice(String token);
   Future<void> signOut();
 
   /// This device stays signed in. With [signOutOthers] every other device and browser is signed out and signs in again with the new password.
@@ -280,6 +283,13 @@ class ApiRepository implements Repository {
   }
 
   @override
+  Future<bool> pushEnabled() async => ((await api.call('GET', '/v1/push')) as Map)['enabled'] == true;
+  @override
+  Future<void> registerDevice(String token, String platform) => api.call('POST', '/v1/devices', body: {'token': token, 'platform': platform});
+  @override
+  Future<void> removeDevice(String token) => api.call('POST', '/v1/devices/remove', body: {'token': token});
+
+  @override
   Future<void> signOut() => api.signOut();
 
   @override
@@ -431,6 +441,14 @@ class MockRepository implements Repository {
   Future<Uint8List?> frame(LiveSession s) async => null;
   @override
   Future<Stream<Uint8List>?> liveStream(LiveSession s) async => null;
+  bool push = false;
+  final registered = <String>[];
+  @override
+  Future<bool> pushEnabled() async => push;
+  @override
+  Future<void> registerDevice(String token, String platform) async => registered.add('$token $platform');
+  @override
+  Future<void> removeDevice(String token) async => registered.remove(registered.firstWhere((x) => x.startsWith(token), orElse: () => ''));
   @override
   Future<void> signOut() async {}
   bool? lastSignOutOthers;

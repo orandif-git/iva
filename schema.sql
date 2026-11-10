@@ -548,6 +548,18 @@ CREATE TABLE app.live_sessions (
 CREATE INDEX live_sessions_tenant_idx ON app.live_sessions (tenant_id, started_at DESC);
 CREATE INDEX live_sessions_active_idx ON app.live_sessions (tenant_id) WHERE ended_at IS NULL;
 
+-- Phones and browsers that have signed in to the customer app and agreed to notifications. One row per device (the token is the device's address at Google/Apple).
+CREATE TABLE app.push_devices (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  user_id      uuid NOT NULL,
+  token        text NOT NULL UNIQUE,
+  platform     text NOT NULL CHECK (platform IN ('web','android','ios')),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX push_devices_tenant_idx ON app.push_devices (tenant_id);
+
 -- The picture kept for a plate read (the same evidence store, so it follows the same retention).
 ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence(id) ON DELETE SET NULL;
 
