@@ -28,7 +28,7 @@ class Pill extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (dot) ...[Container(width: 7, height: 7, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)), const SizedBox(width: 6)],
           if (icon != null) ...[Icon(icon, size: 13, color: fg), const SizedBox(width: 4)],
-          Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
+          Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12))),
         ]));
   }
 }
@@ -120,6 +120,10 @@ IconData iconForType(String type, {bool smart = false}) => switch (type) {
       'queue_long' => Icons.format_list_numbered_rounded,
       'phone_use' => Icons.smartphone_rounded,
       'blocked_plate' => Icons.directions_car_outlined,
+      'crowding' => Icons.groups_2_outlined,
+      'after_hours' => Icons.nightlight_outlined,
+      'vehicle_overstay' => Icons.timer_outlined,
+      'low_confidence_plate' => Icons.plagiarism_outlined,
       'daily_summary' => Icons.summarize_outlined,
       'back_to_normal' => Icons.check_circle_outline_rounded,
       _ => smart ? Icons.remove_red_eye_outlined : Icons.notifications_none_rounded,

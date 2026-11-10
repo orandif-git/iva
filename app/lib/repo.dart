@@ -27,7 +27,11 @@ abstract class Repository {
   Future<void> saveAlert(NewAlert a);
   Future<void> setEnabled(AlertDef d, bool on);
   Future<void> sendTest(String alertType, String personId);
-  Future<List<ReportItem>> reports();
+  Future<List<ReportSchedule>> schedules();
+  Future<void> saveSchedule(ReportSchedule s);
+  Future<void> deleteSchedule(String id);
+  Future<List<MadeReport>> madeReports();
+  Future<void> makeReport(String type, DateTime from, DateTime to);
   Future<LiveSession> startLive(String cameraId, LiveMode mode);
   Future<void> extendLive(LiveSession s);
   Future<void> stopLive(LiveSession s);
@@ -39,8 +43,6 @@ abstract class Repository {
   /// The server signs the person out everywhere after a change, so the app must sign in again.
   Future<void> changePassword(String current, String next);
 }
-
-String _pretty(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' ');
 
 const _areaKinds = {'people_in_area': 'area_count', 'queue_long': 'queue_area', 'phone_use': 'staff_area'};
 
@@ -125,7 +127,7 @@ class ApiRepository implements Repository {
   @override
   Future<List<Person>> people() async => [
         for (final j in await api.call('GET', '/v1/recipients') as List)
-          if (j['active'] == true) Person(j['id'], j['name'], (j['phone_masked'] ?? '') as String)
+          if (j['active'] == true) Person(j['id'], j['name'], (j['phone_masked'] ?? '') as String, email: j['email'] as String?)
       ];
 
   @override
@@ -162,9 +164,25 @@ class ApiRepository implements Repository {
   Future<void> sendTest(String type, String personId) => api.call('POST', '/v1/alert-types/$type/test', body: {'recipient_id': personId});
 
   @override
-  Future<List<ReportItem>> reports() async {
-    final list = await api.call('GET', '/v1/report-schedules') as List;
-    return [for (final j in list) ReportItem(_pretty((j['report_type'] ?? 'report') as String), _pretty((j['frequency'] ?? '') as String), j['enabled'] != false)];
+  Future<List<ReportSchedule>> schedules() async => [for (final j in await api.call('GET', '/v1/report-schedules') as List) ReportSchedule.fromJson(j as Map<String, dynamic>)];
+
+  @override
+  Future<void> saveSchedule(ReportSchedule s) => s.id == null ? api.call('POST', '/v1/report-schedules', body: s.toJson()) : api.call('PUT', '/v1/report-schedules/${s.id}', body: s.toJson());
+
+  @override
+  Future<void> deleteSchedule(String id) => api.call('DELETE', '/v1/report-schedules/$id');
+
+  @override
+  Future<List<MadeReport>> madeReports() async {
+    final list = await api.call('GET', '/v1/reports', query: {'limit': '20'}) as List;
+    String day(String? iso) => iso == null ? '' : friendlyWhen(iso).split(' ').take(3).join(' ');
+    return [for (final j in list) MadeReport(j['id'], j['report_type'], j['status'] as String, '${day(j['period_start'] as String?)} – ${day(j['period_end'] as String?)}', j['rows'] as int?)];
+  }
+
+  @override
+  Future<void> makeReport(String type, DateTime from, DateTime to) {
+    String d(DateTime x) => '${x.year}-${x.month.toString().padLeft(2, '0')}-${x.day.toString().padLeft(2, '0')}';
+    return api.call('POST', '/v1/reports', body: {'report_type': type, 'from': d(from), 'to': d(to)});
   }
 
   @override
@@ -261,7 +279,7 @@ class MockRepository implements Repository {
   @override
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
-  Future<List<Person>> people() async => const [Person('p1', 'Priya (you)', '+91 98•••• 3210'), Person('p2', 'Ravi, store manager', '+91 97•••• 5521'), Person('p3', 'Store phone', '+91 90•••• 0044')];
+  Future<List<Person>> people() async => const [Person('p1', 'Priya (you)', '+91 98•••• 3210', email: 'priya@greenvalley.in'), Person('p2', 'Ravi, store manager', '+91 97•••• 5521', email: 'ravi@greenvalley.in'), Person('p3', 'Store phone', '+91 90•••• 0044')];
   @override
   Future<Uint8List?> snapshot(String cameraId) async => null;
   @override
@@ -275,8 +293,30 @@ class MockRepository implements Repository {
   Future<void> setEnabled(AlertDef d, bool on) async => d.enabled = on;
   @override
   Future<void> sendTest(String alertType, String personId) async {}
+  final List<ReportSchedule> _schedules = [
+    ReportSchedule(id: 's1', type: 'footfall_summary', frequency: 'daily', sendAt: '21:00', recipientIds: ['p1', 'p2']),
+    ReportSchedule(id: 's2', type: 'footfall_summary', frequency: 'weekly', weekday: 0, sendAt: '08:00', recipientIds: ['p1']),
+    ReportSchedule(id: 's3', type: 'vehicle_audit', frequency: 'monthly', dayOfMonth: 1, sendAt: '07:00', recipientIds: ['p1'], enabled: false),
+  ];
+  final List<MadeReport> _made = [const MadeReport('m1', 'footfall_summary', 'ready', '3 Nov – 9 Nov', 1204), const MadeReport('m2', 'gate_register', 'ready', '1 Nov – 7 Nov', 86)];
   @override
-  Future<List<ReportItem>> reports() async => const [ReportItem('Daily summary', 'Every day, 9 pm', true), ReportItem('Weekly footfall', 'Mondays, 8 am', true), ReportItem('Month end', 'Last day of month', false)];
+  Future<List<ReportSchedule>> schedules() async => List.of(_schedules);
+  @override
+  Future<void> saveSchedule(ReportSchedule s) async {
+    final i = _schedules.indexWhere((x) => x.id == s.id);
+    if (i >= 0) {
+      _schedules[i] = s;
+    } else {
+      _schedules.add(ReportSchedule(id: 's${_schedules.length + 1}', type: s.type, frequency: s.frequency, sendAt: s.sendAt, weekday: s.weekday, dayOfMonth: s.dayOfMonth, recipientIds: s.recipientIds, enabled: s.enabled));
+    }
+  }
+
+  @override
+  Future<void> deleteSchedule(String id) async => _schedules.removeWhere((s) => s.id == id);
+  @override
+  Future<List<MadeReport>> madeReports() async => List.of(_made);
+  @override
+  Future<void> makeReport(String type, DateTime from, DateTime to) async => _made.insert(0, MadeReport('m${_made.length + 1}', type, 'queued', 'Today', null));
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async => LiveSession('demo-$cameraId', mode);
   @override

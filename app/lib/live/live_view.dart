@@ -121,14 +121,14 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
     final running = session != null && c != null && !c.ended;
     final ended = c != null && c.ended;
     final h = MediaQuery.sizeOf(context).height;
-    Widget scene = _Scene(ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? 'AI view' : 'Live') : 'Picture on request'}');
+    Widget scene = _Scene(ring: running ? (c.left / c.rules.period).clamp(0.0, 1.0) : null, ringText: running ? c.countdown : '', idle: !running && !ended && widget.camera.working, ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? 'AI view' : 'Live') : 'Picture on request'}');
     final picture = switch (size) {
       PictureSize.fit => AspectRatio(aspectRatio: 16 / 9, child: scene),
       PictureSize.fill => SizedBox(height: h * 0.6, child: FittedBox(fit: BoxFit.cover, clipBehavior: Clip.hardEdge, child: SizedBox(width: 1600, height: 900, child: scene))),
       PictureSize.enlarge => SizedBox(height: h * 0.72, width: double.infinity, child: Center(child: RotatedBox(quarterTurns: 1, child: AspectRatio(aspectRatio: 16 / 9, child: scene)))),
     };
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(14), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
+      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(20), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
       if (widget.compact) ...[
         const SizedBox(height: 10),
         SegmentedButton<PictureSize>(
@@ -162,11 +162,11 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
         if (!widget.camera.working)
           Text('This camera is offline. Live view is not available.', style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))
         else ...[
-          SegmentedButton<LiveMode>(
-            segments: const [ButtonSegment(value: LiveMode.live, label: Text('Live view')), ButtonSegment(value: LiveMode.ai, label: Row(mainAxisSize: MainAxisSize.min, children: [AiSpark(size: 16), SizedBox(width: 6), Text('AI view')]))],
-            selected: {mode},
-            onSelectionChanged: (v) => setState(() => mode = v.first),
-          ),
+          Row(children: [
+            Expanded(child: _ModeCard(on: mode == LiveMode.live, onTap: () => setState(() => mode = LiveMode.live), icon: const Icon(Icons.videocam_outlined, size: 22), title: 'Live view', sub: '2 minutes')),
+            const SizedBox(width: 10),
+            Expanded(child: _ModeCard(on: mode == LiveMode.ai, onTap: () => setState(() => mode = LiveMode.ai), icon: const AiSpark(size: 22), title: 'AI view', sub: '30 seconds', ai: true)),
+          ]),
           const SizedBox(height: 10),
           FilledButton(onPressed: _busy ? null : _start, child: Text(ended ? 'Start again' : (mode == LiveMode.ai ? 'Start AI view' : 'Start live view'))),
           const SizedBox(height: 6),
@@ -180,8 +180,10 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
 
 /// The demo picture: a still scene with people, and in AI view the boxes and the marked area drawn on it.
 class _Scene extends StatelessWidget {
-  const _Scene({required this.ai, required this.t, required this.image, required this.running, required this.connecting, required this.ended, required this.offline, required this.label});
-  final bool ai, running, connecting, ended, offline;
+  const _Scene({required this.ring, required this.ringText, required this.idle, required this.ai, required this.t, required this.image, required this.running, required this.connecting, required this.ended, required this.offline, required this.label});
+  final bool ai, running, connecting, ended, offline, idle;
+  final double? ring;
+  final String ringText;
   final int t;
   final Uint8List? image;
   final String label;
@@ -190,13 +192,88 @@ class _Scene extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(fit: StackFit.expand, children: [
       if (image != null) Image.memory(image!, fit: BoxFit.cover, gaplessPlayback: true) else CustomPaint(painter: _ScenePainter(ai: ai, t: t, people: running && !connecting)),
-      if (running && !connecting) Positioned(right: 10, top: 8, child: ai ? const _AiTag() : const _Tag('● Live')),
+      if (running && !connecting) Positioned(left: 10, top: 10, child: ai ? const _AiTag() : const _LiveTag()),
+      if (ring != null && !connecting) Positioned(right: 10, top: 10, child: _Ring(progress: ring!, text: ringText, ai: ai)),
+      if (idle) Center(child: Container(width: 64, height: 64, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .6), width: 2)), child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 38))),
       if (connecting) const _Cover('Connecting to the camera…'),
       if (ended) const _Cover('Live view stopped'),
       if (offline) const _Cover('This camera is offline'),
       Positioned(left: 10, bottom: 8, child: _Tag(label)),
     ]);
   }
+}
+
+class _ModeCard extends StatelessWidget {
+  const _ModeCard({required this.on, required this.onTap, required this.icon, required this.title, required this.sub, this.ai = false});
+  final bool on, ai;
+  final VoidCallback onTap;
+  final Widget icon;
+  final String title, sub;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final c = ai ? t.ai : t.brand;
+    return Semantics(
+      button: true,
+      selected: on,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: on ? (ai ? t.aiSoft : t.brandSoft) : t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? c : t.line, width: on ? 2 : 1.5)),
+          child: Row(children: [
+            icon,
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: on ? c : t.fg)), Text(sub, style: TextStyle(color: t.fg2, fontSize: 12))])),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveTag extends StatefulWidget {
+  const _LiveTag();
+  @override
+  State<_LiveTag> createState() => _LiveTagState();
+}
+
+class _LiveTagState extends State<_LiveTag> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+      padding: const EdgeInsets.fromLTRB(9, 4, 11, 4),
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .55), borderRadius: BorderRadius.circular(99)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        FadeTransition(opacity: Tween(begin: .35, end: 1.0).animate(_c), child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFFFF4D3D), shape: BoxShape.circle))),
+        const SizedBox(width: 6),
+        const Text('Live', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
+      ]));
+}
+
+/// The time left, as a ring around the seconds, on the corner of the picture.
+class _Ring extends StatelessWidget {
+  const _Ring({required this.progress, required this.text, required this.ai});
+  final double progress;
+  final String text;
+  final bool ai;
+  @override
+  Widget build(BuildContext context) => Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .5), shape: BoxShape.circle),
+      child: Stack(alignment: Alignment.center, children: [
+        SizedBox(width: 44, height: 44, child: CircularProgressIndicator(value: progress, strokeWidth: 3.5, color: ai ? const Color(0xFFB5A2FF) : const Color(0xFF6BE0FF), backgroundColor: Colors.white.withValues(alpha: .2))),
+        Text(text, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
+      ]));
 }
 
 class _AiTag extends StatelessWidget {
