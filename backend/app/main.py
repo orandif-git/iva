@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
@@ -24,6 +24,13 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' 
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 # The new customer app (Flutter, served at /next/) draws on a canvas, so it needs WebAssembly and its own inline styles. It loads scripts only from this server and talks to it,
 # plus the three Google addresses a browser needs to get its push address (Firebase Cloud Messaging).
+RETIRE_SW = '''self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil((async () => {
+  for (const k of await caches.keys()) await caches.delete(k);
+  await self.registration.unregister();
+  for (const c of await self.clients.matchAll({ type: "window" })) { try { await c.navigate("/"); } catch (err) {} }
+})()));
+'''
 NEXT_CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; manifest-src 'self'; "
             "connect-src 'self' data: blob: https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://fcm.googleapis.com; "
             "font-src 'self' data:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
@@ -106,7 +113,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
                 async def front_door(request: Request):
                     q = request.query_params
                     if "next" in q:
-                        r = RedirectResponse("/next/", status_code=302)
+                        r = RedirectResponse("/next/#/", status_code=302)
                         r.delete_cookie("gi_ui", path="/")
                         return r
                     if "classic" in q or request.cookies.get("gi_ui") == "classic":
@@ -114,7 +121,12 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
                         if "classic" in q:
                             r.set_cookie("gi_ui", "classic", max_age=30 * 86400, path="/", secure=s.env != "dev", httponly=True, samesite="lax")
                         return r
-                    return RedirectResponse("/next/", status_code=302)
+                    return RedirectResponse("/next/#/", status_code=302)
+                # Phones and computers that used the old app still hold its service worker, which keeps old files. While the new app is the front door the server
+                # answers the old worker's update check with one that empties its caches, removes itself and reloads the page, so every device moves over by itself.
+                @app.get("/sw.js", include_in_schema=False)
+                async def retire_old_worker():
+                    return Response(RETIRE_SW, media_type="application/javascript", headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/"})
             app.mount("/next", StaticFiles(directory=nxt, html=True), name="web_next")
         app.mount("/", StaticFiles(directory=web, html=True), name="web")        # last, so it never hides an API route
     return app
