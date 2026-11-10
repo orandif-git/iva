@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Icons;
 class Issue {
   final String kind, level, title;
   const Issue(this.kind, this.level, this.title);
@@ -80,13 +81,56 @@ class AlertDef {
 
 class Person {
   final String id, name, phone;
-  const Person(this.id, this.name, this.phone);
+  final String? email;
+  const Person(this.id, this.name, this.phone, {this.email});
+  bool get hasEmail => (email ?? '').isNotEmpty;
 }
 
-class ReportItem {
-  final String name, when;
-  final bool on;
-  const ReportItem(this.name, this.when, this.on);
+const reportTypes = {
+  'footfall_summary': ('Footfall summary', 'People in and out by hour and day', Icons.groups_outlined),
+  'gate_register': ('Gate register', 'Every vehicle seen at your gates', Icons.sensor_door_outlined),
+  'vehicle_audit': ('Vehicle audit', 'Plates to review, blocked and allowed vehicles', Icons.directions_car_outlined),
+};
+
+/// An emailed report on a schedule.
+class ReportSchedule {
+  final String? id;
+  final String type, frequency, sendAt; // frequency: daily, weekly, monthly; sendAt: "21:00"
+  final int? weekday, dayOfMonth; // weekday 0 = Monday
+  final List<String> recipientIds;
+  bool enabled;
+  ReportSchedule({this.id, required this.type, required this.frequency, this.sendAt = '07:00', this.weekday, this.dayOfMonth, this.recipientIds = const [], this.enabled = true});
+
+  String get title => reportTypes[type]?.$1 ?? type;
+
+  /// "Every day at 9 pm", "Mondays at 8 am", "On the 1st at 7 am".
+  String get when {
+    final h = int.tryParse(sendAt.split(':').first) ?? 7, m = sendAt.split(':').length > 1 ? sendAt.split(':')[1] : '00';
+    final clock = '${h % 12 == 0 ? 12 : h % 12}${m == '00' ? '' : ':$m'} ${h < 12 ? 'am' : 'pm'}';
+    const days = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
+    return switch (frequency) {
+      'weekly' => '${days[(weekday ?? 0).clamp(0, 6)]} at $clock',
+      'monthly' => 'On the ${_ordinal(dayOfMonth ?? 1)} at $clock',
+      _ => 'Every day at $clock',
+    };
+  }
+
+  static String _ordinal(int n) => '$n${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (const ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][n % 10])}';
+
+  factory ReportSchedule.fromJson(Map<String, dynamic> j) => ReportSchedule(
+      id: j['id'], type: j['report_type'], frequency: j['frequency'], sendAt: j['send_at'] ?? '07:00', weekday: j['weekday'], dayOfMonth: j['day_of_month'], recipientIds: [for (final r in (j['recipient_ids'] as List? ?? [])) r as String], enabled: j['enabled'] != false);
+
+  Map<String, dynamic> toJson() => {'report_type': type, 'frequency': frequency, 'send_at': sendAt, if (frequency == 'weekly') 'weekday': weekday ?? 0, if (frequency == 'monthly') 'day_of_month': dayOfMonth ?? 1, 'recipient_ids': recipientIds, 'enabled': enabled};
+}
+
+/// A report made now, for a period, as an Excel file.
+class MadeReport {
+  final String id, type, status, period;
+  final int? rows;
+  const MadeReport(this.id, this.type, this.status, this.period, this.rows);
+  String get title => reportTypes[type]?.$1 ?? type;
+  bool get ready => status == 'ready' || status == 'done' || status == 'completed';
+  bool get failed => status == 'failed';
 }
 
 /// What to save when the New alert flow ends.

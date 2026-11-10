@@ -37,25 +37,40 @@ class ProfileButton extends StatelessWidget {
     );
   }
 
+  /// The menu drops down from the profile button, on a phone and on a desktop alike: it is short, it keeps the page in view, and the thumb reaches the top right easily.
   void _open(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final media = MediaQuery.of(context);
+    final wide = media.size.width >= 900;
+    final top = wide ? 74.0 : media.padding.top + 62;
+    final width = wide ? 340.0 : (media.size.width - 24).clamp(260.0, 340.0);
     Widget content(BuildContext ctx) => ProfileMenu(me: me, choice: choice, onChoice: onChoice, repo: repo, onSettings: () { Navigator.of(ctx).pop(); onSettings(); }, onSignOut: (m) { Navigator.of(ctx).pop(); onSignOut(m); });
-    if (wide) {
-      showDialog<void>(
-        context: context,
-        barrierColor: Colors.transparent,
-        builder: (ctx) => Align(alignment: Alignment.topRight, child: Padding(padding: const EdgeInsets.fromLTRB(0, 70, 28, 0), child: Material(color: Colors.transparent, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 340), child: DecoratedBox(decoration: BoxDecoration(color: Tok.of(ctx).surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Tok.of(ctx).line), boxShadow: Tok.of(ctx).lift), child: content(ctx)))))),
-      );
-    } else {
-      showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        backgroundColor: Tok.of(context).surface,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        builder: (ctx) => SafeArea(child: content(ctx)),
-      );
-    }
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close menu',
+      barrierColor: Colors.black.withValues(alpha: wide ? 0 : .18),
+      transitionDuration: const Duration(milliseconds: 190),
+      pageBuilder: (ctx, _, __) => Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(12, top, wide ? 28 : 12, 12),
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: width,
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: Tok.of(ctx).surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: Tok.of(ctx).line), boxShadow: [BoxShadow(color: Tok.of(ctx).shadow.withValues(alpha: .35), blurRadius: 32, offset: const Offset(0, 12))]),
+                child: ClipRRect(borderRadius: BorderRadius.circular(22), child: SingleChildScrollView(child: content(ctx))),
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        return FadeTransition(opacity: curved, child: ScaleTransition(alignment: Alignment.topRight, scale: Tween(begin: .88, end: 1.0).animate(curved), child: child));
+      },
+    );
   }
 }
 

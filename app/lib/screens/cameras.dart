@@ -43,6 +43,27 @@ class CamerasPage extends StatelessWidget {
   }
 }
 
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.icon, this.label, this.value, {this.tint, this.small = false});
+  final IconData icon;
+  final String label, value;
+  final Color? tint;
+  final bool small;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 22, child: Icon(icon, size: small ? 11 : 20, color: tint ?? t.fg2)),
+        const SizedBox(width: 14),
+        SizedBox(width: 128, child: Text(label, style: TextStyle(color: t.fg2, fontSize: 14))),
+        Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5, height: 1.35))),
+      ]),
+    );
+  }
+}
+
 class _CamCard extends StatelessWidget {
   const _CamCard(this.c, this.onTap);
   final CameraItem c;
@@ -96,16 +117,14 @@ class CameraDetail extends StatelessWidget {
             child: ListView(padding: const EdgeInsets.all(16), children: [
               LiveView(repo: repo, camera: camera, compact: narrow),
               const SizedBox(height: 16),
-              Section(
-                icon: Icons.videocam_outlined,
-                title: camera.name,
-                subtitle: '${camera.working ? 'Working' : 'Offline'} · ${camera.recorder}',
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  OutlinedButton.icon(onPressed: () { Navigator.of(context).pop(); onAddAlert(camera); }, icon: const Icon(Icons.add_alert_outlined), label: const Text('Add an alert for this camera')),
-                  const SizedBox(height: 10),
-                  Text('Live view is for owners and managers. Each view is recorded in your history.', style: TextStyle(color: t.fg2, fontSize: 12.5)),
-                ]),
-              ),
+              const GroupLabel('About this camera'),
+              Group(children: [
+                _InfoRow(Icons.circle, 'Status', camera.working ? 'Working' : 'Offline', tint: camera.working ? t.okInk : t.crit, small: true),
+                _InfoRow(Icons.dns_outlined, 'Recorder', camera.recorder.isEmpty ? 'Not known' : camera.recorder),
+                _InfoRow(Icons.lock_outline_rounded, 'Who can watch', 'Owners and managers. Every view is recorded in your history.'),
+              ]),
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size(44, 52)), onPressed: () { Navigator.of(context).pop(); onAddAlert(camera); }, icon: const Icon(Icons.add_alert_outlined), label: const Text('Add an alert for this camera')),
             ]),
           ),
         ),

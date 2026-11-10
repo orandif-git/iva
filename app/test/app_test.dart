@@ -8,6 +8,7 @@ import 'package:ivision_app/geometry/polygon.dart';
 import 'package:ivision_app/main.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/screens/wizard.dart';
 import 'package:ivision_app/widgets/profile_menu.dart';
 import 'package:ivision_app/widgets/area_editor.dart';
 
@@ -103,9 +104,10 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Which camera?'), findsOneWidget);
     expect(tester(t, 'Continue').onPressed, isNull, reason: 'a camera must be chosen');
-    await t.scrollUntilVisible(find.text('Billing queue'), 200);
-    await t.tap(find.text('Billing queue'));
-    await t.pump();
+    await t.scrollUntilVisible(find.text('Billing queue'), 200, scrollable: find.byType(Scrollable).first);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Billing queue'), warnIfMissed: false);
+    await t.pumpAndSettle();
     await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
     expect(find.text('Draw the area on the picture'), findsOneWidget);
@@ -192,6 +194,69 @@ void profileTests() {
     await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: MockRepository()));
     await t.pumpAndSettle();
     expect(t.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.light);
+  });
+
+  testWidgets('the profile menu drops down from the profile button, not up from the bottom', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    final button = t.getRect(find.byType(ProfileButton));
+    await t.tap(find.byType(ProfileButton));
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    final menu = t.getRect(find.text('APPEARANCE'));
+    expect(menu.top, greaterThan(button.bottom), reason: 'below the button');
+    expect(menu.top, lessThan(400), reason: 'near the top, not at the bottom');
+    await t.tapAt(const Offset(40, 800)); // tap outside: it closes
+    await t.pumpAndSettle();
+    expect(find.text('APPEARANCE'), findsNothing);
+  });
+
+  test('the alert is described in one plain sentence from its numbers', () {
+    final q = AlertDef(type: 'queue_long', title: 'Long queue', description: '', smart: true, area: true);
+    expect(describe(q, {'length': 8, 'minutes': 4}, where: 'Billing queue'), 'Alert me when more than 8 people are waiting in the area on Billing queue for 4 minutes or more.');
+    final c = AlertDef(type: 'connection_unstable', title: 'x', description: '', smart: false);
+    expect(describe(c, {'drops': 3}), contains('3 times in an hour'));
+    final ph = AlertDef(type: 'phone_use', title: 'x', description: '', smart: true, area: true);
+    expect(describe(ph, {'seconds': 40}), allOf(contains('40 seconds'), contains('never names a person')));
+  });
+
+  test('a report schedule reads like a sentence', () {
+    expect(ReportSchedule(type: 'footfall_summary', frequency: 'daily', sendAt: '21:00').when, 'Every day at 9 pm');
+    expect(ReportSchedule(type: 'footfall_summary', frequency: 'weekly', weekday: 0, sendAt: '08:00').when, 'Mondays at 8 am');
+    expect(ReportSchedule(type: 'vehicle_audit', frequency: 'monthly', dayOfMonth: 1, sendAt: '07:00').when, 'On the 1st at 7 am');
+    expect(ReportSchedule(type: 'vehicle_audit', frequency: 'monthly', dayOfMonth: 22, sendAt: '12:00').when, 'On the 22nd at 12 pm');
+    expect(ReportSchedule(type: 'gate_register', frequency: 'weekly', weekday: 4, sendAt: '07:00', recipientIds: ['a']).toJson(), {'report_type': 'gate_register', 'frequency': 'weekly', 'send_at': '07:00', 'weekday': 4, 'recipient_ids': ['a'], 'enabled': true});
+  });
+
+  testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Reports'));
+    await t.pumpAndSettle();
+    expect(find.text('Emailed on a schedule'.toUpperCase()), findsOneWidget);
+    expect(find.textContaining('Every day at 9 pm'), findsOneWidget);
+    await t.tap(find.byType(Switch).first);
+    await t.pumpAndSettle();
+    expect((await repo.schedules()).first.enabled, isFalse);
+    await t.tap(find.text('Schedule'));
+    await t.pumpAndSettle();
+    expect(find.text('Which report'.toUpperCase()), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Save'), 300, scrollable: find.byType(Scrollable).first);
+    expect(tester(t, 'Save').onPressed, isNull, reason: 'someone must get it');
+    await t.scrollUntilVisible(find.text('Vehicle audit'), -300, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Vehicle audit'));
+    await t.pump();
+    await t.scrollUntilVisible(find.textContaining('priya@greenvalley.in'), 300, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.textContaining('priya@greenvalley.in'));
+    await t.pump();
+    await t.scrollUntilVisible(find.text('Save'), 300, scrollable: find.byType(Scrollable).first);
+    expect(tester(t, 'Save').onPressed, isNotNull);
+    await t.tap(find.text('Save'));
+    await t.pumpAndSettle();
+    expect((await repo.schedules()).length, 4);
   });
 
   test('repeats of the same alert in the same place fold into one row, newest first', () {
