@@ -111,6 +111,9 @@ String ago(int? s) {
   return '${s ~/ 3600} h ago';
 }
 
+/// "27 s ago", "5 min ago": short enough for a small card.
+String shortAgo(int? s) => s == null ? '' : (s < 5 ? 'just now' : (s < 60 ? '$s s ago' : (s < 3600 ? '${s ~/ 60} min ago' : '${s ~/ 3600} h ago')));
+
 /// The icon of an alert by its kind. Smart Alerts get their own picture (people, queue, phone), not a sparkle: the sparkle is the badge's corner.
 IconData iconForType(String type, {bool smart = false}) => switch (type) {
       'camera_offline' => Icons.videocam_off_outlined,

@@ -4,6 +4,7 @@ import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/profile_menu.dart';
 import 'common.dart';
 
 /// Reports: the ones sent on WhatsApp on a schedule, and making one now. Download of a made report is in the current app for now.
@@ -251,10 +252,38 @@ class _Pick extends StatelessWidget {
   }
 }
 
-/// People who get alerts, and where the rest of the settings live. Appearance, password and sign out are in the profile menu.
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.repo});
+/// Settings: who you are and your plan, who gets alerts, your recorders, how alerts reach you, and your account.
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key, required this.repo, required this.onSignOut});
   final Repository repo;
+  final void Function(String? message) onSignOut;
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late Future<(Me, List<Person>, List<RecorderItem>)> data = _load();
+
+  Future<(Me, List<Person>, List<RecorderItem>)> _load() async {
+    final r = await Future.wait([widget.repo.me(), widget.repo.people(), widget.repo.recorders()]);
+    return (r[0] as Me, r[1] as List<Person>, r[2] as List<RecorderItem>);
+  }
+
+  void _reload() => setState(() { data = _load(); });
+
+  Future<void> _add() async {
+    final ok = await showDialog<bool>(context: context, builder: (_) => _AddPerson(repo: widget.repo));
+    if (ok == true) _reload();
+  }
+
+  Future<void> _remove(Person p) async {
+    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: Text('Remove ${p.name}?'), content: const Text('They will stop getting alerts and reports on WhatsApp.'), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep')), FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove'))]));
+    if (ok == true) {
+      await widget.repo.deletePerson(p.id);
+      _reload();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
@@ -264,37 +293,163 @@ class SettingsPage extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
           child: SelectionArea(
-            child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 40), children: [
-              const GroupLabel('People who get alerts'),
-              FutureBuilder(
-                future: repo.people(),
-                builder: (context, snap) {
-                  if (snap.hasError) return Text('${snap.error}');
-                  if (!snap.hasData) return const Padding(padding: EdgeInsets.all(24), child: Loading());
-                  final list = snap.data!;
-                  if (list.isEmpty) return const EmptyState(icon: Icons.person_add_alt_1_outlined, title: 'Nobody yet', text: 'Add people in the current app (More, Alerts) so alerts have somewhere to go. They receive alerts on WhatsApp.');
-                  return Group(children: [
-                    for (final p in list)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        child: Row(children: [
-                          Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(p.name.isEmpty ? '?' : p.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
-                          const SizedBox(width: 14),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)), Text(p.phone, style: TextStyle(color: t.fg2, fontSize: 13))])),
-                          const Pill('WhatsApp', Level.ok),
+            child: FutureBuilder(
+              future: data,
+              builder: (context, snap) {
+                if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load your settings', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
+                if (!snap.hasData) return const Loading(text: 'Loading your settings');
+                final (me, people, recorders) = snap.data!;
+                final used = me.camerasInUse, limit = me.cameraLimit;
+                return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
+                  // who you are, and the plan
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(gradient: brandGradient, borderRadius: BorderRadius.circular(22)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Container(width: 52, height: 52, alignment: Alignment.center, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle), child: Text(me.name.isEmpty ? '?' : me.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700))),
+                        const SizedBox(width: 14),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(me.name, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700)), Text(me.business, style: TextStyle(color: Colors.white.withValues(alpha: .85), fontSize: 14)), if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 6), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), borderRadius: BorderRadius.circular(99)), child: const Text('Owner or manager', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))))])),
+                      ]),
+                      if (me.plan != null || used != null) ...[
+                        const SizedBox(height: 16),
+                        Row(children: [
+                          Expanded(child: Text(me.plan == null ? 'Cameras' : '${me.plan}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: .9), fontWeight: FontWeight.w600))),
+                          if (used != null && limit != null) Text('$used of $limit cameras', style: TextStyle(color: Colors.white.withValues(alpha: .9), fontSize: 13)),
                         ]),
-                      ),
-                  ]);
-                },
-              ),
-              const GroupLabel('More'),
-              Group(children: [
-                Padding(padding: const EdgeInsets.all(16), child: Text('Recorders, billing, and creating or changing reports are still in the current app at the main address. They move here next.', style: TextStyle(color: t.fg2))),
-              ]),
-            ]),
+                        if (used != null && limit != null && limit > 0) Padding(padding: const EdgeInsets.only(top: 8), child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (used / limit).clamp(0.0, 1.0), minHeight: 7, color: Colors.white, backgroundColor: Colors.white.withValues(alpha: .25)))),
+                      ],
+                    ]),
+                  ),
+                  GroupLabel('People who get alerts', trailing: TextButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add'))),
+                  if (people.isEmpty)
+                    EmptyState(icon: Icons.person_add_alt_1_outlined, title: 'Nobody yet', text: 'Add people so alerts and reports have somewhere to go. They receive them on WhatsApp.', action: FilledButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded), label: const Text('Add a person')))
+                  else
+                    Group(children: [
+                      for (final p in people)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 6, 10),
+                          child: Row(children: [
+                            Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(p.name.isEmpty ? '?' : p.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)), Text(p.hasPhone ? p.phone : 'No mobile number', style: TextStyle(color: p.hasPhone ? t.fg2 : t.warnInk, fontSize: 13))])),
+                            if (p.hasPhone) const Pill('WhatsApp', Level.ok),
+                            IconButton(tooltip: 'Remove ${p.name}', icon: Icon(Icons.delete_outline_rounded, color: t.fg2), onPressed: () => _remove(p)),
+                          ]),
+                        ),
+                    ]),
+                  const GroupLabel('Your recorders'),
+                  if (recorders.isEmpty)
+                    Group(children: [Padding(padding: const EdgeInsets.all(16), child: Text('No recorder is connected yet. Recorders are set up in the current app for now.', style: TextStyle(color: t.fg2)))])
+                  else
+                    Group(children: [
+                      for (final r in recorders)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(children: [
+                            Badge2(Icons.dns_outlined, r.online ? Level.ok : (r.status == 'never' ? Level.mute : Level.bad), size: 40),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(r.name, style: const TextStyle(fontWeight: FontWeight.w700)), Text('${r.channels} ${r.channels == 1 ? 'camera' : 'cameras'}${r.seenAgo == null ? '' : ' · seen ${ago(r.seenAgo)}'}', style: TextStyle(color: t.fg2, fontSize: 13))])),
+                            Pill(r.online ? 'Online' : (r.status == 'never' ? 'Not connected' : 'Offline'), r.online ? Level.ok : (r.status == 'never' ? Level.mute : Level.bad), dot: true),
+                          ]),
+                        ),
+                    ]),
+                  const GroupLabel('How alerts reach you'),
+                  Group(children: [
+                    _InfoLine(Icons.chat_outlined, 'WhatsApp', 'Alerts and reports arrive as WhatsApp messages. This is on for everyone above who has a mobile number.'),
+                    _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'Coming with the installed phone app, in addition to WhatsApp.'),
+                  ]),
+                  const GroupLabel('Account'),
+                  Group(children: [
+                    InkWell(onTap: () async { if (await showChangePassword(context, widget.repo)) { if (context.mounted) Navigator.of(context).pop(); widget.onSignOut('Your password was changed. Please sign in again.'); } }, child: _Line(Icons.lock_outline_rounded, 'Change password', chevron: true)),
+                    InkWell(onTap: () { Navigator.of(context).pop(); widget.onSignOut(null); }, child: _Line(Icons.logout_rounded, 'Sign out', color: t.crit)),
+                  ]),
+                  const GroupLabel('More'),
+                  Group(children: [
+                    Padding(padding: const EdgeInsets.all(16), child: Text('Recorders, billing, and creating or changing reports are still in the current app at the main address. They move here next.', style: TextStyle(color: t.fg2))),
+                  ]),
+                  const SizedBox(height: 26),
+                  Center(child: Column(children: [const BrandLogo(style: LogoStyle.compact, height: 36), const SizedBox(height: 8), Text(tagline, style: TextStyle(color: t.fg2, fontSize: 12.5, fontStyle: FontStyle.italic))])),
+                ]);
+              },
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _Line extends StatelessWidget {
+  const _Line(this.icon, this.label, {this.color, this.chevron = false});
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final bool chevron;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (chevron) Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))]));
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine(this.icon, this.title, this.text);
+  final IconData icon;
+  final String title, text;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Badge2(icon, Level.ok, size: 40), const SizedBox(width: 14), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700)), const SizedBox(height: 2), Text(text, style: TextStyle(color: t.fg2, fontSize: 13.5, height: 1.4))]))]));
+  }
+}
+
+/// Adds a person who will get alerts and reports on WhatsApp. They must have agreed to receive messages.
+class _AddPerson extends StatefulWidget {
+  const _AddPerson({required this.repo});
+  final Repository repo;
+  @override
+  State<_AddPerson> createState() => _AddPersonState();
+}
+
+class _AddPersonState extends State<_AddPerson> {
+  final name = TextEditingController(), phone = TextEditingController(), email = TextEditingController();
+  bool agreed = false, busy = false;
+  String? error;
+
+  Future<void> _save() async {
+    if (name.text.trim().isEmpty || phone.text.trim().isEmpty) return setState(() => error = 'Enter a name and a mobile number.');
+    if (!agreed) return setState(() => error = 'Please confirm that this person has agreed to get WhatsApp messages from us.');
+    setState(() { busy = true; error = null; });
+    try {
+      await widget.repo.addPerson(name.text.trim(), phone.text.trim(), email: email.text.trim());
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiError catch (e) {
+      setState(() { busy = false; error = e.message; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return AlertDialog(
+      title: const Text('Add a person'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Name', prefixIcon: Icon(Icons.person_outline_rounded))),
+            const SizedBox(height: 12),
+            TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile number', helperText: 'The WhatsApp number, for example 98765 43210', prefixIcon: Icon(Icons.phone_outlined))),
+            const SizedBox(height: 12),
+            TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email (optional)', prefixIcon: Icon(Icons.mail_outline_rounded))),
+            const SizedBox(height: 8),
+            CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: agreed, onChanged: (v) => setState(() => agreed = v ?? false), title: const Text('This person has agreed to get WhatsApp messages from us', style: TextStyle(fontSize: 14))),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
+          ]),
+        ),
+      ),
+      actions: [TextButton(onPressed: busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')), FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Adding…' : 'Add'))],
     );
   }
 }

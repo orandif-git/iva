@@ -21,6 +21,9 @@ abstract class Repository {
   Future<void> done(String alertId);
   Future<void> snooze(String alertId, {int minutes = 60});
   Future<List<CameraItem>> cameras();
+  Future<List<RecorderItem>> recorders();
+  Future<void> addPerson(String name, String phone, {String? email});
+  Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
   Future<Uint8List?> snapshot(String cameraId);
@@ -91,8 +94,26 @@ class ApiRepository implements Repository {
   Future<List<CameraItem>> cameras() async {
     _recorders ??= {for (final r in await api.call('GET', '/v1/recorders') as List) r['id'] as String: ((r['name'] ?? r['device_id']) as String)};
     final list = await api.call('GET', '/v1/cameras') as List;
-    return [for (final j in list) if (j['enabled'] == true) CameraItem(j['id'], j['name'], _recorders![j['recorder_id']] ?? '', j['stream_state'] == 'streaming')];
+    int? ago(String? iso) {
+      final d = iso == null ? null : DateTime.tryParse(iso);
+      return d == null ? null : DateTime.now().toUtc().difference(d.toUtc()).inSeconds.clamp(0, 1 << 30);
+    }
+    return [for (final j in list) if (j['enabled'] == true) CameraItem(j['id'], j['name'], _recorders![j['recorder_id']] ?? '', j['stream_state'] == 'streaming', seenAgo: ago(j['last_frame_at'] as String?))];
   }
+
+  @override
+  Future<List<RecorderItem>> recorders() async => [
+        for (final r in await api.call('GET', '/v1/recorders') as List)
+          RecorderItem(r['id'], ((r['name'] ?? r['device_id']) as String), (r['status'] ?? 'never') as String, (r['channel_count'] ?? 0) as int,
+              seenAgo: r['last_heartbeat_at'] == null ? null : DateTime.now().toUtc().difference(DateTime.parse(r['last_heartbeat_at'] as String).toUtc()).inSeconds.clamp(0, 1 << 30))
+      ];
+
+  @override
+  Future<void> addPerson(String name, String phone, {String? email}) =>
+      api.call('POST', '/v1/recipients', body: {'name': name, 'phone': phone, if (email != null && email.isNotEmpty) 'email': email, 'consent_confirmed': true});
+
+  @override
+  Future<void> deletePerson(String id) => api.call('DELETE', '/v1/recipients/$id');
 
   @override
   Future<List<AlertDef>> alertDefs() async {
@@ -227,7 +248,7 @@ class MockRepository implements Repository {
   ];
 
   @override
-  Future<Me> me() async => const Me('Priya', 'Green Valley Store', 'admin');
+  Future<Me> me() async => const Me('Priya', 'Green Valley Store', 'admin', plan: 'Full', camerasInUse: 8, cameraLimit: 20);
 
   @override
   Future<Health> health() async => Health(
@@ -277,9 +298,16 @@ class MockRepository implements Repository {
       ];
 
   @override
+  Future<List<RecorderItem>> recorders() async => [RecorderItem('r1', 'Store recorder', 'online', 6, seenAgo: 8), RecorderItem('r2', 'Godown recorder', problems ? 'offline' : 'online', 2, seenAgo: problems ? 7800 : 12)];
+  final List<Person> _people = [const Person('p1', 'Priya (you)', '+91 98•••• 3210', email: 'priya@greenvalley.in'), const Person('p2', 'Ravi, store manager', '+91 97•••• 5521', email: 'ravi@greenvalley.in'), const Person('p3', 'Store phone', '+91 90•••• 0044')];
+  @override
+  Future<void> addPerson(String name, String phone, {String? email}) async => _people.add(Person('p${_people.length + 1}', name, phone, email: email));
+  @override
+  Future<void> deletePerson(String id) async => _people.removeWhere((p) => p.id == id);
+  @override
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
-  Future<List<Person>> people() async => const [Person('p1', 'Priya (you)', '+91 98•••• 3210', email: 'priya@greenvalley.in'), Person('p2', 'Ravi, store manager', '+91 97•••• 5521', email: 'ravi@greenvalley.in'), Person('p3', 'Store phone', '+91 90•••• 0044')];
+  Future<List<Person>> people() async => List.of(_people);
   @override
   Future<Uint8List?> snapshot(String cameraId) async => null;
   @override

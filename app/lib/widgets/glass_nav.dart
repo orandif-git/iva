@@ -21,8 +21,8 @@ class NavIcons {
   static const reports = NavDef(Remix.bar_chart_box_line, Remix.bar_chart_box_fill, 'Reports');
 }
 
-/// A full-width, frosted tab bar like the iPhone's and WhatsApp's: a hairline on top, content showing softly through it, the chosen icon turns solid and
-/// gives a small spring, and switching places is instant (each place keeps where you were).
+/// The floating, frosted bar: a rounded pill that hovers above the page, with the content showing softly through it. A highlight slides to the chosen place,
+/// the chosen icon turns solid and gives a small spring, and switching places is instant (each place keeps where you were).
 class AppTabBar extends StatelessWidget {
   const AppTabBar({super.key, required this.items, required this.index, required this.onTap});
   final List<NavDef> items;
@@ -33,26 +33,50 @@ class AppTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          decoration: BoxDecoration(color: t.surface.withValues(alpha: dark ? .78 : .84), border: Border(top: BorderSide(color: t.line.withValues(alpha: .9), width: .8))),
-          child: SafeArea(
-            top: false,
-            child: Center(
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: SizedBox(
-                  height: 56,
-                  child: Row(children: [
-                    for (var i = 0; i < items.length; i++)
-                      Expanded(child: _Item(def: items[i], on: i == index, onTap: () {
-                        HapticFeedback.selectionClick();
-                        onTap(i);
-                      })),
-                  ]),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(34),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                child: Container(
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: t.surface.withValues(alpha: dark ? .74 : .8),
+                    borderRadius: BorderRadius.circular(34),
+                    border: Border.all(color: t.line.withValues(alpha: .9)),
+                    boxShadow: [BoxShadow(color: t.shadow.withValues(alpha: .26), blurRadius: 26, offset: const Offset(0, 10))],
+                  ),
+                  child: LayoutBuilder(builder: (context, box) {
+                    final w = (box.maxWidth - 12) / items.length;
+                    return Stack(children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOutBack,
+                        left: 6 + index * w,
+                        top: 7,
+                        width: w,
+                        height: 56,
+                        child: Container(margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(28))),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Row(children: [
+                          for (var i = 0; i < items.length; i++)
+                            Expanded(child: _Item(def: items[i], on: i == index, onTap: () {
+                              HapticFeedback.selectionClick();
+                              onTap(i);
+                            })),
+                        ]),
+                      ),
+                    ]);
+                  }),
                 ),
               ),
             ),
@@ -104,7 +128,7 @@ class _ItemState extends State<_Item> with SingleTickerProviderStateMixin {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        child: SizedBox(height: 70, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           ScaleTransition(
             scale: _scale,
             child: Stack(clipBehavior: Clip.none, children: [
@@ -114,7 +138,7 @@ class _ItemState extends State<_Item> with SingleTickerProviderStateMixin {
           ),
           const SizedBox(height: 3),
           Text(d.label, style: TextStyle(fontSize: 10.5, height: 1.1, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: color)),
-        ]),
+        ])),
       ),
     );
   }
