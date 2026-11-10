@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
+import '../widgets/brand.dart';
 import '../widgets/area_editor.dart';
 import 'common.dart';
 
@@ -16,7 +17,7 @@ IconData iconFor(AlertDef d) => switch (d.type) {
       'queue_long' => Icons.format_list_numbered,
       'phone_use' => Icons.smartphone,
       'blocked_plate' => Icons.directions_car_outlined,
-      _ => d.smart ? Icons.auto_awesome : Icons.notifications_none,
+      _ => d.smart ? Icons.insights_rounded : Icons.notifications_none,
     };
 
 /// Alert first, then camera: kind, alert, where, settings (with the drawable area), who hears about it, save.
@@ -146,7 +147,7 @@ class _AlertWizardState extends State<AlertWizard> {
               const SizedBox(height: 6),
               Text(step == 6 ? 'Done' : 'Step $stepNo of 5', style: TextStyle(color: t.fg2, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
-              if (defs.isEmpty) const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator())) else ...switch (step) { 1 => _kind(t), 2 => _alert(t), 3 => _where(t), 4 => _settings(t), 5 => _who(t), _ => _done(t) },
+              if (defs.isEmpty) const Padding(padding: EdgeInsets.all(30), child: Loading()) else ...switch (step) { 1 => _kind(t), 2 => _alert(t), 3 => _where(t), 4 => _settings(t), 5 => _who(t), _ => _done(t) },
               if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
               if (defs.isNotEmpty && step > 1 && step < 6)
                 Padding(
@@ -166,9 +167,9 @@ class _AlertWizardState extends State<AlertWizard> {
   List<Widget> _kind(Tok t) => [
         const Text('What kind of alert?', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
         const SizedBox(height: 14),
-        _Tile('System Alerts', 'Tell me when a camera or the connection has a problem, and when it is fixed.', Icons.check_rounded, Level.ok, () => setState(() { smart = false; step = 2; })),
+        _Tile('System Alerts', 'Tell me when a camera or the connection has a problem, and when it is fixed.', Icons.verified_outlined, Level.ok, () => setState(() { smart = false; step = 2; })),
         const SizedBox(height: 10),
-        _Tile('Smart Alerts', 'Watch the picture for you: crowds, queues, phones at the counter.', Icons.auto_awesome, Level.ai, () => setState(() { smart = true; step = 2; })),
+        _Tile('Smart Alerts', 'Watch the picture for you: crowds, queues, phones at the counter.', Icons.insights_rounded, Level.ai, () => setState(() { smart = true; step = 2; })),
       ];
 
   List<Widget> _alert(Tok t) {
@@ -177,7 +178,7 @@ class _AlertWizardState extends State<AlertWizard> {
       Text('Which ${smart == true ? 'Smart' : 'System'} Alert?', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
       const SizedBox(height: 14),
       if (list.isEmpty) Text('There are no ${smart == true ? 'Smart' : 'System'} Alerts available on your plan yet.', style: TextStyle(color: t.fg2)),
-      for (final d in list) Padding(padding: const EdgeInsets.only(bottom: 10), child: _Choice(d.title, d.description, def == d, () => setState(() => _choose(d)), leading: Badge2(iconFor(d), d.smart ? Level.ai : Level.ok))),
+      for (final d in list) Padding(padding: const EdgeInsets.only(bottom: 10), child: _Choice(d.title, d.description, def == d, () => setState(() => _choose(d)), leading: Badge2(iconFor(d), d.smart ? Level.ai : Level.ok, ai: d.smart))),
     ];
   }
 
@@ -224,7 +225,7 @@ class _AlertWizardState extends State<AlertWizard> {
 
   List<Widget> _done(Tok t) => [
         const SizedBox(height: 30),
-        const Center(child: Badge2(Icons.check_rounded, Level.ok, size: 60)),
+        const Center(child: Badge2(Icons.check_rounded, Level.ok, size: 64)),
         const SizedBox(height: 12),
         const Center(child: Text('Your alert is on', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700))),
         Center(child: Text('${def!.title} is watching. We will message you on WhatsApp.', style: TextStyle(color: t.fg2))),
@@ -262,8 +263,13 @@ class _Tile extends StatelessWidget {
         onTap: onTap,
         child: Container(
             padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line, width: 2)),
-            child: Row(children: [Badge2(icon, level, size: 44), const SizedBox(width: 14), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)), Text(sub, style: TextStyle(color: t.fg2))])), const Icon(Icons.chevron_right)])));
+            decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: level == Level.ai ? t.ai.withValues(alpha: .5) : t.line, width: 2), boxShadow: t.lift),
+            child: Row(children: [
+              Badge2(icon, level, size: 48, ai: level == Level.ai),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [Text(title, style: const TextStyle(fontSize: 17.5, fontWeight: FontWeight.w700)), if (level == Level.ai) const SmartTag(label: 'AI')]), const SizedBox(height: 2), Text(sub, style: TextStyle(color: t.fg2))])),
+              Icon(Icons.chevron_right_rounded, color: t.fg2),
+            ])));
   }
 }
 

@@ -31,7 +31,7 @@ void main() {
     tall(t);
     final repo = Spy();
     await t.pumpWidget(host(repo));
-    await t.tap(find.text('✦ AI view'));
+    await t.tap(find.text('AI view'));
     await t.pump();
     await t.tap(find.text('Start AI view'));
     await t.pump();
@@ -48,7 +48,7 @@ void main() {
     tall(t);
     final repo = Spy();
     await t.pumpWidget(host(repo));
-    await t.tap(find.text('✦ AI view'));
+    await t.tap(find.text('AI view'));
     await t.pump();
     await t.tap(find.text('Start AI view'));
     await t.pump();

@@ -15,6 +15,7 @@ class LiveSession {
 /// Everything the screens need from the server. [ApiRepository] talks to the real backend; [MockRepository] runs the same screens with demo data.
 abstract class Repository {
   Future<Health> health();
+  Future<Me> me();
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
   Future<void> done(String alertId);
@@ -48,6 +49,9 @@ class ApiRepository implements Repository {
 
   @override
   Future<Health> health() async => Health.fromJson(await api.call('GET', '/v1/health-summary'));
+
+  @override
+  Future<Me> me() async => Me.fromJson(await api.call('GET', '/v1/me') as Map<String, dynamic>);
 
   Future<Map<String, bool>> _families() async {
     if (_smart != null) return _smart!;
@@ -197,6 +201,9 @@ class MockRepository implements Repository {
     AlertDef(type: 'queue_long', title: 'Long queue', description: 'People wait too long at a counter.', smart: true, area: true, areaKind: 'queue_area', enabled: true, settings: const [Setting('length', 'Alert when more than', 'people waiting', 1, 40, 6), Setting('minutes', 'for at least', 'minutes', 1, 60, 5)], params: {'length': 6, 'minutes': 5}),
     AlertDef(type: 'phone_use', title: 'Phone in use at the counter', description: 'Possible phone use in a marked area.', smart: true, area: true, areaKind: 'staff_area', settings: const [Setting('seconds', 'Alert after', 'seconds', 10, 120, 30)]),
   ];
+
+  @override
+  Future<Me> me() async => const Me('Priya', 'Green Valley Store', 'admin');
 
   @override
   Future<Health> health() async => Health(

@@ -8,6 +8,7 @@ import '../geometry/polygon.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
+import '../widgets/brand.dart';
 import 'live_rules.dart';
 
 enum PictureSize { fit, fill, enlarge }
@@ -120,7 +121,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
     final running = session != null && c != null && !c.ended;
     final ended = c != null && c.ended;
     final h = MediaQuery.sizeOf(context).height;
-    Widget scene = _Scene(ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? '✦ AI view' : 'Live') : 'Picture on request'}');
+    Widget scene = _Scene(ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? 'AI view' : 'Live') : 'Picture on request'}');
     final picture = switch (size) {
       PictureSize.fit => AspectRatio(aspectRatio: 16 / 9, child: scene),
       PictureSize.fill => SizedBox(height: h * 0.6, child: FittedBox(fit: BoxFit.cover, clipBehavior: Clip.hardEdge, child: SizedBox(width: 1600, height: 900, child: scene))),
@@ -162,7 +163,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
           Text('This camera is offline. Live view is not available.', style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))
         else ...[
           SegmentedButton<LiveMode>(
-            segments: const [ButtonSegment(value: LiveMode.live, label: Text('Live view')), ButtonSegment(value: LiveMode.ai, label: Text('✦ AI view'))],
+            segments: const [ButtonSegment(value: LiveMode.live, label: Text('Live view')), ButtonSegment(value: LiveMode.ai, label: Row(mainAxisSize: MainAxisSize.min, children: [AiSpark(size: 16), SizedBox(width: 6), Text('AI view')]))],
             selected: {mode},
             onSelectionChanged: (v) => setState(() => mode = v.first),
           ),
@@ -189,13 +190,22 @@ class _Scene extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(fit: StackFit.expand, children: [
       if (image != null) Image.memory(image!, fit: BoxFit.cover, gaplessPlayback: true) else CustomPaint(painter: _ScenePainter(ai: ai, t: t, people: running && !connecting)),
-      if (running && !connecting) Positioned(right: 10, top: 8, child: _Tag(ai ? '✦ AI view' : '● Live')),
+      if (running && !connecting) Positioned(right: 10, top: 8, child: ai ? const _AiTag() : const _Tag('● Live')),
       if (connecting) const _Cover('Connecting to the camera…'),
       if (ended) const _Cover('Live view stopped'),
       if (offline) const _Cover('This camera is offline'),
       Positioned(left: 10, bottom: 8, child: _Tag(label)),
     ]);
   }
+}
+
+class _AiTag extends StatelessWidget {
+  const _AiTag();
+  @override
+  Widget build(BuildContext context) => Container(
+      padding: const EdgeInsets.fromLTRB(6, 3, 10, 3),
+      decoration: BoxDecoration(gradient: aiGradient, borderRadius: BorderRadius.circular(99)),
+      child: const Row(mainAxisSize: MainAxisSize.min, children: [AiSpark(size: 15, color: Colors.white), SizedBox(width: 4), Text('AI view', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))]));
 }
 
 class _Tag extends StatelessWidget {

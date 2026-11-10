@@ -5,6 +5,7 @@ import 'models.dart';
 import 'repo.dart';
 import 'scope.dart';
 import 'screens/more.dart';
+import 'widgets/brand.dart';
 import 'screens/signin.dart';
 import 'screens/alerts.dart';
 import 'screens/cameras.dart';
@@ -59,7 +60,7 @@ class _IVisionAppState extends State<IVisionApp> {
         darkTheme: buildTheme(Brightness.dark),
         themeMode: mode,
         home: starting
-            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+            ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
             : repo == null
                 ? SignInPage(client: widget.client!, onDone: _signedIn, message: note)
                 : AppScope(
@@ -82,13 +83,14 @@ class _ShellState extends State<Shell> {
   int tab = 0;
   CameraItem? alertFor;
   int wizardKey = 0;
+  late final Future<Me> me = widget.repo.me().catchError((_) => const Me('', '', ''));
 
   static const _dest = [
-    (Icons.home_outlined, Icons.home, 'Home'),
-    (Icons.notifications_none, Icons.notifications, 'Alerts'),
-    (Icons.videocam_outlined, Icons.videocam, 'Cameras'),
-    (Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
-    (Icons.settings_outlined, Icons.settings, 'Settings'),
+    (Icons.home_outlined, Icons.home_rounded, 'Home', 'How your business is doing right now'),
+    (Icons.notifications_none_rounded, Icons.notifications_rounded, 'Alerts', 'What happened, and what you are watching for'),
+    (Icons.videocam_outlined, Icons.videocam_rounded, 'Cameras', 'Every camera, and live view when you need it'),
+    (Icons.insert_chart_outlined_rounded, Icons.insert_chart_rounded, 'Reports', 'Summaries sent to your email'),
+    (Icons.settings_outlined, Icons.settings_rounded, 'Settings', 'People, appearance and your account'),
   ];
 
   Widget get page => switch (tab) {
@@ -99,41 +101,133 @@ class _ShellState extends State<Shell> {
         _ => SettingsPage(repo: widget.repo, dark: widget.dark, onTheme: widget.onTheme, onSignOut: widget.onSignOut),
       };
 
+  void _go(int i) => setState(() { tab = i; alertFor = null; });
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final t = Tok.of(context);
-    final title = _dest[tab].$3;
-    // Text can be selected and copied on every screen (the drawing area and the camera picture opt out, so dragging there never selects text).
-    final body = SelectionArea(child: page);
+    final body = SelectionArea(child: AnimatedSwitcher(duration: const Duration(milliseconds: 220), switchInCurve: Curves.easeOut, transitionBuilder: (c, a) => FadeTransition(opacity: a, child: c), child: KeyedSubtree(key: ValueKey(tab), child: page)));
     if (wide) {
       return Scaffold(
         body: Row(children: [
-          NavigationRail(
-            extended: true,
-            selectedIndex: tab,
-            onDestinationSelected: (i) => setState(() { tab = i; alertFor = null; }),
-            leading: Padding(padding: const EdgeInsets.fromLTRB(8, 16, 8, 16), child: Row(children: [Icon(Icons.center_focus_strong, color: t.brand), const SizedBox(width: 8), const Text('Jas iVision', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))])),
-            destinations: [for (final d in _dest) NavigationRailDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: Text(d.$3))],
+          Container(
+            width: 272,
+            decoration: BoxDecoration(color: t.surface, border: Border(right: BorderSide(color: t.line))),
+            child: SafeArea(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Padding(padding: EdgeInsets.fromLTRB(22, 26, 22, 22), child: Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 52))),
+                for (var i = 0; i < _dest.length; i++) _NavItem(icon: tab == i ? _dest[i].$2 : _dest[i].$1, label: _dest[i].$3, selected: tab == i, onTap: () => _go(i)),
+                const Spacer(),
+                FutureBuilder(future: me, builder: (context, snap) => _UserCard(me: snap.data)),
+                Padding(padding: const EdgeInsets.fromLTRB(22, 4, 22, 18), child: Text(tagline, style: TextStyle(color: t.fg2.withValues(alpha: .85), fontSize: 11.5, fontStyle: FontStyle.italic))),
+              ]),
+            ),
           ),
-          VerticalDivider(width: 1, color: t.line),
-          Expanded(child: Column(children: [
-            Container(height: 64, alignment: Alignment.centerLeft, padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700))),
-            Expanded(child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1100), child: body))),
-          ])),
+          Expanded(
+            child: Column(children: [
+              _Header(title: _dest[tab].$3, subtitle: _dest[tab].$4, dark: widget.dark, onTheme: widget.onTheme),
+              Expanded(child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1120), child: body))),
+            ]),
+          ),
         ]),
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700))),
-      body: body,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab > 2 ? 3 : tab,
-        onDestinationSelected: (i) => setState(() { tab = i == 3 ? 4 : i; alertFor = null; }),
-        destinations: [
-          for (final d in [_dest[0], _dest[1], _dest[2], _dest[4]]) NavigationDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: d.$3 == 'Settings' ? 'More' : d.$3),
-        ],
+      appBar: AppBar(
+        toolbarHeight: 60,
+        titleSpacing: 16,
+        title: Row(children: [const BrandLogo(style: LogoStyle.mark, height: 34), const SizedBox(width: 12), Text(_dest[tab].$3)]),
+        actions: [IconButton(tooltip: widget.dark ? 'Switch to light' : 'Switch to dark', icon: Icon(widget.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined), onPressed: () => widget.onTheme(!widget.dark)), const SizedBox(width: 4)],
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
       ),
+      body: body,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: t.line))),
+        child: NavigationBar(
+          selectedIndex: tab > 2 ? 3 : tab,
+          onDestinationSelected: (i) => _go(i == 3 ? 4 : i),
+          destinations: [
+            for (final d in [_dest[0], _dest[1], _dest[2], _dest[4]]) NavigationDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: d.$3 == 'Settings' ? 'More' : d.$3),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12, left: -6), decoration: BoxDecoration(color: t.brand, borderRadius: BorderRadius.circular(4))),
+              Icon(icon, color: selected ? t.brand : t.fg2, size: 22),
+              const SizedBox(width: 14),
+              Text(label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserCard extends StatelessWidget {
+  const _UserCard({required this.me});
+  final Me? me;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final m = me;
+    if (m == null || m.name.isEmpty) return const SizedBox(height: 8);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: t.surface2, borderRadius: BorderRadius.circular(16)),
+      child: Row(children: [
+        Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(m.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16))),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis), Text(m.business, style: TextStyle(color: t.fg2, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis)])),
+      ]),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.title, required this.subtitle, required this.dark, required this.onTheme});
+  final String title, subtitle;
+  final bool dark;
+  final ValueChanged<bool> onTheme;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Container(
+      height: 88,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Row(children: [
+        Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.6)), Text(subtitle, style: TextStyle(color: t.fg2, fontSize: 14))])),
+        IconButton.outlined(tooltip: dark ? 'Switch to light' : 'Switch to dark', icon: Icon(dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined), onPressed: () => onTheme(!dark)),
+      ]),
     );
   }
 }
