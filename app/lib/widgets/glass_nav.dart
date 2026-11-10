@@ -13,12 +13,13 @@ class NavDef {
   const NavDef(this.icon, this.selected, this.label, {this.badge = 0});
 }
 
-/// The four places, with their own icons: a line icon when idle, a solid one when chosen.
+/// The five places, with their own icons: a line icon when idle, a solid one when chosen.
 class NavIcons {
   static const home = NavDef(Remix.home_5_line, Remix.home_5_fill, 'Home');
   static const alerts = NavDef(Remix.notification_3_line, Remix.notification_3_fill, 'Alerts');
-  static const cameras = NavDef(Remix.camera_lens_line, Remix.camera_lens_fill, 'Cameras'); // the lens, like the "o" of iVision
-  static const reports = NavDef(Remix.bar_chart_box_line, Remix.bar_chart_box_fill, 'Reports');
+  static const cameras = NavDef(Remix.webcam_line, Remix.webcam_fill, 'Cameras');            // a security camera on its mount
+  static const aiWatch = NavDef(Remix.eye_line, Remix.eye_fill, 'AI Watch');                 // what iVision watches for
+  static const more = NavDef(Remix.apps_2_line, Remix.apps_2_fill, 'More');                  // Reports and Settings
 }
 
 /// The floating, frosted bar: a rounded pill that hovers above the page, with the content showing softly through it. A highlight slides to the chosen place,
@@ -137,7 +138,8 @@ class _ItemState extends State<_Item> with SingleTickerProviderStateMixin {
             ]),
           ),
           const SizedBox(height: 3),
-          Text(d.label, style: TextStyle(fontSize: 10.5, height: 1.1, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: color)),
+          // One line always: on a narrow phone or a wide font the label shrinks a little instead of wrapping into its neighbour.
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: FittedBox(fit: BoxFit.scaleDown, child: Text(d.label, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 10.5, height: 1.1, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: color)))),
         ])),
       ),
     );

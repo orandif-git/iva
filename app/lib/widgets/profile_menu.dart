@@ -7,14 +7,13 @@ import 'brand.dart';
 
 enum ThemeChoice { light, dark, auto }
 
-/// The round profile button at the top right. It opens the menu: who you are, appearance (Light, Dark, Auto), settings, change password, sign out.
+/// The round profile button at the top right. It opens the menu: who you are, appearance (Light, Dark, Auto), change password, sign out.
 class ProfileButton extends StatelessWidget {
-  const ProfileButton({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSettings, required this.onSignOut});
+  const ProfileButton({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSignOut});
   final Me? me;
   final ThemeChoice choice;
   final ValueChanged<ThemeChoice> onChoice;
   final Repository repo;
-  final VoidCallback onSettings;
   final void Function(String? message) onSignOut;
 
   @override
@@ -43,7 +42,7 @@ class ProfileButton extends StatelessWidget {
     final wide = media.size.width >= 900;
     final top = wide ? 74.0 : media.padding.top + 62;
     final width = wide ? 340.0 : (media.size.width - 24).clamp(260.0, 340.0);
-    Widget content(BuildContext ctx) => ProfileMenu(me: me, choice: choice, onChoice: onChoice, repo: repo, onSettings: () { Navigator.of(ctx).pop(); onSettings(); }, onSignOut: (m) { Navigator.of(ctx).pop(); onSignOut(m); });
+    Widget content(BuildContext ctx) => ProfileMenu(me: me, choice: choice, onChoice: onChoice, repo: repo, onSignOut: (m) { Navigator.of(ctx).pop(); onSignOut(m); });
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -75,12 +74,11 @@ class ProfileButton extends StatelessWidget {
 }
 
 class ProfileMenu extends StatefulWidget {
-  const ProfileMenu({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSettings, required this.onSignOut});
+  const ProfileMenu({super.key, required this.me, required this.choice, required this.onChoice, required this.repo, required this.onSignOut});
   final Me? me;
   final ThemeChoice choice;
   final ValueChanged<ThemeChoice> onChoice;
   final Repository repo;
-  final VoidCallback onSettings;
   final void Function(String? message) onSignOut;
   @override
   State<ProfileMenu> createState() => _ProfileMenuState();
@@ -131,7 +129,6 @@ class _ProfileMenuState extends State<ProfileMenu> {
         ]),
       ),
       Divider(height: 1, color: t.line),
-      row(Icons.tune_rounded, 'Settings', widget.onSettings),
       Divider(height: 1, indent: 18, color: t.line),
       row(Icons.lock_outline_rounded, 'Change password', () => setState(() { changing = !changing; note = null; }), open: changing),
       AnimatedSize(

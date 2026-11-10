@@ -7,6 +7,75 @@ import '../widgets/brand.dart';
 import '../widgets/profile_menu.dart';
 import 'common.dart';
 
+/// More: the two things you open now and then. Reports and Settings sit here so the bar stays at five.
+class MorePage extends StatefulWidget {
+  const MorePage({super.key, required this.repo, required this.onSignOut});
+  final Repository repo;
+  final void Function(String? message) onSignOut;
+  @override
+  State<MorePage> createState() => _MorePageState();
+}
+
+class _MorePageState extends State<MorePage> {
+  int? scheduled;
+
+  @override
+  void initState() {
+    super.initState();
+    _count();
+  }
+
+  void _count() => widget.repo.schedules().then((l) { if (mounted) setState(() { scheduled = l.where((x) => x.enabled).length; }); }).catchError((_) {});
+
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page));
+    _count();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    Widget row(IconData icon, String title, String sub, VoidCallback onTap) => InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(cardPad(context), 14, 12, 14),
+            child: Row(children: [
+              Container(width: 42, height: 42, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(13)), child: Icon(icon, color: t.brand, size: 22)),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
+                Text(sub, style: TextStyle(color: t.fg2, fontSize: 13)),
+              ])),
+              Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6)),
+            ]),
+          ),
+        );
+    final n = scheduled;
+    final reportsSub = n == null ? 'Sent to you on WhatsApp' : (n == 0 ? 'None scheduled yet' : '$n scheduled, sent on WhatsApp');
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: ListView(padding: EdgeInsets.fromLTRB(16, 14, 16, navClear), children: [
+          Group(children: [
+            row(Icons.bar_chart_rounded, 'Reports', reportsSub, () => _open(_ReportsScreen(widget.repo))),
+            row(Icons.tune_rounded, 'Settings', 'Your plan, people and recorders', () => _open(SettingsPage(repo: widget.repo, onSignOut: widget.onSignOut))),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ReportsScreen extends StatelessWidget {
+  const _ReportsScreen(this.repo);
+  final Repository repo;
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Reports'), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: Tok.of(context).line))),
+        body: ReportsPage(repo: repo),
+      );
+}
+
 /// Reports: the ones sent on WhatsApp on a schedule, and making one now. Download of a made report is in the current app for now.
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key, required this.repo});

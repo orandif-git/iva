@@ -115,8 +115,8 @@ class _ShellState extends State<Shell> {
   int wizardKey = 0;
   CameraItem? alertFor;
 
-  static const _defs = [NavIcons.home, NavIcons.alerts, NavIcons.cameras, NavIcons.reports];
-  static const _subtitles = ['How your business is doing right now', 'What happened, and what needs you', 'Every camera, and live view when you need it', 'Summaries sent to you on WhatsApp'];
+  static const _defs = [NavIcons.home, NavIcons.alerts, NavIcons.cameras, NavIcons.aiWatch, NavIcons.more];
+  static const _subtitles = ['How your business is doing right now', 'What happened, and what needs you', 'Every camera, and live view when you need it', 'What iVision watches for, and who hears about it', 'Reports and settings'];
   final _visited = <int>{0};        // a place is built the first time you open it, then keeps where you were
   final _refresh = ValueNotifier<int>(0);
 
@@ -131,9 +131,10 @@ class _ShellState extends State<Shell> {
 
   Widget _page(int i) => switch (i) {
         0 => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(1), onOpenCameras: () => _go(2)),
-        1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge),
+        1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge, onOpenWatch: () => _go(3)),
         2 => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(1); tab = 1; })),
-        _ => ReportsPage(repo: widget.repo),
+        3 => ManageAlertsPage(repo: widget.repo, embedded: true),
+        _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m)),
       };
 
   void _go(int i) {
@@ -142,9 +143,7 @@ class _ShellState extends State<Shell> {
     _badge();
   }
 
-  void _settings() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m))));
-
-  Widget _profile() => ProfileButton(me: me, choice: widget.choice, onChoice: widget.onChoice, repo: widget.repo, onSettings: _settings, onSignOut: (m) => widget.onSignOut(m));
+  Widget _profile() => ProfileButton(me: me, choice: widget.choice, onChoice: widget.onChoice, repo: widget.repo, onSignOut: (m) => widget.onSignOut(m));
 
   String get _greeting {
     final h = DateTime.now().hour;
