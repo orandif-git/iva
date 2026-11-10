@@ -106,3 +106,26 @@ async def evidence_clip(token: str, request: Request):
     if data is None:
         return Response(status_code=410, headers=SAFE)
     return _ranged(data, request, "video/mp4")
+
+
+@router.api_route("/e/{token}/report.xlsx", methods=["GET", "HEAD"], include_in_schema=False)
+async def report_file(token: str):
+    """The Excel file of a report that was announced on WhatsApp. The link works for a few hours (the owner's link setting), then the app is the way in."""
+    parsed = evidence.read_token(token)
+    if parsed is None:
+        return Response(status_code=404, headers=SAFE)
+    rid, expired = parsed
+    if expired:
+        return _page("Link expired", "<div class='card'><h1>This link has expired</h1><p>For security, report links only work for a few hours. Please open the Jas iVision app and look under Reports.</p></div>", 410)
+    from ..services.reports import filename
+    async with db.service_tx() as conn:
+        r = await conn.fetchrow(
+            """SELECT r.report_type, r.period_start, r.period_end, r.file_key, r.expires_at, t.timezone FROM app.reports r JOIN app.tenants t ON t.id=r.tenant_id
+               WHERE r.id=$1 AND r.status='ready' AND r.expires_at > now() AND t.status::text NOT IN ('suspended','cancelled')""", rid)
+    if not r or not r["file_key"]:
+        return Response(status_code=404, headers=SAFE)
+    data = await evidence.store().get(r["file_key"])
+    if data is None:
+        return Response(status_code=410, headers=SAFE)
+    name = filename(r["report_type"], r["period_start"], r["period_end"], r["timezone"])
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={**SAFE, "Content-Disposition": f'attachment; filename="{name}"'})

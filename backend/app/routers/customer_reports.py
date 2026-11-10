@@ -1,4 +1,4 @@
-"""Excel reports a customer can generate now or have emailed on a schedule."""
+"""Excel reports a customer can generate now or have sent on WhatsApp on a schedule."""
 from datetime import date, datetime, time, timezone
 from typing import Literal
 from uuid import UUID
@@ -100,12 +100,12 @@ def _sch(r) -> dict:
 
 async def _check_recipients(ctx: CustomerCtx, ids: list[UUID]) -> list[UUID]:
     ids = list(dict.fromkeys(ids))
-    rows = await ctx.conn.fetch("SELECT id, name, email FROM app.recipients WHERE id = ANY($1::uuid[]) AND active", ids)
+    rows = await ctx.conn.fetch("SELECT id, name, phone FROM app.recipients WHERE id = ANY($1::uuid[]) AND active", ids)
     if len(rows) != len(ids):
         raise ApiError(422, "recipient_not_found", "One of the people you chose was not found.")
     for r in rows:
-        if not r["email"]:
-            raise ApiError(422, "no_email", f"{r['name']} has no email address. Reports are sent by email.")
+        if not r["phone"]:
+            raise ApiError(422, "no_mobile_number", f"{r['name']} has no mobile number. Reports are sent on WhatsApp.")
     return ids
 
 

@@ -125,7 +125,7 @@ async def create_standard(body: Standard, ctx: AdminCtx = Depends(admin_ctx("own
     headers = _check(None, body.url, body.headers, None)
     have = {r["alert_type"] for r in await ctx.conn.fetch("SELECT alert_type FROM platform.webhook_endpoints")}
     made, skipped = [], []
-    for k in cat.BUILT:
+    for k in cat.WEBHOOK_TYPES:
         if k in have:
             skipped.append(k)
             continue

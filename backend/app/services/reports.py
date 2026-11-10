@@ -25,6 +25,14 @@ def local_period(tz_name: str, d_from: date, d_to: date) -> tuple[datetime, date
     return (datetime.combine(d_from, time.min, tz).astimezone(timezone.utc), datetime.combine(d_to + timedelta(days=1), time.min, tz).astimezone(timezone.utc))
 
 
+def period_label(start: datetime, end: datetime, tz_name: str) -> str:
+    """"3 Nov to 9 Nov", or just "9 Nov" for one day. The end of a period is the start of the next day, so the last day shown is a day earlier."""
+    tz = ZoneInfo(tz_name)
+    a, b = start.astimezone(tz), (end - timedelta(seconds=1)).astimezone(tz)
+    fa, fb = f"{a.day} {a:%b}", f"{b.day} {b:%b}"
+    return fa if a.date() == b.date() else f"{fa} to {fb}"
+
+
 def filename(report_type: str, start: datetime, end: datetime, tz_name: str) -> str:
     tz = ZoneInfo(tz_name)
     a, b = start.astimezone(tz).date(), (end - timedelta(seconds=1)).astimezone(tz).date()
@@ -85,7 +93,7 @@ async def build_one() -> bool:
             await conn.execute("UPDATE app.reports SET status='ready', file_key=$2, bytes=$3, row_count=$4, truncated=$5, generated_at=now(), locked_until=NULL, error=NULL WHERE id=$1",
                                r["id"], key, len(data), rows, cut)
             if r["schedule_id"]:
-                await _queue_emails(conn, r["id"], r["schedule_id"], r["tenant_id"])
+                await _queue_whatsapp(conn, r["id"], r["schedule_id"], r["tenant_id"])
     except Exception:
         log.exception("report %s failed", r["id"])
         async with db.service_tx() as conn:
@@ -93,15 +101,19 @@ async def build_one() -> bool:
     return True
 
 
-async def _queue_emails(conn, report_id, schedule_id, tenant_id) -> int:
-    t = await conn.fetchrow("SELECT msg_email FROM app.tenants WHERE id=$1", tenant_id)
-    people = await conn.fetch("SELECT r.id, r.email FROM app.recipients r JOIN app.report_schedules s ON r.id = ANY(s.recipients) WHERE s.id=$1 AND r.active AND r.email IS NOT NULL", schedule_id)
+async def _queue_whatsapp(conn, report_id, schedule_id, tenant_id) -> int:
+    """One WhatsApp event per person on the schedule who has a mobile number. A message that cannot be sent (WhatsApp off, no webhook set up) is still recorded, as suppressed, with the reason."""
+    t = await conn.fetchrow("SELECT msg_whatsapp FROM app.tenants WHERE id=$1", tenant_id)
+    endpoint = await conn.fetchval("SELECT active FROM platform.webhook_endpoints WHERE alert_type='report_ready'")
+    people = await conn.fetch("SELECT r.id, r.phone FROM app.recipients r JOIN app.report_schedules s ON r.id = ANY(s.recipients) WHERE s.id=$1 AND r.active AND r.phone IS NOT NULL", schedule_id)
+    why = None if t["msg_whatsapp"] else "WhatsApp messages are switched off for this account."
+    why = why or (None if endpoint else "No webhook is set up for reports yet.")
     n = 0
     for p in people:
         got = await conn.fetchval(
-            """INSERT INTO app.notifications (tenant_id, report_id, recipient_id, channel, recipient, status, error)
-               VALUES ($1,$2,$3,'email',$4,$5::app.delivery_status,$6) ON CONFLICT DO NOTHING RETURNING id""",
-            tenant_id, report_id, p["id"], p["email"], "queued" if t["msg_email"] else "suppressed", None if t["msg_email"] else "Email messages are switched off for this account.")
+            """INSERT INTO app.notifications (tenant_id, report_id, recipient_id, channel, recipient, status, error, event)
+               VALUES ($1,$2,$3,'whatsapp',$4,$5::app.delivery_status,$6,'system.report_ready') ON CONFLICT DO NOTHING RETURNING id""",
+            tenant_id, report_id, p["id"], p["phone"], "suppressed" if why else "queued", why)
         n += bool(got)
     return n
 

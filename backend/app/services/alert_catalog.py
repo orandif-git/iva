@@ -13,15 +13,19 @@ SYSTEM, SMART = "system", "smart"
 
 # Shortcodes every webhook payload can use. The alert's own shortcodes are listed on each entry below.
 COMMON_SHORTCODES = ["customer", "camera", "time", "details", "title", "to_name", "to_phone", "event_type", "alert_id"]
-MEDIA_SHORTCODES = {"image": ["image_url"], "image_clip": ["image_url", "clip_url"]}
+MEDIA_SHORTCODES = {"image": ["image_url"], "image_clip": ["image_url", "clip_url"], "document": ["document_url"]}
 
 
-def _a(family, group, title, description, *, built=False, severity="warning", params=None, shortcodes=(), media="", needs="", uses_evidence=False):
-    return {"family": family, "group": group, "title": title, "description": description, "built": built, "severity": severity, "params": params or {},
+def _a(family, group, title, description, *, built=False, severity="warning", params=None, shortcodes=(), media="", needs="", uses_evidence=False, internal=False):
+    """`internal`: an event the system sends (a report is ready) that is not an alert a customer can switch on. It has a webhook like any alert but is never listed to customers or in plans."""
+    return {"internal": internal, "family": family, "group": group, "title": title, "description": description, "built": built, "severity": severity, "params": params or {},
             "shortcodes": list(shortcodes), "media": media, "needs": needs, "uses_evidence": uses_evidence}
 
 
 CATALOG: dict[str, dict] = {
+    # ---- Not an alert: the message that says a scheduled report is ready (WhatsApp, through the report_ready webhook)
+    "report_ready": _a(SYSTEM, "Reports", "Report ready", "A scheduled report is ready to open. It is sent to the people chosen on that report.", built=True, severity="info", shortcodes=["report", "period"], media="document",
+                       needs="Already available", internal=True),
     # ---- System Alerts: your devices
     "recorder_offline": _a(SYSTEM, "Your devices", "Recorder offline", "Your DVR/NVR stops contacting us.", built=True, shortcodes=["recorder"], needs="Already available"),
     "camera_offline": _a(SYSTEM, "Your devices", "Camera offline", "A camera stops sending video.", built=True, needs="Already available"),
@@ -69,7 +73,9 @@ CATALOG: dict[str, dict] = {
                                uses_evidence=True, media="image", shortcodes=["plate", "confidence"], needs="Number plates"),
 }
 ALERT_TYPES = CATALOG                       # the name the rest of the code already uses
-BUILT = [k for k, v in CATALOG.items() if v["built"]]
+BUILT = [k for k, v in CATALOG.items() if v["built"] and not v["internal"]]               # alerts a customer can have
+WEBHOOK_TYPES = [k for k, v in CATALOG.items() if v["built"]]                                  # everything that sends a webhook event: the alerts and the system events
+LISTED = [k for k, v in CATALOG.items() if not v["internal"]]                                   # what the owner's alert and plan screens show
 EVENT_PREFIX = {SYSTEM: "system.", SMART: "smart."}
 
 
@@ -105,7 +111,7 @@ def default_plan_alerts(anpr: bool) -> list[str]:
 
 def check_types(types: list[str]) -> list[str]:
     """Raises ValueError naming the first key that is not in the catalogue. Returns the list without duplicates, in catalogue order."""
-    bad = [t for t in types if t not in CATALOG]
+    bad = [t for t in types if t not in CATALOG or CATALOG[t]["internal"]]
     if bad:
         raise ValueError(bad[0])
     return [k for k in CATALOG if k in set(types)]
@@ -138,4 +144,4 @@ async def entitled(conn, tenant_id: UUID) -> list[str]:
 async def visible(conn, tenant_id: UUID) -> list[str]:
     """The alerts this customer can see and that can fire for them."""
     off = await platform_off(conn)
-    return [k for k in await entitled(conn, tenant_id) if CATALOG[k]["built"] and k not in off]
+    return [k for k in await entitled(conn, tenant_id) if CATALOG[k]["built"] and not CATALOG[k]["internal"] and k not in off]

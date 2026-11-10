@@ -46,22 +46,70 @@ class _SignInPageState extends State<SignInPage> {
               const Expanded(flex: 11, child: _HeroPanel()),
               Expanded(flex: 9, child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(40), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 400), child: form)))),
             ])
-          : SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Column(children: [
+          : _PhoneLayout(form: form),
+    );
+  }
+}
+
+class _Rings extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size s) {
+    final c = Offset(s.width / 2, s.height / 2);
+    for (var i = 1; i <= 5; i++) {
+      canvas.drawCircle(c, s.width / 2 * i / 5, Paint()..color = Colors.white.withValues(alpha: .11 - i * .017)..style = PaintingStyle.stroke..strokeWidth = 2);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_Rings o) => false;
+}
+
+/// On a phone: a blue brand panel with the logo and the promise, and the form on a sheet that rises over it.
+class _PhoneLayout extends StatelessWidget {
+  const _PhoneLayout({required this.form});
+  final Widget form;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final media = MediaQuery.of(context);
+    final typing = media.viewInsets.bottom > 0;
+    return ColoredBox(
+      color: t.bg,
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(
+            decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF07294D), Color(0xFF0A4A8F), Color(0xFF128BE0)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+            child: Stack(children: [
+              Positioned.fill(child: CustomPaint(painter: FramePainter(color: Colors.white.withValues(alpha: .14), inset: 18, arm: 34, width: 3))),
+              Positioned(right: -90, top: 70, child: IgnorePointer(child: CustomPaint(size: const Size(320, 320), painter: _Rings()))),
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(28, typing ? 12 : 30, 28, typing ? 48 : 70),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    BrandLogo(style: LogoStyle.full, height: typing ? 60 : 92, onDark: true),
+                    if (!typing) ...[
+                      const SizedBox(height: 26),
+                      const Text('See what is happening.\nKnow what matters.', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700, height: 1.15, letterSpacing: -.8)),
                       const SizedBox(height: 8),
-                      const BrandLogo(style: LogoStyle.full, height: 96),
-                      const SizedBox(height: 28),
-                      form,
-                    ]),
-                  ),
+                      Text('Your cameras, counted and watched for you.', style: TextStyle(color: Colors.white.withValues(alpha: .85), fontSize: 15)),
+                    ],
+                  ]),
                 ),
               ),
+            ]),
+          ),
+          Transform.translate(
+            offset: const Offset(0, -32),
+            child: Container(
+              decoration: BoxDecoration(color: t.bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(32)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 30, offset: const Offset(0, -8))]),
+              constraints: BoxConstraints(minHeight: media.size.height - 250),
+              padding: EdgeInsets.fromLTRB(24, 28, 24, 24 + media.padding.bottom),
+              child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: form)),
             ),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -76,7 +124,7 @@ class _Form extends StatelessWidget {
       const Text('Welcome back', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, letterSpacing: -.6)),
       const SizedBox(height: 4),
       Text('Sign in to see how your business is doing.', style: TextStyle(color: t.fg2, fontSize: 15)),
-      if (s.widget.message != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(s.widget.message!, style: TextStyle(color: t.okInk, fontWeight: FontWeight.w600))),
+      if (s.widget.message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Row(children: [Icon(Icons.info_outline_rounded, size: 18, color: t.brand), const SizedBox(width: 8), Expanded(child: Text(s.widget.message!, style: TextStyle(color: t.fg, fontWeight: FontWeight.w600, fontSize: 14)))]))),
       const SizedBox(height: 26),
       AutofillGroup(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

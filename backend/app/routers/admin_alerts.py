@@ -27,7 +27,7 @@ async def catalog(ctx: AdminCtx = Depends(admin_ctx())):
     using = {r["rule_type"]: r["n"] for r in await ctx.conn.fetch("SELECT rule_type, count(*)::int AS n FROM app.alert_rules WHERE enabled GROUP BY rule_type")}
     plans = await ctx.conn.fetch("SELECT id, name, alert_types FROM platform.plans WHERE active ORDER BY price_per_camera_paise, name")
     out = []
-    for k in cat.CATALOG:
+    for k in cat.LISTED:
         has = [{"id": p["id"], "name": p["name"]} for p in plans if k in (p["alert_types"] if p["alert_types"] is not None else cat.BUILT)]
         out.append({**_entry(k), "enabled": cat.CATALOG[k]["built"] and k not in off, "customers_using": using.get(k, 0), "plans": has})
     return {"items": out}
@@ -67,10 +67,10 @@ async def tenant_alerts(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
     added = await cat.added_types(ctx.conn, tenant_id)
     off = await cat.platform_off(ctx.conn)
     items = []
-    for k in cat.CATALOG:
+    for k in cat.LISTED:
         if k in plan or k in added:
             items.append({**_entry(k), "source": "plan" if k in plan else "added", "also_added": k in plan and k in added, "visible": cat.CATALOG[k]["built"] and k not in off})
-    return {"plan": plan_name, "items": items, "available": [_entry(k) for k in cat.CATALOG if k not in plan and k not in added and cat.CATALOG[k]["built"]]}
+    return {"plan": plan_name, "items": items, "available": [_entry(k) for k in cat.LISTED if k not in plan and k not in added and cat.CATALOG[k]["built"]]}
 
 
 class Reason(Strict):

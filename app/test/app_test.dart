@@ -94,7 +94,9 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Alerts').last);
     await t.pumpAndSettle();
-    await t.tap(find.text('New'));
+    await t.tap(find.text('Manage'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('New alert'));
     await t.pumpAndSettle();
     await t.tap(find.text('Smart Alerts'));
     await t.pumpAndSettle();
@@ -121,7 +123,9 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Alerts').last);
     await t.pumpAndSettle();
-    await t.tap(find.text('New'));
+    await t.tap(find.text('Manage'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('New alert'));
     await t.pumpAndSettle();
     await t.tap(find.text('System Alerts'));
     await t.pumpAndSettle();
@@ -149,6 +153,8 @@ void main() {
     expect(find.text('Welcome back'), findsOneWidget);
     await t.enterText(find.byType(TextField).first, 'a@b.test');
     await t.enterText(find.byType(TextField).last, 'wrong');
+    await t.ensureVisible(find.text('Sign in').last);
+    await t.pump();
     await t.tap(find.text('Sign in').last);
     await t.pumpAndSettle();
     expect(find.text('That email or password is not right.'), findsOneWidget);
@@ -212,6 +218,46 @@ void profileTests() {
     expect(find.text('APPEARANCE'), findsNothing);
   });
 
+  testWidgets('Alerts is the inbox; what you watch for is a separate Manage screen', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Alerts').last);
+    await t.pumpAndSettle();
+    expect(find.text('My alerts'), findsNothing, reason: 'no tabs: viewing and setting up are not mixed');
+    expect(find.text('Needs you'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.textContaining('Watching for'), findsOneWidget);
+    expect(find.text('New alert'), findsNothing, reason: 'the inbox has no set-up button');
+    await t.tap(find.text('Manage'));
+    await t.pumpAndSettle();
+    expect(find.text('Manage alerts'), findsOneWidget);
+    expect(find.text('New alert'), findsOneWidget);
+    expect(find.text('ON'), findsOneWidget);
+    await t.tap(find.byType(Switch).first);
+    await t.pumpAndSettle();
+  });
+
+  testWidgets('each place keeps where you were, and switching is instant', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    expect(find.text('Needs you'), findsOneWidget);
+    await t.tap(find.text('Reports'));
+    await t.pump(); // one frame: no fade to wait for
+    expect(find.textContaining('SENT ON WHATSAPP'.toUpperCase()), findsNothing, reason: 'still loading its own data');
+    await t.pumpAndSettle();
+    expect(find.textContaining('Sent on WhatsApp on a schedule'.toUpperCase()), findsOneWidget);
+    await t.tap(find.text('Home'));
+    await t.pump();
+    expect(find.text('Needs you'), findsOneWidget, reason: 'Home is still there, no reload spinner');
+  });
+
+  test('only people with a mobile number can be sent a report', () {
+    expect(const Person('1', 'A', '+91 98•••• 3210').hasPhone, isTrue);
+    expect(const Person('2', 'B', '', email: 'b@x.test').hasPhone, isFalse);
+  });
+
   test('the alert is described in one plain sentence from its numbers', () {
     final q = AlertDef(type: 'queue_long', title: 'Long queue', description: '', smart: true, area: true);
     expect(describe(q, {'length': 8, 'minutes': 4}, where: 'Billing queue'), 'Alert me when more than 8 people are waiting in the area on Billing queue for 4 minutes or more.');
@@ -236,7 +282,7 @@ void profileTests() {
     await t.pumpAndSettle();
     await t.tap(find.text('Reports'));
     await t.pumpAndSettle();
-    expect(find.text('Emailed on a schedule'.toUpperCase()), findsOneWidget);
+    expect(find.text('Sent on WhatsApp on a schedule'.toUpperCase()), findsOneWidget);
     expect(find.textContaining('Every day at 9 pm'), findsOneWidget);
     await t.tap(find.byType(Switch).first);
     await t.pumpAndSettle();
@@ -249,8 +295,8 @@ void profileTests() {
     await t.scrollUntilVisible(find.text('Vehicle audit'), -300, scrollable: find.byType(Scrollable).first);
     await t.tap(find.text('Vehicle audit'));
     await t.pump();
-    await t.scrollUntilVisible(find.textContaining('priya@greenvalley.in'), 300, scrollable: find.byType(Scrollable).first);
-    await t.tap(find.textContaining('priya@greenvalley.in'));
+    await t.scrollUntilVisible(find.textContaining('98•••• 3210'), 300, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.textContaining('98•••• 3210'));
     await t.pump();
     await t.scrollUntilVisible(find.text('Save'), 300, scrollable: find.byType(Scrollable).first);
     expect(tester(t, 'Save').onPressed, isNotNull);

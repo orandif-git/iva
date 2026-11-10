@@ -176,3 +176,10 @@ backend attaches it and releases the held event at once  ->  sent with clip_url 
   not a head count.
 * **Alerts that are not built.** Storage, disk fault, recording stopped, clock, camera view and picture quality alerts need a new reading from
   the Dahua recorder or a picture comparison. They are in the catalogue, but cannot be switched on until they are built.
+
+
+## Reports on WhatsApp (replaces report emails)
+A scheduled report is announced as one webhook event per person, `system.report_ready`, with the endpoint named "Report ready" in the staff console (Webhooks, "Add the rest" creates it).
+Shortcodes: `{customer}`, `{report}` (for example "Footfall summary"), `{period}` ("3 Nov to 9 Nov"), `{document_url}`, `{to_name}`, `{to_phone}`.
+`{document_url}` opens the Excel file without signing in, for the number of hours set in the webhook settings (4 at most); after that the person opens Reports in the app.
+Only people with a mobile number can be chosen for a report. Report emails are no longer sent; the SMTP provider is not used by reports.

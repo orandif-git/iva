@@ -1,7 +1,7 @@
 """The delivery service: takes queued messages from the outbox, sends them, and records what happened.
 
 An alert reaches a person as a webhook event (see webhook.py); the platform owner's system turns the event into the WhatsApp message.
-A scheduled report is the one thing still sent as an email, through the platform's SMTP server.
+A scheduled report is announced the same way, as a "report ready" event with a link to the Excel file (see report_event_body).
 
 At-least-once: a message is claimed (locked for a few minutes), sent, then marked sent. If the process dies in between, the lock lapses and
 another try is made, so in rare cases an event could be sent twice, never zero. The notification id travels as X-Delivery-Id, the same on every
@@ -13,7 +13,7 @@ import logging
 from ..config import get_settings
 from ..crypto import vault
 from ..db import db
-from . import evidence, smtp_provider, webhook
+from . import evidence, webhook
 from ..services import alert_catalog as cat
 
 log = logging.getLogger("gateinsight.delivery")
@@ -73,24 +73,6 @@ async def _context(conn, n):
            WHERE n.id = $1""", n["id"])
 
 
-async def build_report_email(conn, n, c):
-    """A scheduled report by email, with the Excel file attached (or only mentioned when it is too big to attach)."""
-    from ..services.reports import TYPES, filename
-    r = await conn.fetchrow("SELECT r.*, t.timezone FROM app.reports r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.id=$1", n["report_id"])
-    if not r or r["status"] != "ready":
-        return "The report is not ready yet."
-    data = await evidence.store().get(r["file_key"])
-    if data is None:
-        return "The report file is no longer stored."
-    fname = filename(r["report_type"], r["period_start"], r["period_end"], r["timezone"])
-    label = TYPES[r["report_type"]][0]
-    big = len(data) > 8_000_000
-    text = (f"Hello {c['r_name'] or ''},\n\nYour {label.lower()} is " + ("ready. It is too large to attach, so please open it in the Jas iVision app under Reports." if big else "attached.") +
-            f"\n\nFile: {fname}\n\nJas iVision")
-    return {"to": n["recipient"], "name": c["r_name"], "subject": f"[Jas iVision] {label}: {fname[:-5]}", "text": text, "html": None,
-            "attachments": [] if big else [(fname, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]}
-
-
 def backoff(attempts: int) -> int:
     return BACKOFF_SECONDS[min(attempts, len(BACKOFF_SECONDS)) - 1]
 
@@ -109,17 +91,39 @@ def event_body(ep, c, n, link_hours: int, *, test: bool = False) -> tuple[bytes,
     return webhook.render(ep["payload_template"], values).encode("utf-8"), event
 
 
+def report_event_body(ep, rep, n, tenant_name: str, person_name: str, link_hours: int) -> tuple[bytes, str]:
+    """The payload for one person for a scheduled report: the endpoint's template with the report, its period and a link to the file."""
+    from ..services.reports import TYPES, period_label
+    token = evidence.make_token(rep["id"], link_hours * 3600)
+    url = f"{get_settings().public_base_url.rstrip('/')}/e/{token}/report.xlsx"
+    event = cat.event_name("report_ready")
+    values = webhook.values_for(tenant_name=tenant_name, alert_id=rep["id"], title=TYPES[rep["report_type"]][0], event=event, details={"report": TYPES[rep["report_type"]][0],
+                                "period": period_label(rep["period_start"], rep["period_end"], rep["timezone"])}, person_name=person_name, phone=n["recipient"], document_url=url)
+    return webhook.render(ep["payload_template"], values).encode("utf-8"), event
+
+
 async def process(n) -> str:
     """Sends one claimed notification. Returns the status it ended in."""
     s = get_settings()
+    rep = None
     async with db.service_tx() as conn:
         c = await _context(conn, n)
         if c is None or n["recipient_id"] is None or not c["r_active"]:       # no recipient_id means the person was deleted after this was queued
             await conn.execute("UPDATE app.notifications SET status='cancelled', error='The recipient was removed or switched off.', locked_until=NULL WHERE id=$1", n["id"])
             return "cancelled"
         if n["report_id"]:
-            provider = await load_provider(conn, "email")
-            msg = await build_report_email(conn, n, c) if provider else None
+            if n["channel"] != "whatsapp":
+                await conn.execute("UPDATE app.notifications SET status='cancelled', error='Reports are sent by WhatsApp only.', locked_until=NULL WHERE id=$1", n["id"])
+                return "cancelled"
+            ep = await conn.fetchrow("SELECT * FROM platform.webhook_endpoints WHERE alert_type='report_ready'")
+            if not ep or not ep["active"]:
+                await conn.execute("UPDATE app.notifications SET status='cancelled', error='No active webhook for reports.', locked_until=NULL WHERE id=$1", n["id"])
+                return "cancelled"
+            rep = await conn.fetchrow("SELECT r.*, t.timezone FROM app.reports r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.id=$1", n["report_id"])
+            if not rep or rep["status"] != "ready":
+                return await _finish(n, webhook.Result(False, permanent=False, error="The report is not ready yet."))
+            cfg = await webhook_settings(conn)
+            headers = endpoint_headers(ep)
         elif n["channel"] != "whatsapp" or c["rule_type"] not in cat.CATALOG:
             await conn.execute("UPDATE app.notifications SET status='cancelled', error='Alerts are sent by WhatsApp only.', locked_until=NULL WHERE id=$1", n["id"])
             return "cancelled"
@@ -130,14 +134,10 @@ async def process(n) -> str:
                 return "cancelled"
             cfg = await webhook_settings(conn)
             headers = endpoint_headers(ep)
-    if n["report_id"]:
-        if not provider:
-            return await _finish(n, webhook.Result(False, permanent=False, error="No email provider is active."))
-        if isinstance(msg, str):
-            return await _finish(n, webhook.Result(False, permanent=False, error=msg))
-        res = await smtp_provider.send(provider["config"], provider["secrets"], msg, allow_private=s.messaging_allow_private_hosts, ssl_context=_ssl_context)
-        return await _finish(n, res)
-    body, event = event_body(ep, c, n, cfg["link_hours"])
+    if rep is not None:
+        body, event = report_event_body(ep, rep, n, c["tenant_name"], c["r_name"], cfg["link_hours"])
+    else:
+        body, event = event_body(ep, c, n, cfg["link_hours"])
     try:
         json.loads(body)
     except ValueError:
