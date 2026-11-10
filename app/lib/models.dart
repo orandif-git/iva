@@ -80,11 +80,18 @@ class AlertDef {
   List<String> recipientIds;
   AlertDef({required this.type, required this.title, required this.description, required this.smart, this.area = false, this.areaKind, this.settings = const [], this.enabled = false, this.params = const {}, this.recipientIds = const []});
 
-  /// "after 15 min", "over 6 people for 5 min": a short line for My alerts.
+  /// One plain sentence from the numbers: "Alert when more than 6 people waiting, for at least 5 minutes".
   String get summary {
     if (!enabled && params.isEmpty) return description;
-    final bits = [for (final s in settings) if (params[s.key] != null) '${s.label.toLowerCase()} ${params[s.key]} ${s.unit}'.trim()];
-    return bits.isEmpty ? description : bits.join(' · ');
+    final bits = <String>[];
+    for (final st in settings) {
+      final v = params[st.key];
+      if (v == null || (st.key == 'wait_minutes' && v == 0)) continue;
+      final n = v == v.roundToDouble() ? '${v.toInt()}' : '$v';
+      final text = st.key == 'hour' ? '${st.label} ${_clock(v)}' : [st.label, n, st.unit].where((x) => x.isNotEmpty).join(' ');
+      bits.add(bits.isEmpty ? text : text[0].toLowerCase() + text.substring(1));
+    }
+    return bits.isEmpty ? description : bits.join(', ');
   }
 }
 
@@ -170,14 +177,24 @@ String friendlyWhen(String iso, {DateTime? now}) {
 
 /// Plain words for the numbers the server sends, keyed by the setting's name.
 const settingWords = {
-  'drops': ('Tell me after this many drops in an hour', 'drops'),
+  'drops': ('Alert after', 'drops in an hour'),
   'after': ('Tell me if it stays offline for', 'minutes'),
   'limit': ('Alert when more than', 'people'),
   'length': ('Alert when more than', 'people waiting'),
   'minutes': ('for at least', 'minutes'),
   'wait_minutes': ('and the wait is over (0 to ignore)', 'minutes'),
   'seconds': ('Alert after', 'seconds'),
+  'people': ('Alert when more than', 'people inside'),
+  'max_hours': ('Alert when a vehicle stays more than', 'hours'),
+  'percent': ('Alert at', '% used'),
+  'days': ('Remind me', 'days before it is due'),
+  'hour': ('Send it at', "o'clock"),
 };
+
+String _clock(num h) {
+  final n = h.toInt();
+  return '${n % 12 == 0 ? 12 : n % 12} ${n < 12 ? 'am' : 'pm'}';
+}
 
 /// Today's people count, from the cameras that count people.
 class Footfall {

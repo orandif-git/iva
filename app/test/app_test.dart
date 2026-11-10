@@ -429,6 +429,17 @@ void profileTests() {
     expect((await repo.schedules()).length, 4);
   });
 
+  test('an alert reads as one plain sentence, never raw setting names', () {
+    AlertDef d(String type, List<Setting> st, Map<String, num> params) => AlertDef(type: type, title: type, description: 'Plain description.', smart: true, settings: st, enabled: true, params: params);
+    Setting w(String key, int def) => Setting(key, settingWords[key]!.$1, settingWords[key]!.$2, 1, 100, def);
+    expect(d('crowding', [w('people', 50)], {'people': 50}).summary, 'Alert when more than 50 people inside');
+    expect(d('vehicle_overstay', [w('max_hours', 8)], {'max_hours': 8}).summary, 'Alert when a vehicle stays more than 8 hours');
+    expect(d('queue_long', [w('length', 6), w('minutes', 5)], {'length': 6, 'minutes': 5}).summary, 'Alert when more than 6 people waiting, for at least 5 minutes');
+    expect(d('connection_unstable', [w('drops', 5)], {'drops': 5}).summary, 'Alert after 5 drops in an hour');
+    expect(d('daily_summary', [w('hour', 8)], {'hour': 8}).summary, 'Send it at 8 am');
+    expect(d('blocked_plate', [], {}).summary, 'Plain description.');
+  });
+
   test('repeats of the same alert in the same place fold into one row, newest first', () {
     final now = DateTime(2026, 11, 10, 18);
     AlertItem a(String id, String rule, String where, int hoursAgo, {AlertState st = AlertState.open}) => AlertItem(id: id, title: 'Too many people', body: '', rule: rule, where: where, when: '', at: now.subtract(Duration(hours: hoursAgo)), state: st, smart: true);
