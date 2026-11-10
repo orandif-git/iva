@@ -22,9 +22,11 @@ logging.basicConfig(level=logging.INFO)
 # The web pages load only their own scripts and styles and talk only to this server, so a page cannot be made to load or send anything elsewhere.
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; manifest-src 'self'; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-# The new customer app (Flutter, served at /next/) draws on a canvas, so it needs WebAssembly and its own inline styles. It still loads and talks only to this server.
+# The new customer app (Flutter, served at /next/) draws on a canvas, so it needs WebAssembly and its own inline styles. It loads scripts only from this server and talks to it,
+# plus the three Google addresses a browser needs to get its push address (Firebase Cloud Messaging).
 NEXT_CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; manifest-src 'self'; "
-            "connect-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+            "connect-src 'self' data: blob: https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://fcm.googleapis.com; "
+            "font-src 'self' data:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 _DOCS = ("/docs", "/openapi.json")
 # A request that came through a proxy (the website's front door) carries one of these headers; our own services call the API directly and do not.
 _PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")

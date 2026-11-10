@@ -92,6 +92,7 @@ async def test_an_alert_is_pushed_to_that_accounts_devices_only(client, make, su
     m = got[TOKEN_A]
     assert m["notification"]["title"] == "Camera offline" and m["notification"]["body"] == "The camera stopped."
     assert m["data"] == {"kind": "alert", "alert_id": str(a)} and m["android"]["priority"] == "HIGH"
+    assert m["webpush"]["fcm_options"]["link"] == "https://gi.test/next/", "a tap on a browser notification opens the app"
 
 
 async def test_info_alerts_and_quiet_hours_stay_silent(client, make, su, google):

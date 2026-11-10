@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "860950377806",
+    "project_id": "ivision-ade8d",
+    "storage_bucket": "ivision-ade8d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:860950377806:android:28f3f8e1b652b12542da1f",
+        "android_client_info": {
+          "package_name": "in.jas.ivision"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCAMKHyl2qdZAq141kT42CQsoSFIxaBXEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

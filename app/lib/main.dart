@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 import 'models.dart';
+import 'firebase_push.dart';
 import 'push.dart';
 import 'repo.dart';
 import 'scope.dart';
@@ -22,7 +23,7 @@ import 'theme.dart';
 const _demo = bool.fromEnvironment('DEMO');
 const _base = String.fromEnvironment('API_BASE');
 
-void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base)));
+void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base), push: const FirebasePush()));
 
 /// Screens slide in from the right and can be dragged back from the left edge, on every platform, the way iPhone apps (and WhatsApp on iPhone) do.
 const _pageTransitions = PageTransitionsTheme(builders: {
@@ -62,8 +63,13 @@ class _IVisionAppState extends State<IVisionApp> {
       starting = true;
       c.restore().then((_) {
         if (!mounted) return;
-        setState(() { starting = false; if (c.signedIn) repo = ApiRepository(c); });
-        if (c.signedIn) _startPush();
+        setState(() {
+          starting = false;
+          if (c.signedIn) {
+            repo = ApiRepository(c);
+            _startPush();
+          }
+        });
       });
     }
   }
@@ -86,12 +92,15 @@ class _IVisionAppState extends State<IVisionApp> {
   void _startPush() {
     final r = repo;
     if (r == null) return;
-    _push = PushRegistration(r, widget.push)..start();
+    _push = PushRegistration(r, widget.push)..start();      // before the screen is built, so Settings can show its button
   }
 
   void _signedIn() {
-    setState(() { repo = ApiRepository(widget.client!); note = null; });
-    _startPush();
+    setState(() {
+      repo = ApiRepository(widget.client!);
+      note = null;
+      _startPush();
+    });
   }
 
   Future<void> _signOut([String? message]) async {
@@ -112,16 +121,17 @@ class _IVisionAppState extends State<IVisionApp> {
             ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
             : repo == null
                 ? SignInPage(client: widget.client!, onDone: _signedIn, message: note)
-                : AppScope(onSignedOut: () => _signOut('Please sign in again.'), child: Shell(repo: repo!, choice: choice, onChoice: _setTheme, onSignOut: _signOut)),
+                : AppScope(onSignedOut: () => _signOut('Please sign in again.'), child: Shell(repo: repo!, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push)),
       );
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.repo, required this.choice, required this.onChoice, required this.onSignOut});
+  const Shell({super.key, required this.repo, required this.choice, required this.onChoice, required this.onSignOut, this.push});
   final Repository repo;
   final ThemeChoice choice;
   final ValueChanged<ThemeChoice> onChoice;
   final void Function([String? message]) onSignOut;
+  final PushRegistration? push;      // this device's push, for the "Turn on notifications" button
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -153,7 +163,7 @@ class _ShellState extends State<Shell> {
         _cams => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(_alerts); tab = _alerts; })),
         _watch => ManageAlertsPage(repo: widget.repo, embedded: true),
         _alerts => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge),
-        _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m)),
+        _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m), push: widget.push),
       };
 
   void _go(int i) {

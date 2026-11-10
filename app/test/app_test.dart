@@ -497,10 +497,10 @@ void profileTests() {
     expect(find.text('What is typed into the recorder'.toUpperCase()), findsOneWidget);
   });
 
-  testWidgets('push: the device address goes to the server after sign-in when push is on, and is removed on sign-out', (t) async {
+  testWidgets('push: a device that already allowed notifications is registered quietly after sign-in, and forgotten on sign-out', (t) async {
     await phone(t);
     final repo = MockRepository()..push = true;
-    await t.pumpWidget(IVisionApp(repo: repo, push: _FakePush('tok-123456789012345678', 'android')));
+    await t.pumpWidget(IVisionApp(repo: repo, push: _FakePush('tok-123456789012345678', 'android', granted: true)));
     await t.pumpAndSettle();
     expect(repo.registered, ['tok-123456789012345678 android']);
     await t.tap(find.byType(ProfileButton));
@@ -510,16 +510,60 @@ void profileTests() {
     expect(repo.registered, isEmpty, reason: 'forgotten on sign-out');
   });
 
-  testWidgets('push: nothing is registered while the server has push off or the device has no address', (t) async {
+  testWidgets('push: nothing opens or registers by itself; the Turn on button in Settings does it', (t) async {
     await phone(t);
-    final off = MockRepository();
-    await t.pumpWidget(IVisionApp(repo: off, push: _FakePush('tok-123456789012345678', 'ios')));
+    final repo = MockRepository()..push = true;
+    final fake = _FakePush('tok-123456789012345678', 'web');
+    await t.pumpWidget(IVisionApp(repo: repo, push: fake));
     await t.pumpAndSettle();
-    expect(off.registered, isEmpty);
-    final on = MockRepository()..push = true;
-    await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: on));          // the default: no address
+    expect(repo.registered, isEmpty, reason: 'no permission box without a tap');
+    expect(fake.asked, 0);
+    await t.tap(find.text('More').last);
     await t.pumpAndSettle();
-    expect(on.registered, isEmpty);
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Push notifications'), 300, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Turn on'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Turn on'));
+    await t.pumpAndSettle();
+    expect(fake.asked, 1);
+    expect(repo.registered, ['tok-123456789012345678 web']);
+    expect(find.text('Notifications are on for this device.'), findsOneWidget);
+    await t.tap(find.text('Turn off'));
+    await t.pumpAndSettle();
+    expect(repo.registered, isEmpty);
+  });
+
+  testWidgets('push: when the person says no, or the server has push off, the button says so and nothing is registered', (t) async {
+    await phone(t);
+    final repo = MockRepository()..push = true;
+    await t.pumpWidget(IVisionApp(repo: repo, push: _FakePush(null, 'web')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Push notifications'), 300, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Turn on'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Turn on'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('blocked on this device'), findsOneWidget);
+    expect(repo.registered, isEmpty);
+  });
+
+  testWidgets('push: a device that cannot receive it keeps the plain note', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()..push = true));          // the default: no push on this device
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Push notifications'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Turn on'), findsNothing);
+    expect(find.textContaining('Coming with the installed phone app'), findsOneWidget);
   });
 
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
@@ -581,10 +625,19 @@ void profileTests() {
 }
 
 class _FakePush implements PushService {
-  _FakePush(this._t, this.platform);
-  final String _t;
+  _FakePush(this._t, this.platform, {bool granted = false}) : granted_ = granted;
+  final String? _t;
+  final bool granted_;
+  int asked = 0;       // how many times a permission box would have opened
   @override
   final String platform;
   @override
-  Future<String?> token() async => _t;
+  bool get supported => true;
+  @override
+  Future<bool> granted() async => granted_;
+  @override
+  Future<String?> token({bool ask = false}) async {
+    if (ask) asked++;
+    return granted_ || ask ? _t : null;
+  }
 }
