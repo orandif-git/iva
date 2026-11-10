@@ -41,7 +41,7 @@ async def test_staff_see_the_catalogue_with_what_is_built(client, make):
     r = await client.get("/admin/v1/alert-catalog", headers=(await make.staff("support"))["headers"])
     assert r.status_code == 200
     items = {i["type"]: i for i in r.json()["items"]}
-    assert len(items) == 20 and items["blocked_plate"]["ai"] is True and items["camera_offline"]["ai"] is False
+    assert len(items) == len(cat.CATALOG) and items["blocked_plate"]["ai"] is True and items["camera_offline"]["ai"] is False
     assert items["disk_fault"]["built"] is False and items["disk_fault"]["enabled"] is False
     assert items["camera_offline"]["enabled"] is True and items["camera_offline"]["event"] == "system.camera_offline"
     assert (await client.get("/admin/v1/alert-catalog")).status_code == 401
