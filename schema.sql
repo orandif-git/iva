@@ -566,7 +566,8 @@ CREATE TABLE app.alerts (
   clip_wait_until timestamptz,                                              -- WhatsApp waits for the clip until then; NULL = no clip expected
   created_at      timestamptz NOT NULL DEFAULT now(),
   acknowledged_by uuid,
-  acknowledged_at timestamptz
+  acknowledged_at timestamptz,
+  snoozed_until   timestamptz                                                -- hidden from "Needs you" until then
 );
 CREATE INDEX alerts_tenant_time_idx ON app.alerts (tenant_id, created_at DESC);
 CREATE INDEX alerts_dedupe_idx ON app.alerts (tenant_id, dedupe_key, created_at DESC) WHERE dedupe_key IS NOT NULL;

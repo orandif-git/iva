@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
+from ..db import db
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
 from ..services import alert_catalog
@@ -209,27 +210,86 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depend
 
 
 # --------------------------------------------------------------------------------- alerts and the delivery log
+STATE_SQL = "CASE WHEN a.acknowledged_at IS NOT NULL THEN 'done' WHEN a.snoozed_until > now() THEN 'snoozed' ELSE 'open' END"
+
+
 @router.get("/alerts")
-async def list_alerts(limit: int = Query(50, ge=1, le=200), before: datetime | None = None, unacknowledged: bool = False, ctx: CustomerCtx = Depends(customer_ctx())):
+async def list_alerts(limit: int = Query(50, ge=1, le=200), before: datetime | None = None, unacknowledged: bool = False,
+                      state: Literal["open", "snoozed", "done"] | None = None, ctx: CustomerCtx = Depends(customer_ctx())):
+    """The alert inbox. `state` is open (needs you), snoozed (hidden for a while) or done. Test messages are never listed."""
     rows = await ctx.conn.fetch(
-        """SELECT a.id, a.rule_type, a.severity, a.title, a.body, a.created_at, a.acknowledged_at, a.camera_id, c.name AS camera_name, (a.evidence_id IS NOT NULL) AS has_evidence, (a.clip_id IS NOT NULL) AS has_clip,
+        f"""SELECT a.id, a.rule_type, a.severity, a.title, a.body, a.created_at, a.acknowledged_at, a.snoozed_until, {STATE_SQL} AS state, a.camera_id, c.name AS camera_name,
+                  (a.evidence_id IS NOT NULL) AS has_evidence, (a.clip_id IS NOT NULL) AS has_clip,
                   count(n.id) FILTER (WHERE n.status IN ('sent','delivered','read')) AS messages_sent, count(n.id) FILTER (WHERE n.status='failed') AS messages_failed,
                   count(n.id) FILTER (WHERE n.status='queued') AS messages_waiting
            FROM app.alerts a LEFT JOIN app.cameras c ON c.id=a.camera_id LEFT JOIN app.notifications n ON n.alert_id=a.id
-           WHERE ($2::timestamptz IS NULL OR a.created_at < $2) AND (NOT $3 OR a.acknowledged_at IS NULL)
-           GROUP BY a.id, c.name ORDER BY a.created_at DESC LIMIT $1""", limit, before, unacknowledged)
+           WHERE ($2::timestamptz IS NULL OR a.created_at < $2) AND (NOT $3 OR a.acknowledged_at IS NULL) AND NOT coalesce((a.details->>'test')::boolean, false)
+             AND ($4::text IS NULL OR {STATE_SQL} = $4)
+           GROUP BY a.id, c.name ORDER BY a.created_at DESC LIMIT $1""", limit, before, unacknowledged, state)
     return [dict(r) for r in rows]
 
 
 @router.post("/alerts/{alert_id}/acknowledge")
 async def acknowledge(alert_id: UUID, ctx: CustomerCtx = Depends(customer_ctx())):
-    row = await ctx.conn.fetchrow("UPDATE app.alerts SET acknowledged_by=$2, acknowledged_at=now() WHERE id=$1 AND acknowledged_at IS NULL RETURNING id, acknowledged_at", alert_id, ctx.user_id)
+    """Mark as done."""
+    row = await ctx.conn.fetchrow("UPDATE app.alerts SET acknowledged_by=$2, acknowledged_at=now(), snoozed_until=NULL WHERE id=$1 AND acknowledged_at IS NULL RETURNING id, acknowledged_at", alert_id, ctx.user_id)
     if not row:
         if await ctx.conn.fetchval("SELECT 1 FROM app.alerts WHERE id=$1", alert_id):
             raise ApiError(409, "already_acknowledged", "Already acknowledged.")
         raise ApiError(404, "alert_not_found", "Alert not found.")
     await ctx.audit("alert.acknowledge", "alert", alert_id)
     return dict(row)
+
+
+class SnoozeIn(Strict):
+    minutes: int = Field(60, ge=5, le=1440)
+
+
+@router.post("/alerts/{alert_id}/snooze")
+async def snooze(alert_id: UUID, body: SnoozeIn | None = None, ctx: CustomerCtx = Depends(customer_ctx())):
+    """Hides an open alert from "Needs you" for a while (one hour unless told otherwise). It comes back by itself when the time is up."""
+    minutes = (body or SnoozeIn()).minutes
+    row = await ctx.conn.fetchrow("UPDATE app.alerts SET snoozed_until = now() + make_interval(mins => $2) WHERE id=$1 AND acknowledged_at IS NULL RETURNING id, snoozed_until", alert_id, minutes)
+    if not row:
+        if await ctx.conn.fetchval("SELECT 1 FROM app.alerts WHERE id=$1", alert_id):
+            raise ApiError(409, "already_acknowledged", "This alert is already done.")
+        raise ApiError(404, "alert_not_found", "Alert not found.")
+    await ctx.audit("alert.snooze", "alert", alert_id, {"minutes": minutes})
+    return dict(row)
+
+
+class TestIn(Strict):
+    recipient_id: UUID
+
+
+@router.post("/alert-types/{rule_type}/test")
+async def send_test(rule_type: str, body: TestIn, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
+    """Sends one test message for this alert to one person, so the customer can see what an alert looks like. It uses the same route as a real alert, but is marked as a test,
+    is already done, and never shows in the inbox. Quiet hours and the hourly limit do not apply."""
+    if rule_type not in await alert_catalog.visible(ctx.conn, ctx.tenant_id):
+        raise ApiError(404, "alert_type_not_found", "That alert type does not exist.")
+    person = await ctx.conn.fetchrow("SELECT id, name, phone FROM app.recipients WHERE id=$1 AND active", body.recipient_id)
+    if not person:
+        raise ApiError(404, "recipient_not_found", "That person was not found.")
+    if not person["phone"]:
+        raise ApiError(422, "no_mobile_number", f"{person['name']} has no mobile number.")
+    tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", ctx.tenant_id)
+    if not tenant["msg_whatsapp"]:
+        raise ApiError(409, "whatsapp_off", "WhatsApp messages are switched off for your account. Contact support.")
+    from ..services.alerts import clean_text, fan_out
+    from zoneinfo import ZoneInfo
+    meta = ALERT_TYPES[rule_type]
+    title = "Test: " + meta["title"]
+    payload = {"event": clean_text(title, 100), "location": "Test", "time": datetime.now(timezone.utc).astimezone(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"),
+               "details": "This is a test message. Nothing is wrong."}
+    async with db.service_tx() as c:        # the webhook set-up belongs to the platform, so the queueing runs with the service's rights; every row is still for this one tenant
+        alert_id = await c.fetchval(
+            """INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, details, acknowledged_by, acknowledged_at) VALUES ($1,$2,'info',$3,$4,$5,$6, now()) RETURNING id""",
+            ctx.tenant_id, rule_type, title, payload["details"], {**payload, "test": True}, ctx.user_id)
+        await fan_out(c, ctx.tenant_id, tenant, alert_id, rule_type, [person["id"]], payload, quiet=False)
+        status = await c.fetchrow("SELECT status::text AS status, error FROM app.notifications WHERE alert_id=$1", alert_id)
+    await ctx.audit("alert.test", "alert", alert_id, {"type": rule_type})
+    return {"sent": bool(status and status["status"] == "queued"), "status": status["status"] if status else "none", "reason": status["error"] if status else None, "to": person["name"]}
 
 
 @router.get("/notifications")
