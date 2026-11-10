@@ -111,6 +111,20 @@ class ApiClient {
     return r;
   }
 
+  /// A long answer read as it arrives (live video). Throws the server's own message if it says no.
+  Future<Stream<List<int>>> stream(String path, {bool retry = true}) async {
+    if (_access == null && !await _refreshTokens()) throw ApiError(401, 'Please sign in again.', code: 'signed_out');
+    final req = http.Request('GET', Uri.parse('$base$path'))..headers['Authorization'] = 'Bearer $_access';
+    final r = await _c.send(req);
+    if (r.statusCode == 401 && retry) {
+      _access = null;
+      if (await _refreshTokens()) return stream(path, retry: false);
+      throw ApiError(401, 'Please sign in again.', code: 'signed_out');
+    }
+    if (r.statusCode < 200 || r.statusCode >= 300) _decode(await http.Response.fromStream(r));
+    return r.stream;
+  }
+
   /// A file the person asked for (a report), with the name the server gave it.
   Future<({String name, Uint8List bytes})> file(String path, {String fallbackName = 'download'}) async {
     final r = await raw('GET', path);

@@ -1,4 +1,6 @@
 """Live view and AI view for customers: the clocks, the limits, who may watch, and what is recorded."""
+import asyncio
+
 import pytest
 
 from app.services import snapshot
@@ -137,3 +139,84 @@ async def test_every_view_is_in_the_history_and_the_audit_log(client, make, su):
     assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE tenant_id=$1 AND action='camera.live_view'", t) == 1
     other = await make.user(t, role="regular")
     assert (await client.get("/v1/live-history", headers=other["headers"])).status_code == 403
+
+
+# ------------------------------------------------------------------------------------------ moving pictures
+from app.services import live_stream  # noqa: E402
+
+
+def test_the_splitter_cuts_complete_pictures_and_keeps_the_rest():
+    a, b = b"\xff\xd8AAA\xff\xd9", b"\xff\xd8BBB\xff\xd9"
+    buf = bytearray(b"junk" + a + b + b"\xff\xd8CC")
+    assert live_stream.pop_jpegs(buf) == [a, b] and bytes(buf) == b"\xff\xd8CC"
+    buf += b"C\xff\xd9"
+    assert live_stream.pop_jpegs(buf) == [b"\xff\xd8CCC\xff\xd9"] and not buf
+
+
+async def test_real_ffmpeg_gives_a_stream_of_pictures():
+    """Not a stand-in: FFmpeg makes a test video and the same reader that serves a camera turns it into JPEGs."""
+    n = 0
+    async for jpeg in live_stream.ffmpeg_frames("testsrc=size=320x180:rate=12", "lavfi"):
+        assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9") and len(jpeg) > 500
+        n += 1
+        if n == 3:
+            break
+    assert n == 3
+
+
+async def test_a_live_view_streams_pictures_until_it_ends(client, make, su, monkeypatch):
+    t, u, cams = await shop(client, make)
+
+    async def fake_source(row, decrypt):
+        return "test://camera", None
+
+    async def fake_frames(url, fmt):
+        assert url == "test://camera"
+        i = 0
+        while True:                                  # a camera never stops by itself
+            yield b"\xff\xd8" + bytes([i % 200 + 1]) * 40 + b"\xff\xd9"
+            i += 1
+            await asyncio.sleep(0.2)
+    monkeypatch.setattr(snapshot, "source_for", fake_source)
+    monkeypatch.setattr(live_stream, "ffmpeg_frames", fake_frames)
+    s = await open_view(client, u, cams[0], "live")
+    # The test client hands over a response only when it is complete, so the stream runs as a task and the view is closed from the other side.
+    task = asyncio.create_task(client.get(f"/v1/live/{s['id']}/stream", headers=u["headers"]))
+    await asyncio.sleep(2.2)
+    assert not task.done(), "a live view keeps going while it is open"
+    await client.delete(f"/v1/live/{s['id']}", headers=u["headers"])
+    r = await asyncio.wait_for(task, 15)                    # ...and ends by itself once the view is closed
+    assert r.status_code == 200 and r.headers["content-type"].startswith("multipart/x-mixed-replace")
+    got = live_stream.pop_jpegs(bytearray(r.content))
+    assert len(got) >= 5 and all(g.startswith(b"\xff\xd8") for g in got)
+    assert b"Content-Type: image/jpeg" in r.content
+    assert live_stream.open_count() == 0, "its place is given back"
+
+
+async def test_ai_view_has_no_stream_and_others_cannot_watch_yours(client, make, su, monkeypatch):
+    t, u, cams = await shop(client, make)
+    ai = await open_view(client, u, cams[1], "ai")
+    r = await client.get(f"/v1/live/{ai['id']}/stream", headers=u["headers"])
+    assert r.status_code == 409 and r.json()["error"]["code"] == "use_frames"
+    live = await open_view(client, u, cams[0], "live")
+    other = await make.user(t, role="admin")
+    assert (await client.get(f"/v1/live/{live['id']}/stream", headers=other["headers"])).status_code == 403
+    assert live_stream.open_count() == 0
+
+
+async def test_a_busy_server_says_so_and_a_failed_camera_gives_the_place_back(client, make, su, monkeypatch):
+    t, u, cams = await shop(client, make)
+    s = await open_view(client, u, cams[0], "live")
+
+    async def broken(row, decrypt):
+        from app.errors import ApiError
+        raise ApiError(409, "camera_offline", "The recorder is not sending video for this camera right now. Check that it is online.")
+    monkeypatch.setattr(snapshot, "source_for", broken)
+    r = await client.get(f"/v1/live/{s['id']}/stream", headers=u["headers"])
+    assert r.status_code == 409 and r.json()["error"]["code"] == "camera_offline" and live_stream.open_count() == 0
+    held = [live_stream.slot() for _ in range(8)]
+    r = await client.get(f"/v1/live/{s['id']}/stream", headers=u["headers"])
+    assert r.status_code == 429 and r.json()["error"]["code"] == "video_busy"
+    for h in held:
+        h.release()
+    assert live_stream.open_count() == 0
