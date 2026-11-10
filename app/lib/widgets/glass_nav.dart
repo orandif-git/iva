@@ -16,18 +16,18 @@ class NavDef {
   Widget glyph(bool on, Color color, double size) => custom != null ? custom!(on, color, size) : Icon(on ? selected : icon, size: size, color: color);
 }
 
-/// A CCTV camera: a box camera with a lens, on a wall bracket. Outline when idle, solid body when chosen.
+/// A dome CCTV camera: a ceiling plate, a short neck and a round dome with its lens. Outline when idle, solid dome when chosen.
 class CctvIcon extends StatelessWidget {
   const CctvIcon({super.key, required this.on, required this.color, this.size = 26});
   final bool on;
   final Color color;
   final double size;
   @override
-  Widget build(BuildContext context) => SizedBox(width: size, height: size, child: CustomPaint(painter: _CctvPainter(on, color)));
+  Widget build(BuildContext context) => SizedBox(width: size, height: size, child: CustomPaint(painter: _DomePainter(on, color)));
 }
 
-class _CctvPainter extends CustomPainter {
-  _CctvPainter(this.on, this.color);
+class _DomePainter extends CustomPainter {
+  _DomePainter(this.on, this.color);
   final bool on;
   final Color color;
   @override
@@ -35,31 +35,30 @@ class _CctvPainter extends CustomPainter {
     final k = size.width / 24;
     final line = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 1.9 * k..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
     final fill = Paint()..color = color..style = PaintingStyle.fill;
-    // wall bracket: a post on the left with an arm reaching to the camera
-    canvas.drawLine(Offset(3.2 * k, 3.5 * k), Offset(3.2 * k, 20.5 * k), line);
-    canvas.drawLine(Offset(3.2 * k, 12.5 * k), Offset(7.4 * k, 11 * k), line);
-    // the body: a rounded box, tilted slightly down to the right
-    canvas.save();
-    canvas.translate(14 * k, 9 * k);
-    canvas.rotate(0.2);
-    final body = RRect.fromRectAndRadius(Rect.fromCenter(center: Offset.zero, width: 14 * k, height: 7.4 * k), Radius.circular(2.4 * k));
-    if (on) { canvas.drawRRect(body, fill); } else { canvas.drawRRect(body, line); }
-    // the lens at the front end
-    final lensC = Offset(4.4 * k, 0);
+    final dy = 2.0 * k;
+    // ceiling plate and neck
+    canvas.drawLine(Offset(5 * k, 3.6 * k + dy), Offset(19 * k, 3.6 * k + dy), line);
+    canvas.drawLine(Offset(12 * k, 3.6 * k + dy), Offset(12 * k, 7.2 * k + dy), line);
+    // the dome: a half circle hanging below a flat top
+    final c = Offset(12 * k, 7.2 * k + dy);
+    final dome = Path()
+      ..moveTo(c.dx - 8.6 * k, c.dy)
+      ..lineTo(c.dx + 8.6 * k, c.dy)
+      ..arcTo(Rect.fromCircle(center: c, radius: 8.6 * k), 0, 3.14159265, false)
+      ..close();
+    canvas.drawPath(dome, on ? fill : line);
+    // the lens, a little off-centre like a real dome camera
+    final lens = Offset(c.dx, c.dy + 3.9 * k);
     if (on) {
-      canvas.drawCircle(lensC, 1.7 * k, Paint()..color = Colors.white.withValues(alpha: .92));
+      canvas.drawCircle(lens, 2.5 * k, Paint()..color = Colors.white.withValues(alpha: .92));
+      canvas.drawCircle(lens, 1.0 * k, fill);
     } else {
-      canvas.drawCircle(lensC, 1.5 * k, line..strokeWidth = 1.6 * k);
+      canvas.drawCircle(lens, 2.1 * k, line..strokeWidth = 1.6 * k);
     }
-    // a small sun-shield line above the body
-    canvas.drawLine(Offset(-5.5 * k, -4.9 * k), Offset(5.5 * k, -4.9 * k), line..strokeWidth = 1.9 * k);
-    canvas.restore();
-    // a little recording light
-    canvas.drawCircle(Offset(19.6 * k, 4.3 * k), 1.1 * k, fill);
   }
 
   @override
-  bool shouldRepaint(_CctvPainter o) => o.on != on || o.color != color;
+  bool shouldRepaint(_DomePainter o) => o.on != on || o.color != color;
 }
 
 /// An eye that watches, with the AI sparkle beside it: "AI Watch".
@@ -86,7 +85,7 @@ Widget _aiEye(bool on, Color c, double s) => AiEyeIcon(on: on, color: c, size: s
 class NavIcons {
   static const home = NavDef(Remix.home_5_line, Remix.home_5_fill, 'Home');
   static const alerts = NavDef(Remix.notification_3_line, Remix.notification_3_fill, 'Alerts');
-  static const cameras = NavDef(Remix.webcam_line, Remix.webcam_fill, 'Cameras', custom: _cctv);       // a CCTV camera on a wall bracket
+  static const cameras = NavDef(Remix.webcam_line, Remix.webcam_fill, 'Cameras', custom: _cctv);       // a dome CCTV camera
   static const aiWatch = NavDef(Remix.eye_line, Remix.eye_fill, 'AI Watch', custom: _aiEye);        // an eye with the AI sparkle
   static const more = NavDef(Remix.apps_2_line, Remix.apps_2_fill, 'More');                  // Reports and Settings
 }
