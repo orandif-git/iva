@@ -75,13 +75,15 @@ def _keep() -> float:
     return max(1.0, get_settings().snapshot_cache_seconds)
 
 
-async def get(camera_id, row, decrypt_source, now=time.monotonic) -> bytes:
+async def get(camera_id, row, decrypt_source, now=time.monotonic, max_age: float | None = None) -> bytes:
+    """`max_age` asks for a fresher picture than the usual 20 seconds (live view); one picture is still taken at a time per camera."""
+    keep = _keep() if max_age is None else max_age
     hit = _cache.get(camera_id)
-    if hit and now() - hit[0] < _keep():
+    if hit and now() - hit[0] < keep:
         return hit[1]
     async with _locks.setdefault(camera_id, asyncio.Lock()):
         hit = _cache.get(camera_id)
-        if hit and now() - hit[0] < _keep():
+        if hit and now() - hit[0] < keep:
             return hit[1]
         url, fmt = await source_for(row, decrypt_source)
         jpeg = await grab(url, fmt)

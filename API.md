@@ -307,3 +307,11 @@ Internal: `POST /internal/v1/evidence` (worker upload). Public: `GET /e/{token}`
 Details and limits: `backend/MESSAGING.md`.
 
 Clips (phase 2): `POST /internal/v1/alerts/{id}/clip` (worker), `GET /e/{token}/clip.mp4`; plate batches answer with `clips: [{index, alert_id, seconds_before, seconds_after}]`; camera config has `clips`; tenant messaging has `clips`; the blocked-vehicle alert has `params.clip`.
+
+## 4d. Customer app (built)
+Alerts inbox: `GET /v1/alerts?state=open|snoozed|done` (each alert has `state`, `snoozed_until`), `POST /v1/alerts/{id}/acknowledge` (done), `POST /v1/alerts/{id}/snooze` (`{minutes}`, 5 to 1440, default 60).
+`POST /v1/alert-types/{type}/test` (`{recipient_id}`, admin) sends one test message to one person; it is marked as a test and never appears in the inbox.
+`GET /v1/health-summary`: `status` (`ok` or `attention`), `issues`, `recorders`, `cameras`, `messages`, `data`, `open_alerts`.
+Drawn areas: `PUT /v1/cameras/{id}/areas` takes 3 to 12 corners (0 to 1 of the picture); crossing edges, repeated corners and slivers are refused with 422.
+Live view (admin roles only): `POST /v1/cameras/{id}/live` (`{mode: "live"|"ai"}`) opens a session; `GET /v1/live/{id}` status; `POST /v1/live/{id}/extend` ("keep watching"); `DELETE /v1/live/{id}`; `GET /v1/live/{id}/frame` the current JPEG (in AI view the boxes and areas are drawn on it); `GET /v1/live-history`.
+Live closes after 120 s (up to 600 s in total), AI view after 30 s (up to 120 s in total). A person has one view at a time and a customer at most two at once. Today the pictures are refreshed stills (about one a second); smooth video can replace them without changing this API.
