@@ -8,6 +8,8 @@ import 'package:ivision_app/geometry/polygon.dart';
 import 'package:ivision_app/main.dart';
 import 'package:ivision_app/save_file.dart';
 import 'package:ivision_app/screens/more.dart';
+import 'package:ivision_app/screens/recorders.dart';
+import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
 import 'package:ivision_app/screens/wizard.dart';
@@ -416,6 +418,82 @@ void profileTests() {
     expect(saved.length, 1);
     expect(saved.first, contains('spreadsheetml.sheet'));
     expect(find.textContaining('Downloaded'), findsOneWidget);
+  });
+
+  testWidgets('adding a recorder: values to type in, checks tick on their own, then pick cameras', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: RecorderSetupPage(repo: repo, pollEvery: const Duration(milliseconds: 200))));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField), 'Godown');
+    await t.tap(find.text('Continue'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 50));
+    for (final x in ['connect.example.in', '7681', 'GI-AB12CD', 'giview', 'k3y-once-only']) {
+      expect(find.text(x), findsOneWidget, reason: x);
+    }
+    expect(find.textContaining('shown only now'), findsOneWidget);
+    expect(find.text('Choose your cameras'.toUpperCase()), findsNothing, reason: 'nothing found yet');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pumpAndSettle(const Duration(milliseconds: 100));
+    await t.scrollUntilVisible(find.text('3. Choose your cameras'.toUpperCase()), 200, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.widgetWithText(FilledButton, 'Add').first);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Add').first);
+    await t.pumpAndSettle();
+    expect(find.text('Added'), findsWidgets);
+  });
+
+  testWidgets('a recorder page shows its details and lets the owner rename and remove it', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    final r = (await repo.recorders()).first;
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: RecorderPage(repo: repo, recorder: r, canEdit: true)));
+    await t.pumpAndSettle();
+    expect(find.text('Connected'), findsOneWidget);
+    expect(find.text('connect.example.in'), findsOneWidget);
+    expect(find.text('Back door'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Rename'), 300, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Rename'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Rename'));
+    await t.pumpAndSettle();
+    await t.enterText(find.widgetWithText(TextField, 'Name'), 'Main shop');
+    await t.tap(find.text('Save'));
+    await t.pumpAndSettle();
+    expect(repo.lastRenamed, 'Main shop');
+    await t.scrollUntilVisible(find.text('Make a new viewer password'), 300, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Make a new viewer password'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Make a new viewer password'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Make new password'));
+    await t.pumpAndSettle();
+    expect(find.text('brand-new-key'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Remove this recorder'), 300, scrollable: find.byType(Scrollable).first);
+    await t.ensureVisible(find.text('Remove this recorder'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Remove this recorder'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('cannot be undone'), findsOneWidget);
+    await t.tap(find.text('Remove it'));
+    await t.pumpAndSettle();
+    expect(repo.removed, true);
+  });
+
+  testWidgets('Settings lets the owner add a recorder, and opens one when tapped', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Add a recorder'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Store recorder'), findsOneWidget);
+    await t.tap(find.text('Store recorder'));
+    await t.pumpAndSettle();
+    expect(find.text('What is typed into the recorder'.toUpperCase()), findsOneWidget);
   });
 
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {

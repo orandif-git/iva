@@ -22,6 +22,14 @@ abstract class Repository {
   Future<void> snooze(String alertId, {int minutes = 60});
   Future<List<CameraItem>> cameras();
   Future<List<RecorderItem>> recorders();
+  Future<RecorderSetup> addRecorder(String? name);
+  Future<RecorderSetup> recorderConnection(String id);
+  Future<RecorderCheck> recorderStatus(String id);
+  Future<List<Channel>> channels(String id);
+  Future<void> addCamera(String recorderId, int channelNo, String name, {bool people = true, bool plates = false});
+  Future<void> renameRecorder(String id, String name);
+  Future<void> removeRecorder(String id);
+  Future<RecorderSetup> newRecorderKey(String id);
   Future<void> addPerson(String name, String phone, {String? email});
   Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
@@ -101,6 +109,32 @@ class ApiRepository implements Repository {
     }
     return [for (final j in list) if (j['enabled'] == true) CameraItem(j['id'], j['name'], _recorders![j['recorder_id']] ?? '', j['stream_state'] == 'streaming', seenAgo: ago(j['last_frame_at'] as String?))];
   }
+
+  @override
+  Future<RecorderSetup> addRecorder(String? name) async => RecorderSetup.fromJson(await api.call('POST', '/v1/recorders', body: {'brand': 'dahua', if (name != null && name.trim().isNotEmpty) 'name': name.trim()}) as Map<String, dynamic>);
+  @override
+  Future<RecorderSetup> recorderConnection(String id) async => RecorderSetup.fromJson(await api.call('GET', '/v1/recorders/$id/connection') as Map<String, dynamic>);
+  @override
+  Future<RecorderCheck> recorderStatus(String id) async => RecorderCheck.fromJson(await api.call('GET', '/v1/recorders/$id/status') as Map<String, dynamic>);
+  @override
+  Future<List<Channel>> channels(String id) async => [for (final j in await api.call('GET', '/v1/recorders/$id/channels') as List) Channel((j['channel_no'] as num).toInt(), j['name'] as String?, j['active'] == true, j['enabled_as_camera'] == true)];
+  @override
+  Future<void> addCamera(String recorderId, int channelNo, String name, {bool people = true, bool plates = false}) async {
+    await api.call('POST', '/v1/cameras', body: {'recorder_id': recorderId, 'channel_no': channelNo, 'name': name, 'use_footfall': people, 'use_anpr': plates});
+    _recorders = null;
+  }
+  @override
+  Future<void> renameRecorder(String id, String name) async {
+    await api.call('PATCH', '/v1/recorders/$id', body: {'name': name.trim().isEmpty ? null : name.trim()});
+    _recorders = null;
+  }
+  @override
+  Future<void> removeRecorder(String id) async {
+    await api.call('DELETE', '/v1/recorders/$id');
+    _recorders = null;
+  }
+  @override
+  Future<RecorderSetup> newRecorderKey(String id) async => RecorderSetup.fromJson(await api.call('POST', '/v1/recorders/$id/rotate-key') as Map<String, dynamic>);
 
   @override
   Future<List<RecorderItem>> recorders() async => [
@@ -302,6 +336,26 @@ class MockRepository implements Repository {
         const CameraItem('c8', 'Billing queue', 'Godown recorder', true),
       ];
 
+  int _polls = 0;
+  final Set<int> _added = {};
+  String? lastRenamed;
+  bool removed = false;
+  @override
+  Future<RecorderSetup> addRecorder(String? name) async => const RecorderSetup('r9', 'connect.example.in', 7681, 'GI-AB12CD', 'giview', key: 'k3y-once-only');
+  @override
+  Future<RecorderSetup> recorderConnection(String id) async => const RecorderSetup('r1', 'connect.example.in', 7681, 'GI-AB12CD', 'giview');
+  @override
+  Future<RecorderCheck> recorderStatus(String id) async => id == 'r9' && ++_polls < 2 ? const RecorderCheck('never', {'reached': false}) : const RecorderCheck('online', {'reached': true, 'key_ok': true, 'channels_found': true, 'preview_ok': true});
+  @override
+  Future<List<Channel>> channels(String id) async => [Channel(1, null, true, _added.contains(1)), Channel(2, 'Back door', true, _added.contains(2))];
+  @override
+  Future<void> addCamera(String recorderId, int channelNo, String name, {bool people = true, bool plates = false}) async => _added.add(channelNo);
+  @override
+  Future<void> renameRecorder(String id, String name) async => lastRenamed = name;
+  @override
+  Future<void> removeRecorder(String id) async => removed = true;
+  @override
+  Future<RecorderSetup> newRecorderKey(String id) async => const RecorderSetup('r1', 'connect.example.in', 7681, 'GI-AB12CD', 'giview', key: 'brand-new-key');
   @override
   Future<List<RecorderItem>> recorders() async => [RecorderItem('r1', 'Store recorder', 'online', 6, seenAgo: 8), RecorderItem('r2', 'Godown recorder', problems ? 'offline' : 'online', 2, seenAgo: problems ? 7800 : 12)];
   final List<Person> _people = [const Person('p1', 'Priya (you)', '+91 98•••• 3210', email: 'priya@greenvalley.in'), const Person('p2', 'Ravi, store manager', '+91 97•••• 5521', email: 'ravi@greenvalley.in'), const Person('p3', 'Store phone', '+91 90•••• 0044')];

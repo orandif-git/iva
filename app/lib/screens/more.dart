@@ -9,6 +9,7 @@ import '../theme.dart';
 import '../widgets/brand.dart';
 import '../widgets/profile_menu.dart';
 import 'common.dart';
+import 'recorders.dart';
 
 /// More: the two things you open now and then. Reports and Settings sit here so the bar stays at five.
 class MorePage extends StatefulWidget {
@@ -367,6 +368,16 @@ class _SettingsPageState extends State<SettingsPage> {
     if (ok == true) _reload();
   }
 
+  Future<void> _addRecorder() async {
+    await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => RecorderSetupPage(repo: widget.repo)));
+    if (mounted) setState(() { data = _load(); });
+  }
+
+  Future<void> _openRecorder(RecorderItem r, bool canEdit) async {
+    await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => RecorderPage(repo: widget.repo, recorder: r, canEdit: canEdit)));
+    if (mounted) setState(() { data = _load(); });
+  }
+
   Future<void> _remove(Person p) async {
     final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: Text('Remove ${p.name}?'), content: const Text('They will stop getting alerts and reports on WhatsApp.'), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep')), FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove'))]));
     if (ok == true) {
@@ -431,20 +442,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     ]),
                   const GroupLabel('Your recorders'),
                   if (recorders.isEmpty)
-                    Group(children: [Padding(padding: const EdgeInsets.all(16), child: Text('No recorder is connected yet. Recorders are set up in the current app for now.', style: TextStyle(color: t.fg2)))])
+                    Group(children: [Padding(padding: const EdgeInsets.all(16), child: Text(me.role == 'admin' ? 'No recorder is connected yet. Add one and we will guide you through it.' : 'No recorder is connected yet. Ask the owner to add one.', style: TextStyle(color: t.fg2)))])
                   else
                     Group(children: [
                       for (final r in recorders)
-                        Padding(
+                        InkWell(
+                          onTap: () => _openRecorder(r, me.role == 'admin'),
+                          child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(children: [
                             Badge2(Icons.dns_outlined, r.online ? Level.ok : (r.status == 'never' ? Level.mute : Level.bad), size: 40),
                             const SizedBox(width: 14),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(r.name, style: const TextStyle(fontWeight: FontWeight.w700)), Text('${r.channels} ${r.channels == 1 ? 'camera' : 'cameras'}${r.seenAgo == null ? '' : ' · seen ${ago(r.seenAgo)}'}', style: TextStyle(color: t.fg2, fontSize: 13))])),
                             Pill(r.online ? 'Online' : (r.status == 'never' ? 'Not connected' : 'Offline'), r.online ? Level.ok : (r.status == 'never' ? Level.mute : Level.bad), dot: true),
+                            Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6)),
                           ]),
                         ),
+                        ),
                     ]),
+                  if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 10), child: OutlinedButton.icon(onPressed: _addRecorder, icon: const Icon(Icons.add_rounded), label: const Text('Add a recorder'))),
                   const GroupLabel('How alerts reach you'),
                   Group(children: [
                     _InfoLine(Icons.chat_outlined, 'WhatsApp', 'Alerts and reports arrive as WhatsApp messages. This is on for everyone above who has a mobile number.'),
