@@ -62,6 +62,35 @@ class RecorderItem {
   bool get online => status == 'online';
 }
 
+/// What to type into the recorder. The password (key) is shown once, when it is made.
+class RecorderSetup {
+  final String id, server, deviceId, viewerUser;
+  final int port;
+  final String? key;
+  const RecorderSetup(this.id, this.server, this.port, this.deviceId, this.viewerUser, {this.key});
+  factory RecorderSetup.fromJson(Map<String, dynamic> j) => RecorderSetup((j['recorder_id'] ?? j['id']) as String, j['server'] as String, (j['port'] as num).toInt(), j['device_id'] as String, (j['viewer_user'] ?? 'giview') as String, key: j['key'] as String?);
+}
+
+/// Has the recorder reached us yet: the four ticks on the connect screen.
+class RecorderCheck {
+  final String status;
+  final Map<String, bool> checks;
+  const RecorderCheck(this.status, this.checks);
+  bool get reached => checks['reached'] == true;
+  bool get channelsFound => checks['channels_found'] == true;
+  bool get done => ['reached', 'key_ok', 'channels_found', 'preview_ok'].every((k) => checks[k] == true);
+  factory RecorderCheck.fromJson(Map<String, dynamic> j) => RecorderCheck(j['status'] as String, {for (final e in (j['checks'] as Map).entries) e.key as String: e.value == true});
+}
+
+/// A channel on the recorder: it becomes a camera when the customer adds it.
+class Channel {
+  final int no;
+  final String? name;
+  final bool active, enabled;
+  const Channel(this.no, this.name, this.active, this.enabled);
+  String get label => (name ?? '').isEmpty ? 'Camera $no' : name!;
+}
+
 /// One number the customer can set on an alert.
 class Setting {
   final String key, label, unit;
