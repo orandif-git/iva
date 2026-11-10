@@ -553,6 +553,19 @@ void profileTests() {
     expect(repo.registered, isEmpty);
   });
 
+  testWidgets('push: an iPhone in Safari is told to add the app to the Home Screen', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()..push = true, push: _FakePush(null, 'web', supported: false, hint: 'ios-install')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Push notifications'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('Add to Home Screen'), findsOneWidget);
+    expect(find.text('Turn on'), findsNothing);
+  });
+
   testWidgets('push: a device that cannot receive it keeps the plain note', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()..push = true));          // the default: no push on this device
@@ -563,7 +576,7 @@ void profileTests() {
     await t.pumpAndSettle();
     await t.scrollUntilVisible(find.text('Push notifications'), 300, scrollable: find.byType(Scrollable).first);
     expect(find.text('Turn on'), findsNothing);
-    expect(find.textContaining('Coming with the installed phone app'), findsOneWidget);
+    expect(find.textContaining('Not available in this browser'), findsOneWidget);
   });
 
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
@@ -625,14 +638,16 @@ void profileTests() {
 }
 
 class _FakePush implements PushService {
-  _FakePush(this._t, this.platform, {bool granted = false}) : granted_ = granted;
+  _FakePush(this._t, this.platform, {bool granted = false, this.supported = true, this.hint = ''}) : granted_ = granted;
   final String? _t;
   final bool granted_;
   int asked = 0;       // how many times a permission box would have opened
   @override
   final String platform;
   @override
-  bool get supported => true;
+  final bool supported;
+  @override
+  final String hint;
   @override
   Future<bool> granted() async => granted_;
   @override

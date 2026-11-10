@@ -56,4 +56,7 @@ class FirebasePush implements PushService {
 
   @override
   String get platform => 'android';
+
+  @override
+  String get hint => '';
 }

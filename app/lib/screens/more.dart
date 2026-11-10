@@ -518,8 +518,11 @@ class _PushLineState extends State<_PushLine> {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     final p = widget.push;
+    if (p != null && !p.service.supported && p.service.hint == 'ios-install') {
+      return const _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'On iPhone, notifications work from the Home Screen app. Tap the Share button in Safari, choose Add to Home Screen, then open Jas iVision from its icon and turn them on here.');
+    }
     if (p == null || !p.service.supported) {
-      return const _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'Coming with the installed phone app, in addition to WhatsApp.');
+      return const _InfoLine(Icons.notifications_active_outlined, 'Push notifications', 'Not available in this browser. On Android, Chrome works; on iPhone, add Jas iVision to the Home Screen first.');
     }
     return ValueListenableBuilder<bool>(
       valueListenable: p.on,

@@ -64,7 +64,19 @@ class ApiClient {
     if (_refresh != null) await _prefs?.setString(_key, _refresh!);
   }
 
-  Future<bool> _refreshTokens() async {
+  Future<bool>? _renewing;
+
+  /// Renews the sign-in. When several screens ask at once (a reload starts with no access token, and Home, the tab badge and Settings all load together),
+  /// they share ONE renewal. Each sending the same refresh token would look to the server like a stolen token being replayed, and it would end the session.
+  Future<bool> _refreshTokens() {
+    final running = _renewing;
+    if (running != null) return running;
+    final f = _renewOnce();
+    _renewing = f;
+    return f.whenComplete(() => _renewing = null);
+  }
+
+  Future<bool> _renewOnce() async {
     final rt = _refresh;
     if (rt == null) return false;
     try {

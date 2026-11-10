@@ -158,4 +158,27 @@ void main() {
     expect(s.id, 's1');
     expect(f.bodies['POST /v1/cameras/c1/live'], {'mode': 'ai'});
   });
+
+  test('a reload with several screens loading at once renews the sign-in only once', () async {
+    SharedPreferences.setMockInitialValues({'gi_next_rt': 'r0'});
+    final used = <String>{};
+    var refreshes = 0;
+    final client = MockClient((r) async {
+      if (r.url.path == '/v1/auth/refresh') {
+        refreshes++;
+        final t = jsonDecode(r.body)['refresh_token'] as String;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (!used.add(t)) return http.Response('{"error":{"code":"token_reused","message":"The session was ended for safety."}}', 401);   // a replayed token ends the session
+        return http.Response(jsonEncode({'access_token': 'a$refreshes', 'refresh_token': 'r$refreshes'}), 200);
+      }
+      return http.Response(jsonEncode(r.headers['Authorization'] == 'Bearer a1' ? {'ok': true} : {'error': {'code': 'x', 'message': 'no'}}), r.headers['Authorization'] == 'Bearer a1' ? 200 : 401);
+    });
+    final api = ApiClient(base: 'https://x.test', client: client);
+    await api.restore();
+    expect(api.signedIn, true);
+    final out = await Future.wait([api.call('GET', '/v1/me'), api.call('GET', '/v1/health-summary'), api.call('GET', '/v1/cameras'), api.call('GET', '/v1/push')]);
+    expect(out.every((x) => x is Map && x['ok'] == true), true);
+    expect(refreshes, 1, reason: 'one renewal shared by every request');
+    expect(api.signedIn, true);
+  });
 }
