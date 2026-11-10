@@ -43,5 +43,13 @@
     return await messaging.getToken({ vapidKey: VAPID, serviceWorkerRegistration: reg });
   }
 
-  window.giPush = { supported: supported, permission: permission, token: token };
+  // Why push is not available here, when the person can do something about it. iPhone and iPad only allow web push for an app added to the Home Screen.
+  function hint() {
+    if (supported()) return "";
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    var installed = window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    return ios && !installed ? "ios-install" : "";
+  }
+
+  window.giPush = { supported: supported, permission: permission, token: token, hint: hint };
 })();

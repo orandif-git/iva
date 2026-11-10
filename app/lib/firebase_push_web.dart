@@ -44,4 +44,14 @@ class FirebasePush implements PushService {
 
   @override
   String get platform => 'web';
+
+  @override
+  String get hint {
+    try {
+      final gi = _gi;
+      return gi == null ? '' : (gi.callMethod<JSString>('hint'.toJS)).toDart;
+    } catch (_) {
+      return '';
+    }
+  }
 }

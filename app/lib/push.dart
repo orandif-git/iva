@@ -14,6 +14,9 @@ abstract class PushService {
   Future<String?> token({bool ask = false});
 
   String get platform;
+
+  /// When push is not available here: what the person can do about it ("ios-install": add the app to the Home Screen), or empty.
+  String get hint => '';
 }
 
 class NoPush implements PushService {
@@ -26,6 +29,8 @@ class NoPush implements PushService {
   Future<String?> token({bool ask = false}) async => null;
   @override
   String get platform => 'web';
+  @override
+  String get hint => '';
 }
 
 /// Gives this device's address to the server, and takes it back on sign-out. Never throws: push is an extra, WhatsApp still works.
