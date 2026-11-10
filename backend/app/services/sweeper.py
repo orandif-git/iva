@@ -3,6 +3,7 @@ import logging
 
 from ..config import get_settings
 from ..db import db
+from . import link_history
 from .alerts import raise_alert
 
 log = logging.getLogger("gateinsight.sweeper")
@@ -16,6 +17,7 @@ async def mark_stale_recorders(timeout_seconds: int) -> int:
                WHERE status='online' AND last_heartbeat_at < now() - make_interval(secs => $1)
                RETURNING id, tenant_id, device_id""", float(timeout_seconds))
         for r in rows:
+            await link_history.record(conn, r["tenant_id"], r["id"], "offline")
             await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['device_id']} stopped contacting us.", camera_name=r["device_id"], details={"recorder": r["device_id"]},
                               dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=60)
     return len(rows)
