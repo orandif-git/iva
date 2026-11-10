@@ -8,8 +8,25 @@
 | **Smart Alerts** | Come from the AI on the camera pictures or from rules about the customer's business: a blocked vehicle, too many people, a vehicle that stayed too long | the AI sparkle icon |
 
 The catalogue lives in `app/services/alert_catalog.py`: 20 alerts, each with its family, group, title, severity, settings, shortcodes and
-whether it is **built**. Six are built today (recorder offline, camera offline, blocked vehicle, vehicle overstay, too many people, plate
-needs checking). The rest are listed so staff can see what is coming; nothing can raise them and no customer sees them.
+whether it is **built**. Thirteen are built today; the rest are listed so staff can see what is coming, but nothing can raise them and no
+customer sees them.
+
+| Alert | Family | What makes it fire | Settings the customer can change |
+|---|---|---|---|
+| Recorder offline | System | No heartbeat for `GI_HEARTBEAT_TIMEOUT_SECONDS` | none |
+| Camera offline | System | The worker stopped reporting for a minute | none |
+| Connection keeps dropping | System | The recorder went offline `drops` times in the last hour (connection history) | `drops` (5; 2 to 20). Once every 6 hours at most |
+| Back to normal | System | A recorder or camera is working again **and the customer was told it was down in the last 24 hours** | none |
+| Plan limit nearly reached | System | Enabled cameras reach `percent` of the plan's limit | `percent` (90; 50 to 100). Once a month at most |
+| Message allowance nearly used | System | This month's WhatsApp messages reach `percent` of the customer's cap (only for a customer with a cap) | `percent` (80; 50 to 100). Once a month at most |
+| Payment due or overdue | System | An issued invoice is due within `days`, and again when it is overdue. Paid and void invoices never | `days` (3; 0 to 14) |
+| New sign-in on your account | System | A person signs in from a browser and system they have not used before (the first one ever is not reported) | none |
+| Daily health summary | System | Once a day at `hour`, in the customer's time zone: cameras working, recorders online, alerts in 24 hours | `hour` (8; 0 to 23). **Off until the customer turns it on** |
+| Blocked vehicle, Vehicle stayed too long, Plate needs checking | Smart | Number plates | see the Smart Alerts section |
+| Too many people | Smart | People counting | `people` |
+
+Detectors run every five minutes in the API process (`services/maintenance.py`). The connection history (`app.recorder_link_events`) is kept for
+14 days. A sign-in device is a short fingerprint of the browser's name plus a label such as "Chrome on Windows"; no address is kept.
 
 Alerts are never priced anywhere in the product. What a customer pays is decided somewhere else.
 

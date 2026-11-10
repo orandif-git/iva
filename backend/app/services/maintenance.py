@@ -33,7 +33,7 @@ async def run_forever() -> None:
                     await job()
                 except Exception:
                     log.exception("maintenance job %s failed", job.__name__)
-        for job in (detectors.vehicle_overstay, detectors.crowding):
+        for job in (detectors.vehicle_overstay, detectors.crowding, detectors.connection_unstable, detectors.plan_limit, detectors.message_allowance, detectors.payment_due, detectors.daily_summary):
             try:
                 await job()
             except Exception:

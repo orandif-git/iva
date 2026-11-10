@@ -13,7 +13,8 @@ from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20
 # A rule the customer has never touched. Every System Alert that exists is on from the start, and so are blocked vehicles; they appear in the app until recipients are added.
-DEFAULT_ENABLED = {k for k in alert_catalog.BUILT if ALERT_TYPES[k]["family"] == alert_catalog.SYSTEM} | {"blocked_plate"}
+# The daily summary is a message every day, so it is something a customer asks for.
+DEFAULT_ENABLED = {k for k in alert_catalog.BUILT if ALERT_TYPES[k]["family"] == alert_catalog.SYSTEM and k != "daily_summary"} | {"blocked_plate"}
 
 
 def in_quiet_hours(now_local: time, start: time | None, end: time | None) -> bool:

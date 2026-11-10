@@ -25,7 +25,7 @@ def _no_store(response: Response) -> None:
 async def customer_login(body: LoginIn, request: Request, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.customer_login(conn, body.email, body.password, body.tenant, client_ip(request))
+        result = await auth.customer_login(conn, body.email, body.password, body.tenant, client_ip(request), request.headers.get("user-agent"))
     return _raise_if_error(result)
 
 
@@ -117,5 +117,5 @@ async def sign_in(body: SignInIn, request: Request, response: Response):
     or says a code is needed ({"next": "code"}) for a staff member."""
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.sign_in(conn, body.email, body.password, body.tenant, body.code, client_ip(request))
+        result = await auth.sign_in(conn, body.email, body.password, body.tenant, body.code, client_ip(request), request.headers.get("user-agent"))
     return _raise_if_error(result)

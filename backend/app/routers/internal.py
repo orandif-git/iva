@@ -12,7 +12,7 @@ from ..errors import ApiError
 from ..schemas import FrameStatusIn, HeartbeatIn
 from datetime import datetime, timezone
 
-from ..services import billing
+from ..services import billing, link_history
 from ..services.alerts import clips_wanted
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
@@ -22,7 +22,7 @@ log = logging.getLogger("gateinsight.internal")
 
 async def _recorder(ctx: ServiceCtx, device_id: str):
     row = await ctx.conn.fetchrow(
-        """SELECT r.id, r.tenant_id, r.device_id, r.key_ciphertext, r.brand::text AS brand, r.protocol::text AS protocol, t.status::text AS tenant_status
+        """SELECT r.id, r.tenant_id, r.device_id, r.name, r.status::text AS link_status, r.key_ciphertext, r.brand::text AS brand, r.protocol::text AS protocol, t.status::text AS tenant_status
            FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.device_id = $1""", device_id)
     if not row:
         raise ApiError(404, "unknown_device", "No such recorder.")
@@ -53,6 +53,9 @@ async def heartbeat(device_id: str, body: HeartbeatIn, ctx: ServiceCtx = Depends
         # Tell the registrar to drop the session. Do not mark the recorder online.
         return {"allowed": False}
     numbers = [c.channel_no for c in body.channels]
+    if r["link_status"] != "online":                           # it was not online a moment ago: note it, and say so if the customer was told it was down
+        await link_history.record(ctx.conn, r["tenant_id"], r["id"], "online")
+        await link_history.recovered(ctx.conn, r["tenant_id"], offline_rule="recorder_offline", entity_id=r["id"], name=r["name"] or r["device_id"])
     await ctx.conn.execute(
         """UPDATE app.recorders SET status='online', last_heartbeat_at=now(), last_ip=$2::inet,
                channel_count=$3, firmware=coalesce($4, firmware) WHERE id=$1""",
@@ -70,7 +73,8 @@ async def heartbeat(device_id: str, body: HeartbeatIn, ctx: ServiceCtx = Depends
 @router.post("/recorders/{device_id}/offline", status_code=204)
 async def offline(device_id: str, ctx: ServiceCtx = Depends(service_ctx)):
     r = await _recorder(ctx, device_id)
-    await ctx.conn.execute("UPDATE app.recorders SET status='offline' WHERE id=$1 AND status='online'", r["id"])
+    if await ctx.conn.fetchval("UPDATE app.recorders SET status='offline' WHERE id=$1 AND status='online' RETURNING 1", r["id"]):
+        await link_history.record(ctx.conn, r["tenant_id"], r["id"], "offline")
 
 
 @router.post("/recorders/{device_id}/preview-ok", status_code=204)
@@ -152,7 +156,7 @@ async def frame_status(camera_id: UUID, body: FrameStatusIn, ctx: ServiceCtx = D
     """Health heartbeat from the worker, every few seconds. A quiet camera sends no events, so this is how we know it is alive.
     The answer tells the worker whether it should keep going."""
     err = _URL_USERINFO.sub(r"\1***@", body.error) if body.error else None            # belt and braces: no passwords, whatever the worker sent
-    prev = await ctx.conn.fetchrow("SELECT c.stream_seen_at, c.tenant_id, t.timezone FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id WHERE c.id=$1", camera_id)
+    prev = await ctx.conn.fetchrow("SELECT c.stream_seen_at, c.stream_state, c.name, c.tenant_id, t.timezone FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id WHERE c.id=$1", camera_id)
     row = await ctx.conn.fetchrow(
         """UPDATE app.cameras c SET stream_state=$2, stream_seen_at=now(), analysis_fps=$3, stream_error=$4, frames_dropped=$5,
                   stream_state_at = CASE WHEN c.stream_state IS DISTINCT FROM $2 THEN now() ELSE c.stream_state_at END
@@ -160,6 +164,8 @@ async def frame_status(camera_id: UUID, body: FrameStatusIn, ctx: ServiceCtx = D
         camera_id, body.state, body.analysis_fps, err, body.dropped)
     if not row:
         raise ApiError(404, "unknown_camera", "No such camera.")
+    if prev and body.state == "streaming" and prev["stream_state"] == "offline":              # it was down: tell the customer if they were warned
+        await link_history.recovered(ctx.conn, prev["tenant_id"], offline_rule="camera_offline", entity_id=camera_id, name=prev["name"], camera_id=camera_id)
     if prev and body.state == "streaming" and body.analysis_fps and prev["stream_seen_at"]:
         # frames analysed since the last report, for metering (a long gap counts as at most a minute: the worker was not running in between)
         secs = min((datetime.now(timezone.utc) - prev["stream_seen_at"]).total_seconds(), 60.0)

@@ -20,7 +20,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from app.messaging import delivery, evidence, webhook
-from app.services import detectors, retention, sweeper
+from app.services import alert_catalog as cat_mod, detectors, retention, sweeper
 from tests.helpers import now, setup_cameras
 from tests.test_events_plates import pe, post
 from tests.tls_server import TlsServer
@@ -139,11 +139,11 @@ async def test_only_the_owner_sees_and_changes_webhooks(client, make, world):
 
 async def test_standard_endpoints_cover_every_built_alert_and_can_be_run_again(client, world, su):
     items = (await client.get("/admin/v1/webhooks", headers=world["admin"])).json()["items"]
-    assert {e["alert_type"] for e in items} == set(__import__("app.services.alert_catalog", fromlist=["BUILT"]).BUILT)
+    assert {e["alert_type"] for e in items} == set(cat_mod.BUILT)
     blocked = next(e for e in items if e["alert_type"] == "blocked_plate")
     assert blocked["event"] == "smart.blocked_plate" and blocked["ai"] is True and blocked["active"] is True and "clip_url" in blocked["shortcodes"] and "clip_url" in blocked["payload_template"]
     again = (await client.post("/admin/v1/webhooks/standard", json={"url": world["url"]}, headers=world["admin"])).json()
-    assert again["created"] == [] and len(again["skipped"]) == 6
+    assert again["created"] == [] and len(again["skipped"]) == len(cat_mod.BUILT)
     stored = await su.fetchval("SELECT headers_ciphertext FROM platform.webhook_endpoints WHERE alert_type='camera_offline'")
     assert b"RECEIVER-TOKEN-1" not in bytes(stored)                                                           # header values are encrypted at rest
     audit = await su.fetch("SELECT after::text AS after FROM platform.audit_log WHERE action LIKE 'webhook.%'")
@@ -251,7 +251,7 @@ async def test_the_alert_catalog_and_customer_choices(client, make, world):
     t, u, cam, rid = await customer(client, make, world, rule="camera_offline")
     h = u["headers"]
     cat = {c["type"]: c for c in (await client.get("/v1/alert-types", headers=h)).json()}
-    assert set(cat) == {"blocked_plate", "vehicle_overstay", "crowding", "camera_offline", "recorder_offline", "low_confidence_plate"}
+    assert set(cat) == set(cat_mod.BUILT)
     assert cat["blocked_plate"]["enabled"] is True and cat["crowding"]["enabled"] is False and cat["camera_offline"]["recipient_ids"] == [rid]
     assert cat["crowding"]["ai"] is True and cat["camera_offline"]["ai"] is False and cat["camera_offline"]["channels"] == ["whatsapp"]
     r = await client.put("/v1/alert-types/crowding", json={"enabled": True, "params": {"people": 80}, "recipient_ids": [rid], "quiet_start": "22:00", "quiet_end": "06:00"}, headers=h)

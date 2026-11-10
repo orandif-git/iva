@@ -4,7 +4,8 @@
 import { errText, h, mount } from "../lib.js";
 import { closeSheet, empty, field, ic, note, openSheet, toast, toggle } from "./ui.js";
 
-const PARAMS = { people: ["Alert above", "people", 1, 100000], max_hours: ["Alert after", "hours", 1, 168] };
+const PARAMS = { people: ["Alert above", "people", 1, 100000], max_hours: ["Alert after", "hours", 1, 168], drops: ["Alert after", "drops in an hour", 2, 20], percent: ["Warn at", "% used", 50, 100],
+  days: ["Remind me", "days before it is due", 0, 14], hour: ["Send at", "o'clock, 24-hour", 0, 23] };
 
 /** A title with the AI sparkle in front when the alert is a Smart Alert. */
 export const alertName = (t) => h("span", { class: "ttl" }, t.ai ? ic("spark", "spark") : null, t.title);

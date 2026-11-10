@@ -453,6 +453,27 @@ CREATE TABLE app.tenant_alert_grants (
   PRIMARY KEY (tenant_id, alert_type)
 );
 
+-- When a recorder went online or offline. Lets us see a connection that keeps dropping, and tell the customer when something is back.
+CREATE TABLE app.recorder_link_events (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  recorder_id uuid NOT NULL REFERENCES app.recorders(id) ON DELETE CASCADE,
+  status      text NOT NULL CHECK (status IN ('online','offline')),
+  at          timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX recorder_link_events_idx ON app.recorder_link_events (recorder_id, at DESC);
+
+-- The phones and computers a person has signed in from, so a sign-in from a new one can be reported. Only a short fingerprint of the browser's name is kept.
+CREATE TABLE app.user_devices (
+  tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES app.tenant_users(id) ON DELETE CASCADE,
+  fingerprint text NOT NULL,
+  label       text NOT NULL,
+  first_seen  timestamptz NOT NULL DEFAULT now(),
+  last_seen   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, fingerprint)
+);
+
 CREATE TABLE app.recipients (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id            uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
