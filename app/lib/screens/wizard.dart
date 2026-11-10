@@ -9,16 +9,7 @@ import '../widgets/brand.dart';
 import '../widgets/area_editor.dart';
 import 'common.dart';
 
-IconData iconFor(AlertDef d) => switch (d.type) {
-      'camera_offline' => Icons.videocam_off_outlined,
-      'recorder_offline' => Icons.wifi_off,
-      'connection_unstable' => Icons.sync_problem_outlined,
-      'people_in_area' => Icons.groups_outlined,
-      'queue_long' => Icons.format_list_numbered,
-      'phone_use' => Icons.smartphone,
-      'blocked_plate' => Icons.directions_car_outlined,
-      _ => d.smart ? Icons.insights_rounded : Icons.notifications_none,
-    };
+IconData iconFor(AlertDef d) => iconForType(d.type, smart: d.smart);
 
 /// Alert first, then camera: kind, alert, where, settings (with the drawable area), who hears about it, save.
 /// System alerts apply to the whole account, so they skip the camera step; area alerts are drawn on one camera.

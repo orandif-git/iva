@@ -29,9 +29,10 @@ enum AlertState { open, snoozed, done }
 
 class AlertItem {
   final String id, title, body, rule, where, when;
+  final DateTime? at;
   bool smart;
   AlertState state;
-  AlertItem({required this.id, required this.title, required this.body, required this.rule, required this.where, required this.when, this.smart = false, this.state = AlertState.open});
+  AlertItem({required this.id, required this.title, required this.body, required this.rule, required this.where, required this.when, this.at, this.smart = false, this.state = AlertState.open});
 
   factory AlertItem.fromJson(Map<String, dynamic> j) => AlertItem(
         id: j['id'],
@@ -40,6 +41,7 @@ class AlertItem {
         rule: j['rule_type'] ?? '',
         where: j['camera_name'] ?? '',
         when: friendlyWhen((j['created_at'] ?? '') as String),
+        at: DateTime.tryParse((j['created_at'] ?? '') as String)?.toLocal(),
         state: AlertState.values.firstWhere((s) => s.name == j['state'], orElse: () => AlertState.open),
       );
 }
@@ -144,4 +146,36 @@ class Me {
   const Me(this.name, this.business, this.role);
   String get first => name.split(RegExp(r'[ ,(]')).first;
   factory Me.fromJson(Map<String, dynamic> j) => Me(j['user']['name'] as String, j['tenant']['name'] as String, (j['user']['role'] ?? '') as String);
+}
+
+/// Alerts of the same kind on the same camera or area, shown as one row: "Too many people · Aisle 1 · 9 times today".
+class AlertGroup {
+  final List<AlertItem> items; // newest first
+  AlertGroup(this.items);
+  AlertItem get latest => items.first;
+  int get count => items.length;
+  bool get smart => latest.smart;
+  bool get open => items.any((a) => a.state == AlertState.open);
+  List<AlertItem> get openItems => items.where((a) => a.state == AlertState.open).toList();
+  String get key => '${latest.rule}|${latest.where}';
+}
+
+/// Groups alerts by kind and place, newest first. [now] is only for tests.
+List<AlertGroup> groupAlerts(List<AlertItem> alerts) {
+  final map = <String, List<AlertItem>>{};
+  for (final a in alerts) {
+    (map['${a.rule}|${a.where}'] ??= []).add(a);
+  }
+  final groups = [for (final l in map.values) AlertGroup(l..sort((a, b) => (b.at ?? DateTime(2000)).compareTo(a.at ?? DateTime(2000))))];
+  groups.sort((a, b) => (b.latest.at ?? DateTime(2000)).compareTo(a.latest.at ?? DateTime(2000)));
+  return groups;
+}
+
+bool isRecent(AlertItem a, {DateTime? now}) => a.at == null || (now ?? DateTime.now()).difference(a.at!).inHours < 24;
+
+/// "9 times, last at 4:29 pm" for a group of repeats.
+String repeatsLine(AlertGroup g) {
+  if (g.count == 1) return [g.latest.where, g.latest.when].where((x) => x.isNotEmpty).join(' · ');
+  final last = g.latest.at == null ? '' : ', last ${friendlyWhen(g.latest.at!.toIso8601String())}';
+  return [g.latest.where, '${g.count} times$last'].where((x) => x.isNotEmpty).join(' · ');
 }

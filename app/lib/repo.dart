@@ -35,6 +35,9 @@ abstract class Repository {
   /// The current picture, or null when the demo should draw its own.
   Future<Uint8List?> frame(LiveSession s);
   Future<void> signOut();
+
+  /// The server signs the person out everywhere after a change, so the app must sign in again.
+  Future<void> changePassword(String current, String next);
 }
 
 String _pretty(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' ');
@@ -186,6 +189,9 @@ class ApiRepository implements Repository {
 
   @override
   Future<void> signOut() => api.signOut();
+
+  @override
+  Future<void> changePassword(String current, String next) => api.call('POST', '/v1/auth/change-password', body: {'current_password': current, 'new_password': next});
 }
 
 /// Demo data, like the clickable prototype. [problems] switches on a camera that is offline and a recorder that keeps dropping.
@@ -281,4 +287,6 @@ class MockRepository implements Repository {
   Future<Uint8List?> frame(LiveSession s) async => null;
   @override
   Future<void> signOut() async {}
+  @override
+  Future<void> changePassword(String current, String next) async {}
 }

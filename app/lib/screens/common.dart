@@ -66,8 +66,8 @@ class Section extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     return Container(
-        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: t.line), boxShadow: t.lift),
-        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.line)),
+        padding: EdgeInsets.all(cardPad(context)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             if (icon != null) ...[Icon(icon, size: 20, color: t.brand), const SizedBox(width: 8)],
@@ -105,7 +105,69 @@ class EmptyState extends StatelessWidget {
 
 String ago(int? s) {
   if (s == null) return 'no data yet';
+  if (s < 5) return 'just now';
   if (s < 60) return '$s seconds ago';
   if (s < 3600) return '${s ~/ 60} min ago';
   return '${s ~/ 3600} h ago';
+}
+
+/// The icon of an alert by its kind. Smart Alerts get their own picture (people, queue, phone), not a sparkle: the sparkle is the badge's corner.
+IconData iconForType(String type, {bool smart = false}) => switch (type) {
+      'camera_offline' => Icons.videocam_off_outlined,
+      'recorder_offline' => Icons.wifi_off_rounded,
+      'connection_unstable' => Icons.sync_problem_outlined,
+      'people_in_area' => Icons.groups_outlined,
+      'queue_long' => Icons.format_list_numbered_rounded,
+      'phone_use' => Icons.smartphone_rounded,
+      'blocked_plate' => Icons.directions_car_outlined,
+      'daily_summary' => Icons.summarize_outlined,
+      'back_to_normal' => Icons.check_circle_outline_rounded,
+      _ => smart ? Icons.remove_red_eye_outlined : Icons.notifications_none_rounded,
+    };
+
+/// Spacing that tightens on a phone.
+double cardPad(BuildContext c) => MediaQuery.sizeOf(c).width < 600 ? 16 : 20;
+
+/// Room at the bottom of a scrolling page so the floating tab bar never covers the last row.
+const navClear = 104.0;
+
+/// One rounded surface with hairline separators between its rows (like a settings list). Fewer boxes, calmer pages.
+class Group extends StatelessWidget {
+  const Group({super.key, required this.children, this.padding = EdgeInsets.zero, this.bare = false});
+  final List<Widget> children;
+  final EdgeInsets padding;
+  final bool bare; // inside a card already: no second border
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) rows.add(Divider(height: 1, thickness: 1, indent: bare ? 0 : 16, endIndent: 0, color: t.line));
+      rows.add(children[i]);
+    }
+    return Container(
+      decoration: bare ? null : BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.line)),
+      clipBehavior: bare ? Clip.none : Clip.antiAlias,
+      padding: padding,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
+    );
+  }
+}
+
+/// A small uppercase label above a group.
+class GroupLabel extends StatelessWidget {
+  const GroupLabel(this.text, {super.key, this.trailing});
+  final String text;
+  final Widget? trailing;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 22, 6, 8),
+      child: Row(children: [
+        Expanded(child: Semantics(header: true, child: Text(text.toUpperCase(), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: .6, color: t.fg2)))),
+        if (trailing != null) trailing!,
+      ]),
+    );
+  }
 }

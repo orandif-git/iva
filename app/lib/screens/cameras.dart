@@ -24,7 +24,7 @@ class CamerasPage extends StatelessWidget {
         final cams = snap.data!;
         final working = cams.where((c) => c.working).length;
         if (cams.isEmpty) return const EmptyState(icon: Icons.videocam_off_outlined, title: 'No cameras yet', text: 'Connect a recorder in the current app, and your cameras will appear here.');
-        return ListView(padding: EdgeInsets.fromLTRB(wide ? 32 : 16, 8, wide ? 32 : 16, 32), children: [
+        return ListView(padding: EdgeInsets.fromLTRB(wide ? 32 : 16, 8, wide ? 32 : 16, navClear), children: [
           Row(children: [
             Pill(working == cams.length ? 'All ${cams.length} working' : '$working of ${cams.length} working', working == cams.length ? Level.ok : Level.warn, dot: true),
             const SizedBox(width: 10),
