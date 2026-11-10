@@ -2,6 +2,7 @@
 import { ago, clear, errText, fmtDateTime, fmtNum, h, istDay, mount, qs } from "../lib.js";
 import { barChart, chips, confirmSheet, empty, field, ic, kpi, legend, loadPicture, note, onSheetClose, openSheet, closeSheet, pictureFrame, pill, sec, seg, toast, toggle } from "./ui.js";
 import { recorderScreens } from "./recorders.js";
+import { ruleGroups } from "./alertrules.js";
 
 const TZ = "Asia/Kolkata";
 export const STATE = { streaming: ["Live", "ok"], reconnecting: ["Reconnecting", "warn"], offline: ["Offline", "crit"], unknown: ["Waiting", ""] };
@@ -219,23 +220,28 @@ export function alertSheet(X, a) {
 async function alerts(X) {
   const { api } = X;
   const [list, types] = await Promise.all([api.get("/v1/alerts?limit=50"), api.get("/v1/alert-types")]);
-  const out = [title("Alerts", list.filter((a) => !a.acknowledged_at).length ? `${list.filter((a) => !a.acknowledged_at).length} to look at` : "Nothing needs your attention")];
-  out.push(list.length ? h("div", { class: "card" }, list.map((a) => swipeRow(X, a))) : empty("bell", "No alerts yet", "When something needs your attention, such as a blocked vehicle or an offline camera, it shows up here."));
-  out.push(h("div", { class: "gh" }, "Alert types"), h("div", { class: "group" }, types.map((t) => h("div", { class: "gi static" },
-    h("span", { class: "ico " + (t.severity === "critical" ? "crit" : t.severity === "warning" ? "warn" : "") }, ic("bell")), h("div", {}, h("b", {}, t.title), h("small", {}, t.description)),
-    toggle(t.enabled, async (i) => {
-      if (!X.isAdmin) { i.checked = t.enabled; return toast("Only an administrator can change alerts.", true); }
-      try { const r = await api.put("/v1/alert-types/" + t.type, { enabled: i.checked, params: t.params, channels: t.channels, recipient_ids: t.recipient_ids, quiet_start: t.quiet_start, quiet_end: t.quiet_end }); t.enabled = i.checked; toast(r.warnings?.[0] || (i.checked ? "Alert turned on." : "Alert turned off.")); }
-      catch (e) { i.checked = t.enabled; toast(errText(e), true); }
-    }, t.title)))));
-  out.push(h("p", { class: "sub" }, "Who gets messages for each alert is set up by Jas iVision support for now."));
+  const ai = new Map(types.map((t) => [t.type, t.ai]));
+  const hasSmart = types.some((t) => t.ai);                 // Smart Alerts exist for this customer only when their plan includes some
+  const st = X.mem.alertTab ||= "system";
+  const tab = hasSmart ? st : "system";
+  const mine = (a) => !!ai.get(a.rule_type) === (tab === "smart");
+  const open = list.filter((a) => !a.acknowledged_at && mine(a)).length;
+  const out = [title("Alerts", open ? `${open} to look at` : "Nothing needs your attention")];
+  if (hasSmart) out.push(h("div", { class: "seg2 alert-tabs", role: "group", "aria-label": "Alert type" }, [["system", "System Alerts", false], ["smart", "Smart Alerts", true]].map(([k, l, spark]) =>
+    h("button", { type: "button", "aria-pressed": String(tab === k), onclick: () => { X.mem.alertTab = k; X.refresh(); } }, spark ? ic("spark", "spark") : null, l))));
+  out.push(h("p", { class: "sub" }, tab === "smart" ? "Smart Alerts use AI on your camera pictures, or rules about your business."
+    : "System Alerts tell you when something stops working, so you hear about it before it costs you footage."));
+  const shown = list.filter(mine);
+  out.push(shown.length ? h("div", { class: "card" }, shown.map((a) => swipeRow(X, a, ai.get(a.rule_type)))) : empty("bell", "No alerts yet", "When something needs your attention it shows up here."));
+  out.push(h("div", { class: "gh" }, tab === "smart" ? "Smart Alert rules" : "System Alert rules"), ruleGroups(X, types.filter((t) => t.ai === (tab === "smart")), () => X.refresh()));
+  out.push(h("p", { class: "sub" }, "Alerts are sent by WhatsApp to the people you choose on each rule."));
   return out;
 }
 
 /** An alert row you can swipe left to mark as seen, or tap to open. */
-function swipeRow(X, a) {
+function swipeRow(X, a, smart = false) {
   const kind = a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
-  const row = h("div", { class: "row" + (a.acknowledged_at ? " seen" : "") }, h("span", { class: "ico " + kind }, ic("bell")), h("div", {}, h("b", {}, a.title), h("small", {}, a.body || a.camera_name || "")), h("time", {}, ago(a.created_at)));
+  const row = h("div", { class: "row" + (a.acknowledged_at ? " seen" : "") }, h("span", { class: "ico " + kind }, ic(smart ? "spark" : "bell")), h("div", {}, h("b", {}, a.title), h("small", {}, a.body || a.camera_name || "")), h("time", {}, ago(a.created_at)));
   const wrap = h("div", { class: "swipe" }, h("div", { class: "act", "aria-hidden": "true" }, "Seen"), row);
   let x0 = null, dx = 0, moved = false;
   row.addEventListener("pointerdown", (e) => { x0 = e.clientX; dx = 0; moved = false; });

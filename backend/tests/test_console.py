@@ -218,6 +218,8 @@ async def test_the_audit_log_can_be_searched_and_limited_by_date(client, make):
 async def test_email_servers_and_webhooks_can_be_deleted_by_the_console_role(client, make):
     """The console database role must be allowed to delete these (it was only allowed to add and change)."""
     owner = await make.staff("owner")
+    for e in (await client.get("/admin/v1/webhooks", headers=hdr(owner))).json()["items"]:        # other tests may have left one for this alert
+        await client.delete(f"/admin/v1/webhooks/{e['id']}", headers=hdr(owner))
     r = await client.post("/admin/v1/webhooks", json={"name": "Gone soon", "alert_type": "crowding", "url": "https://hooks.example.com/gone"}, headers=hdr(owner))
     assert r.status_code == 201, r.text
     assert (await client.delete(f"/admin/v1/webhooks/{r.json()['id']}", params={"reason": "Not needed any more"}, headers=hdr(owner))).status_code == 204

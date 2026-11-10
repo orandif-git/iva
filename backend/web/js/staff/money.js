@@ -2,6 +2,7 @@
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
 import { chips, empty, field, formSheet, ic, kpi, note, openSheet, closeSheet, pill, reasonSheet, toast, toggle } from "../app/ui.js";
 import { dataTable } from "../app/table.js";
+import { alertPicker, catalog } from "./alerts.js";
 import { back, gh, group, INV_STATUS, kv, money, row, statusPill, title, fmtDateTime } from "./common.js";
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
@@ -71,8 +72,10 @@ async function billing(X) {
 }
 
 // ------------------------------------------------------------------------------------------------------ Plans
-function planSheet(X, plan) {
+async function planSheet(X, plan) {
   const isNew = !plan;
+  const cat = await catalog(X);
+  const picker = alertPicker(cat, plan ? plan.alerts : cat.filter((a) => a.built && a.family === "system").map((a) => a.type));
   const p = plan || { name: "", price_per_camera_paise: 99900, stream_mode: "snapshots", anpr: false, review_queue: false, active: true, price_change_policy: "next", customers: 0, customers_on_old_price: 0 };
   const name = h("input", { type: "text", value: p.name, maxlength: 60, placeholder: "For example Business" });
   const price = h("input", { type: "number", min: 0, step: "1", value: Math.round(p.price_per_camera_paise / 100), inputmode: "numeric" });
@@ -85,7 +88,7 @@ function planSheet(X, plan) {
   const del = isNew ? null : h("button", { class: "btn danger", type: "button", disabled: true }, p.customers ? "Retire only" : "Delete");
   const ok = () => why.value.trim().length >= 5;
   why.oninput = () => { save.disabled = !ok(); if (del) del.disabled = !ok() || p.customers > 0; };
-  const body = () => ({ name: name.value.trim(), price_per_camera_paise: Math.round(Number(price.value) * 100), stream_mode: mode.value, anpr: anpr.querySelector("input").checked, review_queue: review.querySelector("input").checked, price_change_policy: policy.value, reason: why.value.trim() });
+  const body = () => ({ alerts: picker.get(), name: name.value.trim(), price_per_camera_paise: Math.round(Number(price.value) * 100), stream_mode: mode.value, anpr: anpr.querySelector("input").checked, review_queue: review.querySelector("input").checked, price_change_policy: policy.value, reason: why.value.trim() });
   save.onclick = async () => {
     save.disabled = true; clear(err);
     try {
@@ -99,6 +102,7 @@ function planSheet(X, plan) {
     h("div", { class: "card" }, field("Plan name", name, "Customers see this name."), field("Price per camera per month (₹)", price, "Shown on invoices."), field("Picture speed", mode),
       field("When you change the price", policy, isNew ? "You can change this for each plan. It applies the next time you save a new price." : `A setting for this plan. It applies the next time you save a new price.${p.customers_on_old_price ? ` ${p.customers_on_old_price} customer${p.customers_on_old_price > 1 ? "s are" : " is"} on an older price now.` : ""}`)),
     gh("Included"), h("div", { class: "group" }, sw(anpr, "Number plate reading", "Reads plates at gates and keeps a vehicle log"), sw(review, "Plate review queue", "Shows uncertain plates for a person to check")),
+    gh("Alerts this plan includes"), h("p", { class: "sub" }, "Customers on this plan get exactly these alerts. You can still add single alerts to one customer later."), h("div", { class: "card" }, picker.node),
     isNew ? null : h("div", { class: "group" }, sw(offer, "Offer to new customers", `${p.customers} ${p.customers === 1 ? "customer is" : "customers are"} on this plan${p.customers ? ". Turning this off does not affect them." : "."}`)),
     h("div", { class: "card" }, field("Reason (saved in the audit log)", why), err, h("div", { class: "two" }, del || h("button", { class: "btn gray", type: "button", onclick: () => closeSheet() }, "Cancel"), save),
       p.customers ? h("p", { class: "sub" }, "This plan has customers, so it cannot be deleted. Turn off “Offer to new customers” to retire it.") : null)));

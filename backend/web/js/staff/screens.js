@@ -4,10 +4,10 @@ import { chips, empty, field, formSheet, ic, kpi, note, onSheetClose, openSheet,
 import { ago, back, CUS_STATUS, fmtDateTime, gh, group, hero, initials, kv, money, REC_STATUS, row, statusPill, title, cap, INV_STATUS } from "./common.js";
 import { dataTable } from "../app/table.js";
 import { moneyScreens, invoiceSheet } from "./money.js";
-import { messagingScreens } from "./messaging.js";
+import { alertScreens, customerAlerts } from "./alerts.js";
 import { adminScreens } from "./admin.js";
 
-export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", messaging: "Messaging", maintenance: "Maintenance", storage: "Storage", audit: "Audit log", staff: "Staff and roles", more: "More" };
+export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", alerts: "Alerts", webhooks: "Webhooks", maintenance: "Maintenance", storage: "Storage", audit: "Audit log", staff: "Staff and roles", more: "More" };
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
 
@@ -20,7 +20,7 @@ function route(X, item) {
   if (t.type === "recorder") X.go("#/fleet/" + t.id);
   else if (t.type === "customer") X.go("#/customers/" + t.id);
   else if (t.type === "invoice") X.go("#/billing");
-  else if (t.type === "messaging") X.go("#/messaging");
+  else if (t.type === "messaging") X.go("#/webhooks");
 }
 
 function attentionRow(X, a, redraw) {
@@ -68,6 +68,7 @@ export const humanAction = (a) => ({ "tenant.create": "Created a customer", "ten
   "impersonate.start": "Opened a customer's app", "impersonate.end": "Closed a customer's app", "user.invite": "Invited a person", "user.reset_link": "Made a sign-in link", "user.disable": "Disabled a person", "user.enable": "Enabled a person",
   "user.update": "Edited a person", "user.delete": "Deleted a person", "plan.create": "Created a plan", "plan.update": "Changed a plan", "plan.delete": "Deleted a plan", "staff.create": "Added a staff member", "staff.update": "Changed a staff member",
   "staff.disable": "Disabled a staff member", "staff.enable": "Enabled a staff member", "staff.reset_link": "Made a staff sign-in link", "maintenance.retention.run": "Ran data retention",
+  "alert.switch": "Switched an alert on or off", "tenant.alert_add": "Added an alert to a customer", "tenant.alert_remove": "Took an alert away from a customer", "webhook.create": "Added a webhook", "webhook.create_standard": "Added the standard webhooks", "webhook.update": "Changed a webhook", "webhook.toggle": "Turned a webhook on or off", "webhook.delete": "Deleted a webhook", "webhook.test": "Sent a test event", "webhook.resend": "Sent a failed event again", "webhook.secret": "Made a new signing secret", "webhook.settings": "Changed webhook settings",
   "messaging.provider.update": "Changed a messaging provider", "messaging.provider.create": "Added a messaging provider", "messaging.provider.test": "Tested a messaging provider", "messaging.tenant.update": "Changed a customer's messaging" }[a]
   || cap(String(a).replace(/[._]/g, " ")));
 
@@ -119,7 +120,7 @@ export async function customerDetail(X, id, ds, redraw) {
   const [c, hl, plans] = await Promise.all([api.get(`/admin/v1/tenants/${id}`), api.get(`/admin/v1/tenants/${id}/health`), api.get("/admin/v1/plans?include_retired=true")]);
   const plan = plans.items.find((p) => p.id === c.plan_id);
   const after = async () => { redraw(); X.refresh(); };
-  const tabs = [["ov", "Overview"], ["pp", "People"], ["dv", "Devices"], ["ms", "Messaging"], ["sp", "Speed"], ...(X.isOwner ? [["bl", "Billing"]] : [])];
+  const tabs = [["ov", "Overview"], ["pp", "People"], ["dv", "Devices"], ["al", "Alerts"], ["ms", "Messaging"], ["sp", "Speed"], ...(X.isOwner ? [["bl", "Billing"]] : [])];
   const tabBar = seg(tabs, ds.tab, (v) => { ds.tab = v; redraw(); });
   let body;
   if (ds.tab === "ov") {
@@ -132,7 +133,8 @@ export async function customerDetail(X, id, ds, redraw) {
     const recs = await api.get(`/admin/v1/recorders?tenant_id=${id}`);
     body = h("div", {}, group(...(recs.length ? recs.map((r) => row({ icon: "server", title: r.name || r.device_id, sub: `${r.device_id} · ${r.channel_count} cameras`, onclick: () => { X.go("#/fleet/" + r.id); closeSheet(); }, right: h("span", { class: "rowend" }, statusPill(REC_STATUS, r.status), ic("chev", "chev")) })) : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No recorders yet."))])),
       h("p", { class: "sub", style: null }, "Customers connect and manage their own recorders. You can look at the details here."));
-  } else if (ds.tab === "ms") body = await messagingTab(X, c, after);
+  } else if (ds.tab === "al") body = await customerAlerts(X, c, after);
+  else if (ds.tab === "ms") body = await messagingTab(X, c, after);
   else if (ds.tab === "sp") body = await speedTab(X, c, after);
   else if (ds.tab === "bl") {
     const inv = await api.get(`/admin/v1/billing/invoices?tenant_id=${id}`);
@@ -236,10 +238,10 @@ async function messagingTab(X, c, after) {
   };
   const sw = (key, label, sub) => { const t = toggle(cur[key], () => {}, label); const input = t.querySelector("input"); input.disabled = !X.isOwner; input.onchange = () => { const want = input.checked; reasonSheet({ title: `${want ? "Turn on" : "Turn off"} ${label.toLowerCase()}?`, text: `This changes what ${c.name} can send.`, label: "Save", run: async (reason) => { await X.api.put(`/admin/v1/messaging/tenants/${c.id}`, { ...cur, [key]: want, reason }); cur[key] = want; closeSheet(); toast("Saved"); after(); } }); input.checked = cur[key]; }; return h("div", { class: "gi static" }, h("div", {}, h("b", {}, label), h("small", {}, sub)), t); };
   void save;
-  return h("div", {}, group(sw("whatsapp", "WhatsApp alerts", "Messages through the platform WhatsApp number"), sw("email", "Email alerts", "Alerts and daily reports by email"), sw("clips", "Video clips on alerts", "A short clip with blocked-vehicle alerts"),
+  return h("div", {}, group(sw("whatsapp", "WhatsApp alerts", "Alerts are sent as webhook events, by WhatsApp only"), sw("email", "Email for reports", "Scheduled reports by email"), sw("clips", "Video clips on alerts", "A short clip with blocked-vehicle alerts"),
     kv("Monthly WhatsApp cap", m.monthly_cap == null ? "No cap" : String(m.monthly_cap), `${m.whatsapp_this_month} sent this month`)),
     X.isOwner ? h("div", { class: "acts2" }, h("button", { class: "btn gray block", type: "button", onclick: () => capSheet(X, c, cur, after) }, "Change monthly cap")) : h("p", { class: "sub" }, "Only an owner can change these."),
-    group(row({ icon: "chat", title: "Delivery log for this customer", sub: "What was sent and what failed", onclick: () => { X.mem.logTenant = c.id; closeSheet(); X.go("#/messaging"); } })),
+    group(row({ icon: "chat", title: "Delivery log", sub: "What was sent and what failed, for every customer", onclick: () => { closeSheet(); X.go("#/webhooks"); } })),
     h("p", { class: "sub" }, "Who receives each alert is managed by the customer in their own app."));
 }
 
@@ -369,12 +371,12 @@ export async function recorderDetail(X, id) {
 // ------------------------------------------------------------------------------------------------------- More
 async function more(X) {
   const me = X.state.me;
-  const items = [["plans", "Plans", "tag", "Prices and what each plan includes", X.isOwner], ["storage", "Storage", "cloud", "Where evidence pictures and clips are kept", X.isOwner], ["messaging", "Messaging", "chat", "Email and WhatsApp", true], ["maintenance", "Maintenance", "wrench", "Data retention and job runs", X.isOwner], ["audit", "Audit log", "log", "Every staff action", true], ["staff", "Staff and roles", "shield", "Who can do what", X.isOwner]].filter((i) => i[4]);
+  const items = [["plans", "Plans", "tag", "Prices and what each plan includes", X.isOwner], ["storage", "Storage", "cloud", "Where evidence pictures and clips are kept", X.isOwner], ["alerts", "Alerts", "bell", "Which alerts exist and who has them", true], ["webhooks", "Webhooks", "link", "Where alerts are sent", X.isOwner], ["maintenance", "Maintenance", "wrench", "Data retention and job runs", X.isOwner], ["audit", "Audit log", "log", "Every staff action", true], ["staff", "Staff and roles", "shield", "Who can do what", X.isOwner]].filter((i) => i[4]);
   const cur = X.theme.get();
   return [title("More", `${me.name} · ${me.role}`), group(...items.map((i) => row({ icon: i[2], title: i[1], sub: i[3], href: "#/" + i[0] }))),
     gh("Appearance"), h("div", { class: "card" }, seg([["light", "Light"], ["auto", "Auto"], ["dark", "Dark"]], cur, (v) => X.theme.set(v))),
     gh("Account"), group(row({ icon: "x", title: "Sign out", sub: "Staff sessions also end when the window closes", danger: true, onclick: () => X.signOut() }))];
 }
 
-export const SCREENS = { today, customers, fleet, more, ...moneyScreens, ...messagingScreens, ...adminScreens };
+export const SCREENS = { today, customers, fleet, more, ...moneyScreens, ...alertScreens, ...adminScreens };
 export { noaccess, back, chips, skeleton, sec };

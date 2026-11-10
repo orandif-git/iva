@@ -89,7 +89,7 @@ async def _settings(ctx: AdminCtx) -> dict:
 async def list_endpoints(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     stats = await _stats(ctx)
     rows = await ctx.conn.fetch("SELECT * FROM platform.webhook_endpoints ORDER BY created_at")
-    return {"items": [_public(r, stats) for r in rows], "settings": await _settings(ctx)}
+    return {"items": [_public(r, stats) for r in rows], "settings": await _settings(ctx), "sample": webhook.SAMPLE}
 
 
 @router.post("", status_code=201)
