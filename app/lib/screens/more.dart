@@ -263,6 +263,8 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late Future<(Me, List<Person>, List<RecorderItem>)> data = _load();
+  bool changing = false;
+  String? passwordNote;
 
   Future<(Me, List<Person>, List<RecorderItem>)> _load() async {
     final r = await Future.wait([widget.repo.me(), widget.repo.people(), widget.repo.recorders()]);
@@ -361,7 +363,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   ]),
                   const GroupLabel('Account'),
                   Group(children: [
-                    InkWell(onTap: () async { if (await showChangePassword(context, widget.repo)) { if (context.mounted) Navigator.of(context).pop(); widget.onSignOut('Your password was changed. Please sign in again.'); } }, child: _Line(Icons.lock_outline_rounded, 'Change password', chevron: true)),
+                    InkWell(onTap: () => setState(() { changing = !changing; passwordNote = null; }), child: _Line(Icons.lock_outline_rounded, 'Change password', chevron: !changing, open: changing)),
+                    AnimatedSize(duration: const Duration(milliseconds: 220), curve: Curves.easeOut, alignment: Alignment.topCenter, child: changing ? Padding(padding: const EdgeInsets.only(top: 8), child: ChangePasswordPanel(repo: widget.repo, onCancel: () => setState(() => changing = false), onDone: (others) => setState(() { changing = false; passwordNote = others ? 'Password changed. Other devices were signed out.' : 'Password changed.'; }))) : (passwordNote == null ? const SizedBox(width: double.infinity) : Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), child: Row(children: [Icon(Icons.check_circle_rounded, color: t.okInk, size: 18), const SizedBox(width: 8), Expanded(child: Text(passwordNote!, style: TextStyle(color: t.okInk, fontWeight: FontWeight.w600, fontSize: 13.5)))])))),
                     InkWell(onTap: () { Navigator.of(context).pop(); widget.onSignOut(null); }, child: _Line(Icons.logout_rounded, 'Sign out', color: t.crit)),
                   ]),
                   const GroupLabel('More'),
@@ -381,15 +384,15 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 class _Line extends StatelessWidget {
-  const _Line(this.icon, this.label, {this.color, this.chevron = false});
+  const _Line(this.icon, this.label, {this.color, this.chevron = false, this.open = false});
   final IconData icon;
   final String label;
   final Color? color;
-  final bool chevron;
+  final bool chevron, open;
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (chevron) Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))]));
+    return Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (chevron || open) Icon(open ? Icons.expand_less_rounded : Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))]));
   }
 }
 

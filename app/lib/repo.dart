@@ -43,8 +43,8 @@ abstract class Repository {
   Future<Uint8List?> frame(LiveSession s);
   Future<void> signOut();
 
-  /// The server signs the person out everywhere after a change, so the app must sign in again.
-  Future<void> changePassword(String current, String next);
+  /// This device stays signed in. With [signOutOthers] every other device and browser is signed out and signs in again with the new password.
+  Future<void> changePassword(String current, String next, {bool signOutOthers = true});
 }
 
 const _areaKinds = {'people_in_area': 'area_count', 'queue_long': 'queue_area', 'phone_use': 'staff_area'};
@@ -230,7 +230,8 @@ class ApiRepository implements Repository {
   Future<void> signOut() => api.signOut();
 
   @override
-  Future<void> changePassword(String current, String next) => api.call('POST', '/v1/auth/change-password', body: {'current_password': current, 'new_password': next});
+  Future<void> changePassword(String current, String next, {bool signOutOthers = true}) =>
+      api.call('POST', '/v1/auth/change-password', body: {'current_password': current, 'new_password': next, 'sign_out_others': signOutOthers, if (api.refreshToken != null) 'refresh_token': api.refreshToken});
 }
 
 /// Demo data, like the clickable prototype. [problems] switches on a camera that is offline and a recorder that keeps dropping.
@@ -355,6 +356,7 @@ class MockRepository implements Repository {
   Future<Uint8List?> frame(LiveSession s) async => null;
   @override
   Future<void> signOut() async {}
+  bool? lastSignOutOthers;
   @override
-  Future<void> changePassword(String current, String next) async {}
+  Future<void> changePassword(String current, String next, {bool signOutOthers = true}) async => lastSignOutOthers = signOutOthers;
 }

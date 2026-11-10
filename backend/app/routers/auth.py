@@ -76,7 +76,12 @@ async def change_password(body: ChangePasswordIn, ctx: CustomerCtx = Depends(cus
         else:
             passwords.check_policy(body.new_password, str(u["email"]))
             await conn.execute("UPDATE app.tenant_users SET password_hash=$2 WHERE id=$1", u["id"], await passwords.hash_async(body.new_password))
-            await auth.revoke_all(conn, "customer", u["id"])            # other devices sign in again
+            keep = None
+            if body.refresh_token:                                       # this device's own session: it stays signed in
+                keep = await conn.fetchval("SELECT family FROM platform.auth_tokens WHERE token_hash=$1 AND kind='refresh' AND account_type='customer' AND account_id=$2 AND revoked_at IS NULL",
+                                           auth.token_hash(body.refresh_token), u["id"])
+            if body.sign_out_others:
+                await auth.revoke_all(conn, "customer", u["id"], except_family=keep)            # without a session to keep (an older app), every device signs in again
             result = None
     if result:
         raise result
