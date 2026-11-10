@@ -84,7 +84,17 @@ CREATE TABLE platform.plans (
   features                jsonb NOT NULL DEFAULT '{}',   -- e.g. {"anpr": true, "review_queue": true}
   active                  boolean NOT NULL DEFAULT true,
   -- When the price changes: 'next' moves existing customers to the new price at their next invoice, 'keep' leaves them on the price they had.
-  price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep'))
+  price_change_policy     text NOT NULL DEFAULT 'next' CHECK (price_change_policy IN ('next','keep')),
+  -- The alerts this plan includes (keys of the alert catalogue). NULL means every alert that exists, which is how plans behaved before alerts were chosen per plan.
+  alert_types             text[]
+);
+
+-- The platform owner's on/off switch for each alert. No row means on. An alert that is off is hidden from every customer and raises nothing.
+CREATE TABLE platform.alert_switches (
+  alert_type text PRIMARY KEY,
+  enabled    boolean NOT NULL,
+  changed_by uuid,
+  changed_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- Where evidence pictures, clips and reports are kept. One row, set in the owner console. With no row the GI_EVIDENCE_* settings apply.
@@ -100,13 +110,14 @@ CREATE TABLE platform.storage_settings (
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
--- How WhatsApp and email are sent. Owned by the platform, not by tenants. Secrets (API keys, SMTP password) are encrypted.
+-- How email is sent (scheduled reports). Owned by the platform, not by tenants. The SMTP password is encrypted.
+-- Alerts do not use this: they leave as webhook events (platform.webhook_endpoints).
 CREATE TABLE platform.messaging_providers (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  channel            app.channel_kind NOT NULL CHECK (channel IN ('whatsapp','email')),
+  channel            app.channel_kind NOT NULL CHECK (channel = 'email'),
   name               text NOT NULL,
-  kind               text NOT NULL CHECK (kind IN ('http','smtp')),
-  config             jsonb NOT NULL,                     -- everything except secrets: the request to send, how to read the answer, ...
+  kind               text NOT NULL CHECK (kind = 'smtp'),
+  config             jsonb NOT NULL,                     -- everything except the secrets: host, port, sender
   secrets_ciphertext bytea,                              -- encrypted JSON of the secret values
   rate_per_second    numeric(6,2) NOT NULL DEFAULT 5 CHECK (rate_per_second > 0),
   active             boolean NOT NULL DEFAULT false,
@@ -115,22 +126,26 @@ CREATE TABLE platform.messaging_providers (
 );
 CREATE UNIQUE INDEX one_active_provider_per_channel ON platform.messaging_providers (channel) WHERE active;
 
--- The message templates (WhatsApp requires each to be approved before use). variables lists, in order, what fills {{1}}, {{2}}, ...
-CREATE TABLE platform.message_templates (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  channel           app.channel_kind NOT NULL CHECK (channel IN ('whatsapp','email')),
-  key               text NOT NULL,                       -- ours, for example alert_image
-  provider_template text NOT NULL,                       -- the name registered with the provider
-  language          text NOT NULL DEFAULT 'en',
-  category          text NOT NULL DEFAULT 'utility',
-  description       text,
-  body_text         text NOT NULL,
-  media_type        text NOT NULL DEFAULT 'none' CHECK (media_type IN ('none','image','video')),
-  link_button       boolean NOT NULL DEFAULT false,
-  variables         jsonb NOT NULL DEFAULT '[]',
-  status            text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','rejected','paused')),
-  created_at        timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (channel, key, language)
+-- Alert webhooks. Each alert has at most one endpoint: when the alert happens we send the endpoint's payload (the template with its shortcodes filled in)
+-- to the address, once for each person to be told. The platform owner sets these up; customers never see them.
+-- Header values can hold a token, so they are encrypted like every other secret here.
+CREATE TABLE platform.webhook_endpoints (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name               text NOT NULL,
+  alert_type         text NOT NULL UNIQUE,               -- a key of the alert catalogue
+  url                text NOT NULL,
+  headers_ciphertext bytea,                              -- encrypted JSON object of header name -> value
+  payload_template   text NOT NULL,                      -- JSON text with {shortcodes}
+  active             boolean NOT NULL DEFAULT true,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row. The signing secret lets the receiver check an event came from us. link_hours is how long picture and clip links in a payload work (at most 4).
+CREATE TABLE platform.webhook_settings (
+  id                        boolean PRIMARY KEY DEFAULT true CHECK (id),
+  signing_secret_ciphertext bytea,
+  link_hours                integer NOT NULL DEFAULT 4 CHECK (link_hours BETWEEN 1 AND 4)
 );
 
 -- The company issuing invoices, tax and payment terms, and the unit costs used to estimate margin. One row.
@@ -429,6 +444,15 @@ CREATE TABLE app.vehicle_lists (
 );
 
 -- People who receive alerts. They need not have a login: a security guard or a plant manager is enough.
+-- Alerts added to one customer on top of their plan, one at a time. Removing a row takes the alert away again; the customer's own settings for it are kept.
+CREATE TABLE app.tenant_alert_grants (
+  tenant_id  uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  alert_type text NOT NULL,
+  granted_by uuid,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, alert_type)
+);
+
 CREATE TABLE app.recipients (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id            uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
@@ -475,7 +499,7 @@ ALTER TABLE app.plate_events ADD COLUMN evidence_id uuid REFERENCES app.evidence
 CREATE TABLE app.alert_rules (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  rule_type   text NOT NULL CHECK (rule_type IN ('blocked_plate','vehicle_overstay','crowding','camera_offline','recorder_offline','low_confidence_plate')),
+  rule_type   text NOT NULL,                           -- a key of the alert catalogue (app/services/alert_catalog.py)
   enabled     boolean NOT NULL DEFAULT false,
   params      jsonb NOT NULL DEFAULT '{}',             -- thresholds, for example {"max_hours": 4} or {"people": 40, "minutes": 5}
   channels    app.channel_kind[] NOT NULL DEFAULT '{whatsapp}',
@@ -518,11 +542,14 @@ CREATE TABLE app.notifications (
   recipient_id         uuid REFERENCES app.recipients(id) ON DELETE SET NULL,
   channel              app.channel_kind NOT NULL,
   recipient            text NOT NULL,                   -- the phone number or email address used
-  template             text,                            -- our template key, for example alert_image
+  template             text,                            -- unused since alerts leave as webhook events
   payload              jsonb NOT NULL DEFAULT '{}',     -- the variables for the message
   status               app.delivery_status NOT NULL DEFAULT 'queued',
   provider_id          uuid,
   provider_message_id  text,
+  event                text,                            -- the webhook event sent, for example system.camera_offline
+  endpoint_id          uuid,                            -- the webhook endpoint it went to
+  response_status      integer,                         -- what the endpoint answered on the last try
   attempts             integer NOT NULL DEFAULT 0,
   next_attempt_at      timestamptz NOT NULL DEFAULT now(),
   locked_until         timestamptz,                     -- a worker that crashes mid-send simply lets this lapse
@@ -714,10 +741,10 @@ GRANT EXECUTE ON FUNCTION app.drop_old_plate_partitions(date) TO service_worker;
 GRANT USAGE ON SCHEMA app TO app_user, platform_admin, service_worker;
 GRANT USAGE ON SCHEMA platform TO platform_admin, service_worker, app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, platform_admin, service_worker;
-GRANT SELECT ON platform.plans TO app_user, service_worker;
-GRANT SELECT ON platform.messaging_providers, platform.message_templates, platform.storage_settings TO service_worker;
+GRANT SELECT ON platform.plans, platform.alert_switches TO app_user, service_worker;
+GRANT SELECT ON platform.messaging_providers, platform.storage_settings, platform.webhook_endpoints, platform.webhook_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
-GRANT DELETE ON platform.plans, platform.messaging_providers, platform.message_templates TO platform_admin;
+GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints TO platform_admin;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;
 GRANT SELECT ON platform.audit_log TO platform_admin;
 GRANT INSERT ON platform.audit_log TO platform_admin, service_worker;

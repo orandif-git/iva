@@ -1,6 +1,6 @@
-"""Routes that are reached without a login:  /e/<token>  (evidence a person was messaged) and  /hooks/messaging/<provider>  (delivery reports).
+"""The route reached without a login:  /e/<token>  (the evidence a person was told about).
 
-Both are protected by something they must present: an unguessable signed token that expires, or the provider's shared secret / signature."""
+It is protected by an unguessable signed token that expires."""
 import html
 import json
 import re
@@ -9,10 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from ..crypto import vault
 from ..db import db
 from ..errors import ApiError
-from ..messaging import delivery, evidence, http_provider
+from ..messaging import evidence
 
 router = APIRouter(tags=["public"])
 SAFE = {"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
@@ -107,27 +106,3 @@ async def evidence_clip(token: str, request: Request):
     if data is None:
         return Response(status_code=410, headers=SAFE)
     return _ranged(data, request, "video/mp4")
-
-
-@router.post("/hooks/messaging/{provider_id}", include_in_schema=False)
-async def delivery_report(provider_id: UUID, request: Request):
-    raw = await request.body()
-    deny = JSONResponse({"error": {"code": "unauthorized", "message": "Not allowed."}}, status_code=401)
-    if len(raw) > 512 * 1024:
-        return deny
-    async with db.service_tx() as conn:
-        p = await conn.fetchrow("SELECT id, config, secrets_ciphertext FROM platform.messaging_providers WHERE id=$1", provider_id)
-        if not p or "webhook" not in (p["config"] or {}) or not p["secrets_ciphertext"]:
-            return deny
-        secrets = json.loads(vault().decrypt(bytes(p["secrets_ciphertext"]), str(p["id"])))
-        if not http_provider.verify_webhook(p["config"], secrets, request.headers, raw):
-            return deny
-        try:
-            payload = json.loads(raw)
-        except ValueError:
-            return JSONResponse({"error": {"code": "invalid_json", "message": "Not valid JSON."}}, status_code=400)
-        applied = 0
-        for ev in http_provider.parse_webhook(p["config"], payload):
-            if await delivery.apply_status(conn, provider_id, ev["message_id"], ev["status"], ev["error"]):
-                applied += 1
-    return {"ok": True, "applied": applied}

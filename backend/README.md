@@ -308,11 +308,11 @@ The backend tells a worker which route to use: `GET /internal/v1/cameras/{id}/so
 - One registrar process holds all sessions and streams. Running several, and sharing streams between them, is not built.
 
 
-## Alerts to WhatsApp and email
+## Alerts: System Alerts, Smart Alerts and webhooks
 
-See [MESSAGING.md](MESSAGING.md): configurable provider recipe, template drafts, evidence pictures in Cloudflare R2 with expiring links,
-delivery guarantees and limits. Tests: `tests/test_msg_http.py` (recipe, address guard, real TLS round trip) and
-`tests/test_alert_delivery.py` (the whole journey, retries, fallbacks, limits, isolation).
+See [MESSAGING.md](MESSAGING.md): System Alerts and Smart Alerts, plans and per-customer alerts, webhook delivery of alerts, evidence pictures in Cloudflare R2 with expiring links,
+delivery guarantees and limits. Tests: `tests/test_webhook_unit.py` (payload, signature, address guard, real TLS round trip),
+`tests/test_alert_catalogue.py` (who sees which alert) and `tests/test_alert_delivery.py` (the whole journey, retries, resend, limits, isolation).
 
 
 ## Data retention

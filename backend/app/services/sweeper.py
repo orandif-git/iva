@@ -16,7 +16,7 @@ async def mark_stale_recorders(timeout_seconds: int) -> int:
                WHERE status='online' AND last_heartbeat_at < now() - make_interval(secs => $1)
                RETURNING id, tenant_id, device_id""", float(timeout_seconds))
         for r in rows:
-            await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['device_id']} stopped contacting us.", camera_name=r["device_id"],
+            await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['device_id']} stopped contacting us.", camera_name=r["device_id"], details={"recorder": r["device_id"]},
                               dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=60)
     return len(rows)
 

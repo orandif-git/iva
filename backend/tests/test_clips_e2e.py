@@ -56,17 +56,17 @@ async def alert_of(su, t):
     return await su.fetchrow("SELECT * FROM app.alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1", t)
 
 
-async def approve_clip(su):
-    await su.execute("UPDATE platform.message_templates SET status='approved' WHERE key='alert_clip'")
+async def clip_not_wanted(su):
+    """The standard blocked-vehicle payload carries {clip_url}, which is what makes an event wait for its video. This takes it out."""
+    await su.execute("UPDATE platform.webhook_endpoints SET payload_template = replace(payload_template, ',\n  \"clip_url\": \"{clip_url}\"', '') WHERE alert_type='blocked_plate'")
 
 
-async def test_the_whole_journey_the_whatsapp_message_waits_then_carries_the_video(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+async def test_the_whole_journey_the_event_waits_then_carries_the_video(client, make, su, world):
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
 
-    # the worker reports the plate; the backend raises the alert and asks for a clip, holding the WhatsApp message back
+    # the worker reports the plate; the backend raises the alert and asks for a clip, holding the webhook event back
     rig.sink.add_plate(cam, {"seen_at": iso(rig.seen), "track_id": "t1", "plate_raw": "TN72AB1234", "confidence": 95, "direction": "in"}, snapshot=JPEG)
     rig.rec.closing = False
     assert await rig.sink.flush(force=True)
@@ -74,7 +74,7 @@ async def test_the_whole_journey_the_whatsapp_message_waits_then_carries_the_vid
     assert a["clip_wait_until"] is not None and a["clip_id"] is None
     n = await su.fetchrow("SELECT status::text, next_attempt_at FROM app.notifications WHERE tenant_id=$1", t)
     assert n["status"] == "queued" and n["next_attempt_at"] > await su.fetchval("SELECT now() + interval '20 seconds'")
-    assert await delivery.run_once() == 0 and world["bsp"].calls == []                       # held: nothing is sent yet
+    assert await delivery.run_once() == 0 and world["hook"].calls == []                       # held: nothing is sent yet
 
     await rig.rec.drain(60)                                                                    # the worker makes and uploads the clip
     a = await alert_of(su, t)
@@ -83,15 +83,13 @@ async def test_the_whole_journey_the_whatsapp_message_waits_then_carries_the_vid
     assert ev["kind"] == "clip" and ev["content_type"] == "video/mp4" and 1_000 < ev["bytes"] < 2_000_000
     assert await delivery.run_once() == 1                                                      # released as soon as the clip arrived, not after the wait
 
-    call = world["bsp"].calls[0]["body"]
-    assert call["template"]["name"] == "gi_alert_clip"
-    comps = {c["type"]: c for c in call["template"]["components"]}
-    video = comps["header"]["parameters"][0]
-    assert video["type"] == "video" and video["video"]["link"].startswith("https://gi.test/e/") and video["video"]["link"].endswith("/clip.mp4")
-    page_token = comps["button"]["parameters"][0]["text"]
+    call = world["hook"].calls[0]["body"]
+    assert call["template_name"] == "smart_blocked_plate_v1"
+    assert call["clip_url"].startswith("https://gi.test/e/") and call["clip_url"].endswith("/clip.mp4") and call["image_url"].endswith("/image.jpg")
+    page_token = call["image_url"].split("/e/")[1].split("/")[0]            # the page that shows the picture and the clip together
 
-    # the link in the message plays the clip
-    clip_token = video["video"]["link"].split("/e/")[1].split("/")[0]
+    # the clip link in the event plays the clip
+    clip_token = call["clip_url"].split("/e/")[1].split("/")[0]
     full = await client.get(f"/e/{clip_token}/clip.mp4")
     assert full.status_code == 200 and full.headers["content-type"] == "video/mp4" and full.headers["accept-ranges"] == "bytes"
     info = ffprobe(full.content)
@@ -111,9 +109,8 @@ async def test_the_whole_journey_the_whatsapp_message_waits_then_carries_the_vid
     assert (await client.get("/v1/alerts", headers=u["headers"])).json()[0]["has_clip"] is True
 
 
-async def test_if_the_clip_never_comes_the_message_still_goes_out_after_the_wait(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+async def test_if_the_clip_never_comes_the_event_still_goes_out_after_the_wait(client, make, su, world):
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     rig.sink.clip_handler = None                                                               # this worker cannot make clips
@@ -121,21 +118,19 @@ async def test_if_the_clip_never_comes_the_message_still_goes_out_after_the_wait
     assert await delivery.run_once() == 0
     await su.execute("UPDATE app.notifications SET next_attempt_at = now() WHERE tenant_id=$1", t)       # the wait is over
     assert await delivery.run_once() == 1
-    comps = [c["type"] for c in world["bsp"].calls[0]["body"]["template"]["components"]]
-    assert world["bsp"].calls[0]["body"]["template"]["name"] == "gi_alert_image" and comps == ["header", "body", "button"]
-    assert world["bsp"].calls[0]["body"]["template"]["components"][0]["parameters"][0]["type"] == "image"
+    body = world["hook"].calls[0]["body"]
+    assert body["template_name"] == "smart_blocked_plate_v1" and body["clip_url"] == "" and body["image_url"].endswith("/image.jpg")
 
 
-async def test_a_clip_that_arrives_after_the_message_still_shows_on_the_page(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+async def test_a_clip_that_arrives_after_the_event_still_shows_on_the_page(client, make, su, world):
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     rig.sink.clip_handler = None
     await rig.see("TN72AB1234")
     await su.execute("UPDATE app.notifications SET next_attempt_at = now() WHERE tenant_id=$1", t)
     await delivery.run_once()
-    token = world["bsp"].calls[0]["body"]["template"]["components"][2]["parameters"][0]["text"]
+    token = world["hook"].calls[0]["body"]["image_url"].split("/e/")[1].split("/")[0]
     assert "<video" not in (await client.get(f"/e/{token}")).text
     aid = (await alert_of(su, t))["id"]
     up = await client.post(f"/internal/v1/alerts/{aid}/clip", content=_SAMPLE[0], headers=make.service())
@@ -154,22 +149,22 @@ async def _sample_clip():
     _SAMPLE.clear()
 
 
-async def test_without_an_approved_video_template_nothing_is_held_but_the_clip_still_attaches(client, make, su, world):
-    t, u, cam, rid = await customer(client, make, world)                                       # alert_clip stays a draft
+async def test_when_the_payload_has_no_clip_shortcode_nothing_is_held_but_the_clip_still_attaches(client, make, su, world):
+    await clip_not_wanted(su)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     rig.sink.clip_handler = None
     await rig.see("TN72AB1234")
-    assert await delivery.run_once() == 1                                                      # sent at once as the picture message
-    assert world["bsp"].calls[0]["body"]["template"]["name"] == "gi_alert_image"
+    assert await delivery.run_once() == 1                                                      # sent at once, with the picture
+    assert "clip_url" not in world["hook"].calls[0]["body"] and world["hook"].calls[0]["body"]["image_url"].endswith("/image.jpg")
 
 
 async def test_clips_are_not_asked_for_when_switched_off(client, make, su, world):
-    await approve_clip(su)
     # the customer turns clips off for blocked vehicles
-    t, u, cam, rid = await customer(client, make, world)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
-    r = await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "channels": ["whatsapp"], "recipient_ids": [rid], "params": {"clip": False}}, headers=u["headers"])
+    r = await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "recipient_ids": [rid], "params": {"clip": False}}, headers=u["headers"])
     assert r.status_code == 200 and r.json()["params"] == {"clip": False}
     assert (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()["clips"] is False
     rig = Rig(client, make, cam)
@@ -177,13 +172,13 @@ async def test_clips_are_not_asked_for_when_switched_off(client, make, su, world
     assert (await alert_of(su, t))["clip_wait_until"] is None and rig.rec.stats["requested"] == 0
     assert await delivery.run_once() == 1                                                      # nothing was held
     # and turned back on
-    await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "channels": ["whatsapp"], "recipient_ids": [rid], "params": {"clip": True}}, headers=u["headers"])
+    await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "recipient_ids": [rid], "params": {"clip": True}}, headers=u["headers"])
     assert (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()["clips"] is True
     assert (await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "params": {"clip": "yes"}}, headers=u["headers"])).status_code == 422
 
 
 async def test_the_owner_can_switch_clips_off_for_a_tenant(client, make, su, world):
-    t, u, cam, rid = await customer(client, make, world)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     h = world["admin"]
     assert (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()["clips"] is True
     r = await client.put(f"/admin/v1/messaging/tenants/{t}", json={"whatsapp": True, "email": True, "clips": False, "monthly_cap": None, "reason": "storage cost"}, headers=h)
@@ -202,8 +197,7 @@ async def test_a_footfall_only_camera_never_gets_clips(client, make, su, world):
 
 
 async def test_clip_upload_checks(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     rig.sink.clip_handler = None
@@ -234,8 +228,7 @@ async def test_clip_upload_checks(client, make, su, world):
 
 
 async def test_clips_are_deleted_with_the_pictures_when_they_expire(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     await rig.see("TN72AB1234")
@@ -249,8 +242,7 @@ async def test_clips_are_deleted_with_the_pictures_when_they_expire(client, make
 
 
 async def test_a_duplicate_plate_report_does_not_ask_for_a_second_clip(client, make, su, world):
-    await approve_clip(su)
-    t, u, cam, rid = await customer(client, make, world)
+    t, u, cam, rid = await customer(client, make, world, clips=True)
     await client.post("/v1/vehicle-lists", json={"plate_text": "TN72AB1234", "list_type": "blocked"}, headers=u["headers"])
     rig = Rig(client, make, cam)
     await rig.see("TN72AB1234", track="same")

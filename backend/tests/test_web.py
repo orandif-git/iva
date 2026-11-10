@@ -300,15 +300,6 @@ async def test_pages_point_at_the_icons(client, path):
 
 
 # ------------------------------------------------------------------------------------------ no address is written into the code
-async def test_the_whatsapp_button_address_comes_from_the_configured_public_address(client, make):
-    owner = await make.staff("owner")
-    await client.post("/admin/v1/messaging/templates/install-defaults", headers=owner["headers"])
-    items = (await client.get("/admin/v1/messaging/templates", headers=owner["headers"])).json()
-    tpl = next(t for t in (items["items"] if isinstance(items, dict) else items) if t["key"] == "alert_link")
-    sheet = (await client.get(f"/admin/v1/messaging/templates/{tpl['id']}/submission", headers=owner["headers"])).json()
-    assert sheet["button"]["url"] == get_settings().public_base_url.rstrip("/") + "/e/{{1}}"           # the test setting is https://gi.test
-
-
 def test_no_real_looking_address_is_written_into_the_code():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
@@ -388,3 +379,47 @@ async def test_the_app_manifest_may_be_loaded_so_the_app_can_be_installed(client
     for path in ("/", "/staff/"):
         csp = (await client.get(path)).headers["content-security-policy"]
         assert "manifest-src 'self'" in csp
+
+
+# ------------------------------------------------------------------------------------------ shared shell
+def _web():
+    import pathlib
+    return pathlib.Path(get_settings().web_dir or pathlib.Path(__file__).resolve().parents[1] / "web")
+
+
+async def test_the_new_shell_files_are_served_as_scripts(client):
+    for f in ("/js/app/shell.js", "/js/app/table.js", "/js/app/theme.js"):
+        r = await client.get(f)
+        assert r.status_code == 200 and "javascript" in r.headers["content-type"], f
+
+
+def test_the_customer_app_starts_in_light_and_the_staff_console_follows_the_device():
+    src = (_web() / "js/app/theme.js").read_text()
+    assert 'startsWith("/staff") ? "auto" : "light"' in src            # a customer's phone being in dark mode does not turn the app dark
+
+
+def test_the_offline_copy_holds_every_file_the_customer_app_loads():
+    """If a file is missing from the saved list, the app opens half old and half new after an update."""
+    import posixpath
+    import re
+    web = _web()
+    saved = set(re.findall(r'"(/[^"]+\.(?:js|css))"', re.search(r"PRECACHE = \[(.*?)\];", (web / "sw.js").read_text(), re.S).group(1)))
+    seen, todo = set(), ["/js/app/main.js"]
+    while todo:
+        cur = todo.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        for imp in re.findall(r'from "(\.{1,2}/[^"]+)"', (web / cur.lstrip("/")).read_text()):
+            todo.append(posixpath.normpath(posixpath.join(posixpath.dirname(cur), imp)))
+    assert seen <= saved, sorted(seen - saved)
+
+
+def test_every_staff_page_is_in_exactly_one_menu_group():
+    import re
+    src = (_web() / "js/staff/main.js").read_text()
+    pages = re.findall(r'\["(\w+)", "[^"]+", "\w+", (?:null|"owner")\]', src)
+    groups = re.search(r"const GROUPS = \[(.*)\];", src).group(1)
+    keys = [k for k in re.findall(r'"(\w+)"', groups) if k in pages]
+    assert sorted(keys) == sorted(pages), (keys, pages)
+    assert len(keys) == len(set(keys))

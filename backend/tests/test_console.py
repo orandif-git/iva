@@ -215,9 +215,15 @@ async def test_the_audit_log_can_be_searched_and_limited_by_date(client, make):
     assert (await client.get("/admin/v1/audit", params={"q": "tenant.suspend", "since": (date.today() - timedelta(days=1)).isoformat() + "T00:00:00Z"}, headers=hdr(owner))).json()["items"]
 
 
-async def test_message_templates_and_providers_can_be_deleted_by_the_console_role(client, make):
+async def test_email_servers_and_webhooks_can_be_deleted_by_the_console_role(client, make):
     """The console database role must be allowed to delete these (it was only allowed to add and change)."""
     owner = await make.staff("owner")
-    r = await client.post("/admin/v1/messaging/templates", json={"key": "gone_soon", "provider_template": "gi_gone_soon", "body_text": "Event: {{1}} at the gate", "variables": ["event"]}, headers=hdr(owner))
+    for e in (await client.get("/admin/v1/webhooks", headers=hdr(owner))).json()["items"]:        # other tests may have left one for this alert
+        await client.delete(f"/admin/v1/webhooks/{e['id']}", headers=hdr(owner))
+    r = await client.post("/admin/v1/webhooks", json={"name": "Gone soon", "alert_type": "crowding", "url": "https://hooks.example.com/gone"}, headers=hdr(owner))
     assert r.status_code == 201, r.text
-    assert (await client.delete(f"/admin/v1/messaging/templates/{r.json()['id']}", params={"reason": "Not needed any more"}, headers=hdr(owner))).status_code == 204
+    assert (await client.delete(f"/admin/v1/webhooks/{r.json()['id']}", params={"reason": "Not needed any more"}, headers=hdr(owner))).status_code == 204
+    m = await client.post("/admin/v1/messaging/providers", json={"channel": "email", "name": "Mail", "kind": "smtp", "secrets": {}, "reason": "to delete again",
+                          "config": {"host": "smtp.example.com", "port": 587, "from_email": "a@b.co"}}, headers=hdr(owner))
+    assert m.status_code == 201, m.text
+    assert (await client.delete(f"/admin/v1/messaging/providers/{m.json()['id']}", params={"reason": "Not needed any more"}, headers=hdr(owner))).status_code == 204

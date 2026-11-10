@@ -1,9 +1,13 @@
 // Light, dark or automatic appearance, remembered on this device. Shared by the customer app and the staff console.
+// The customer app starts in light, whatever the phone's own setting is, and goes dark only when the person chooses it.
+// The staff console follows the device by default.
 export const THEME_KEY = "gi_theme";
+const FALLBACK = location.pathname.startsWith("/staff") ? "auto" : "light";
 export const theme = {
-  get() { try { return localStorage.getItem(THEME_KEY) || "auto"; } catch { return "auto"; } },
+  fallback: FALLBACK,
+  get() { try { const v = localStorage.getItem(THEME_KEY); return v === "light" || v === "dark" || v === "auto" ? v : FALLBACK; } catch { return FALLBACK; } },
   set(v) {
-    try { v === "auto" ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, v); } catch { /* private mode */ }
+    try { localStorage.setItem(THEME_KEY, v); } catch { /* private mode */ }
     theme.apply();
   },
   apply() {

@@ -9,12 +9,13 @@ from pydantic import Field, field_validator
 
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
-from ..messaging.defaults import ALERT_TYPES
+from ..services import alert_catalog
+from ..services.alert_catalog import ALERT_TYPES
 from ..schemas import Strict
-from ..services.alerts import DEFAULT_ENABLED, fan_out
+from ..services.alerts import DEFAULT_ENABLED
 
 router = APIRouter(prefix="/v1", tags=["customer: alerts"])
-Channel = Literal["whatsapp", "email"]
+Channel = Literal["whatsapp"]            # alerts go out by WhatsApp only
 
 
 def normalize_phone(raw: str) -> str:
@@ -129,36 +130,11 @@ async def delete_recipient(rid: UUID, ctx: CustomerCtx = Depends(customer_ctx("a
     await ctx.audit("recipient.delete", "recipient", rid)
 
 
-@router.post("/recipients/{rid}/test")
-async def test_message(rid: UUID, channel: Channel = Query(...), ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    """Sends a short test so the customer can see it works. Three a day per person."""
-    r = await ctx.conn.fetchrow("SELECT * FROM app.recipients WHERE id=$1 AND active", rid)
-    if not r:
-        raise ApiError(404, "recipient_not_found", "Person not found.")
-    if (channel == "whatsapp" and not r["phone"]) or (channel == "email" and not r["email"]):
-        raise ApiError(422, "no_contact", f"This person has no {'mobile number' if channel == 'whatsapp' else 'email address'}.")
-    if await ctx.conn.fetchval("SELECT count(*) FROM app.alerts a JOIN app.notifications n ON n.alert_id=a.id WHERE a.rule_type='test' AND n.recipient_id=$1 "
-                               "AND a.created_at > now() - interval '1 day'", rid) >= 3:
-        raise ApiError(429, "test_limit", "Three tests a day per person is the limit. Try again tomorrow.")
-    tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_email, msg_monthly_cap FROM app.tenants WHERE id=$1", ctx.tenant_id)
-    from zoneinfo import ZoneInfo
-    payload = {"event": "Test message", "location": "Setup", "time": datetime.now(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"), "details": "This is a test from Jas iVision."}
-    alert_id = await ctx.conn.fetchval("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, details) VALUES ($1,'test','info','Test message','Sent from your settings',$2) RETURNING id",
-                                       ctx.tenant_id, payload)
-    n = await fan_out(ctx.conn, ctx.tenant_id, tenant, alert_id, [channel], [rid], payload)
-    if not n:
-        raise ApiError(409, "not_sent", "The message could not be queued.")
-    status = await ctx.conn.fetchval("SELECT status::text FROM app.notifications WHERE alert_id=$1", alert_id)
-    if status == "suppressed":
-        raise ApiError(409, "not_sent", await ctx.conn.fetchval("SELECT error FROM app.notifications WHERE alert_id=$1", alert_id))
-    return {"queued": True}
-
-
 # --------------------------------------------------------------------------------- alert types
 class RuleIn(Strict):
     enabled: bool
     params: dict = {}
-    channels: list[Channel] = Field(default_factory=lambda: ["whatsapp"], max_length=2)
+    channels: list[Channel] = Field(default_factory=lambda: ["whatsapp"], max_length=1)
     recipient_ids: list[UUID] = Field(default_factory=list, max_length=50)
     quiet_start: time | None = None
     quiet_end: time | None = None
@@ -188,10 +164,11 @@ def check_params(rule_type: str, params: dict) -> dict:
 def _rule_out(rule_type: str, r) -> dict:
     meta = ALERT_TYPES[rule_type]
     enabled = r["enabled"] if r else rule_type in DEFAULT_ENABLED
-    return {"type": rule_type, "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
+    return {"type": rule_type, "family": meta["family"], "group": meta["group"], "ai": meta["family"] == alert_catalog.SMART,
+            "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
             "settings": {k: {**v} for k, v in meta["params"].items()}, "enabled": enabled,
             "params": (r["params"] if r else {}) or {k: v["default"] for k, v in meta["params"].items()},
-            "channels": list(r["channels"]) if r else ["whatsapp"], "recipient_ids": list(r["recipients"]) if r else [],
+            "channels": ["whatsapp"], "recipient_ids": list(r["recipients"]) if r else [],
             "quiet_start": r["quiet_start"].strftime("%H:%M") if r and r["quiet_start"] else None,
             "quiet_end": r["quiet_end"].strftime("%H:%M") if r and r["quiet_end"] else None}
 
@@ -199,12 +176,12 @@ def _rule_out(rule_type: str, r) -> dict:
 @router.get("/alert-types")
 async def alert_types(ctx: CustomerCtx = Depends(customer_ctx())):
     rows = {r["rule_type"]: r for r in await ctx.conn.fetch("SELECT * FROM app.alert_rules")}
-    return [_rule_out(t, rows.get(t)) for t in ALERT_TYPES]
+    return [_rule_out(t, rows.get(t)) for t in await alert_catalog.visible(ctx.conn, ctx.tenant_id)]
 
 
 @router.put("/alert-types/{rule_type}")
 async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    if rule_type not in ALERT_TYPES:
+    if rule_type not in await alert_catalog.visible(ctx.conn, ctx.tenant_id):       # an alert the customer does not have looks the same as one that does not exist
         raise ApiError(404, "alert_type_not_found", "That alert type does not exist.")
     params = check_params(rule_type, body.params)
     if (body.quiet_start is None) != (body.quiet_end is None):
@@ -213,17 +190,13 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depend
     people = await ctx.conn.fetch("SELECT id, name, phone, email FROM app.recipients WHERE id = ANY($1::uuid[]) AND active", ids)
     if len(people) != len(ids):
         raise ApiError(422, "recipient_not_found", "One of the people you chose was not found.")
-    tenant = await ctx.conn.fetchrow("SELECT msg_whatsapp, msg_email FROM app.tenants WHERE id=$1", ctx.tenant_id)
+    tenant = await ctx.conn.fetchrow("SELECT msg_whatsapp FROM app.tenants WHERE id=$1", ctx.tenant_id)
     warnings = []
-    if "whatsapp" in body.channels and not tenant["msg_whatsapp"]:
+    if not tenant["msg_whatsapp"]:
         warnings.append("WhatsApp messages are switched off for your account. Contact support.")
-    if "email" in body.channels and not tenant["msg_email"]:
-        warnings.append("Email messages are switched off for your account. Contact support.")
     for p in people:
-        if "whatsapp" in body.channels and "email" not in body.channels and not p["phone"]:
+        if not p["phone"]:
             warnings.append(f"{p['name']} has no mobile number, so will not get WhatsApp messages.")
-        if body.channels == ["email"] and not p["email"]:
-            warnings.append(f"{p['name']} has no email address, so will not get emails.")
     if body.enabled and not ids:
         warnings.append("No one will be messaged yet. The alert will only appear in the app until you choose people.")
     row = await ctx.conn.fetchrow(

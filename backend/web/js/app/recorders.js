@@ -1,11 +1,12 @@
 // Recorders (connect, details, rename, delete), reports and the More tab.
 import { ago, clear, copy, errText, fmtDateTime, h, istDay, mount } from "../lib.js";
+import { dataTable } from "./table.js";
 import { chips, confirmSheet, empty, field, ic, MIN_REFRESH, note, onSheetClose, openSheet, closeSheet, picInterval, pill, sec, seg, setPicInterval, toast, toggle } from "./ui.js";
 
 const LINK = { online: ["Online", "ok"], offline: ["Offline", "crit"], never: ["Waiting to connect", ""] };
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const head = (t, sub, right) => h("div", { class: "pagehead" }, h("div", {}, h("h1", { class: "lt" }, t), sub ? h("p", { class: "sub" }, sub) : null), right || null);
-const back = (href, label) => h("a", { class: "backlink", href }, ic("chev"), label);
+const back = (href, label) => h("a", { class: "backlink" + (href === "#/more" ? " only-phone" : ""), href }, ic("chev"), label);
 const recName = (r) => r.name || r.device_id;
 
 /** A list of label / value lines with a copy button on each. */
@@ -17,11 +18,17 @@ function credList(rows) {
 async function recorders(X) {
   const recs = await X.api.get("/v1/recorders");
   const out = [back("#/more", "More"), head("Recorders", `${recs.length} connected`, X.isAdmin ? h("a", { class: "btn sm sec2", href: "#/recorders/new" }, ic("plus"), "Connect") : null)];
-  out.push(recs.length ? h("div", { class: "card" }, recs.map((r) => {
-    const [t, k] = LINK[r.status] || LINK.never;
-    return h("a", { class: "rowlink", href: "#/recorders/" + r.id }, h("span", { class: "ico " + (k === "crit" ? "crit" : k === "ok" ? "ok" : "") }, ic("server")),
-      h("div", {}, h("b", {}, recName(r)), h("small", {}, `${cap(r.brand)} · ${r.channel_count} cameras · ${ago(r.last_heartbeat_at)}`)), pill(t, k));
-  })) : empty("server", "No recorders yet", "Connect your Dahua recorder to start counting people and reading plates.", X.isAdmin ? h("a", { class: "btn", href: "#/recorders/new" }, "Connect a recorder") : null));
+  out.push(recs.length ? dataTable({
+    label: "Recorders", rows: recs, rowKey: (r) => r.id, memory: (X.mem.recs ||= {}), sort: { key: "name", dir: "asc" },
+    href: (r) => "#/recorders/" + r.id, onOpen: (r) => X.go("#/recorders/" + r.id),
+    columns: [
+      { key: "name", label: "Recorder", primary: true, sort: true, value: recName, render: recName },
+      { key: "brand", label: "Brand", sort: true, minor: true, render: (r) => cap(r.brand) },
+      { key: "channel_count", label: "Cameras", sort: true, align: "end" },
+      { key: "seen", label: "Last heard", sort: true, minor: true, value: (r) => (r.last_heartbeat_at ? new Date(r.last_heartbeat_at).getTime() : null), render: (r) => ago(r.last_heartbeat_at) },
+      { key: "status", label: "Status", sort: true, render: (r) => { const [t, k] = LINK[r.status] || LINK.never; return pill(t, k); } },
+    ],
+  }) : empty("server", "No recorders yet", "Connect your Dahua recorder to start counting people and reading plates.", X.isAdmin ? h("a", { class: "btn", href: "#/recorders/new" }, "Connect a recorder") : null));
   return out;
 }
 

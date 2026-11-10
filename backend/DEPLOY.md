@@ -142,6 +142,8 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    su postgres -c "psql -d gateinsight -f migrations/004_platform_console.sql"
    su postgres -c "psql -d gateinsight -f migrations/005_storage_and_plate_pictures.sql"
    su postgres -c "psql -d gateinsight -f migrations/006_ai_view.sql"
+   su postgres -c "psql -d gateinsight -f migrations/007_alert_catalogue.sql"
+   su postgres -c "psql -d gateinsight -f migrations/008_alert_webhooks.sql"      # removes the old WhatsApp provider and templates: set up webhooks in the staff console afterwards
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:
