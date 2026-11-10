@@ -93,9 +93,7 @@ void main() {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
-    await t.tap(find.text('Alerts').last);
-    await t.pumpAndSettle();
-    await t.tap(find.text('Manage'));
+    await t.tap(find.text('AI Watch').last);
     await t.pumpAndSettle();
     await t.tap(find.text('New alert'));
     await t.pumpAndSettle();
@@ -122,9 +120,7 @@ void main() {
     final repo = MockRepository();
     await t.pumpWidget(IVisionApp(repo: repo));
     await t.pumpAndSettle();
-    await t.tap(find.text('Alerts').last);
-    await t.pumpAndSettle();
-    await t.tap(find.text('Manage'));
+    await t.tap(find.text('AI Watch').last);
     await t.pumpAndSettle();
     await t.tap(find.text('New alert'));
     await t.pumpAndSettle();
@@ -253,7 +249,7 @@ void profileTests() {
     expect(find.text('APPEARANCE'), findsNothing);
   });
 
-  testWidgets('Alerts is the inbox; what you watch for is a separate Manage screen', (t) async {
+  testWidgets('Alerts is only the inbox; what you watch for is in AI Watch, split into System and Smart', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
@@ -262,14 +258,21 @@ void profileTests() {
     expect(find.text('My alerts'), findsNothing, reason: 'no tabs: viewing and setting up are not mixed');
     expect(find.text('Needs you'), findsOneWidget);
     expect(find.text('History'), findsOneWidget);
-    expect(find.textContaining('Watching for'), findsOneWidget);
+    expect(find.textContaining('Watching for'), findsNothing, reason: 'no duplicate Manage card: AI Watch is its own tab');
+    expect(find.text('Manage'), findsNothing);
     expect(find.text('New alert'), findsNothing, reason: 'the inbox has no set-up button');
-    await t.tap(find.text('Manage'));
+    await t.tap(find.text('AI Watch').last);
     await t.pumpAndSettle();
-    expect(find.text('AI Watch'), findsWidgets);
-    expect(find.text('Manage alerts'), findsNothing, reason: 'AI Watch is a tab, not a pushed screen');
+    expect(find.textContaining('System alerts ('), findsOneWidget);
+    expect(find.textContaining('Smart alerts ('), findsOneWidget);
     expect(find.text('New alert'), findsOneWidget);
     expect(find.text('ON'), findsOneWidget);
+    expect(find.text('Camera offline'), findsOneWidget, reason: 'a system alert');
+    expect(find.text('Long queue'), findsNothing, reason: 'smart alerts are on their own tab');
+    await t.tap(find.textContaining('Smart alerts ('));
+    await t.pumpAndSettle();
+    expect(find.text('Long queue'), findsOneWidget);
+    expect(find.text('Camera offline'), findsNothing);
     await t.tap(find.byType(Switch).first);
     await t.pumpAndSettle();
   });

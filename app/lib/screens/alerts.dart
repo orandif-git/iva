@@ -8,11 +8,10 @@ import 'alert_rows.dart';
 import 'common.dart';
 import 'wizard.dart';
 
-/// Alerts is for what HAPPENED: the inbox. Deciding what to watch for is a separate place (Manage alerts), reached from the card at the top.
+/// Alerts is for what HAPPENED: the inbox. Deciding what to watch for lives in the AI Watch tab.
 class AlertsPage extends StatefulWidget {
-  const AlertsPage({super.key, required this.repo, this.startWizardFor, this.onChanged, this.refresh, required this.onOpenWatch});
+  const AlertsPage({super.key, required this.repo, this.startWizardFor, this.onChanged, this.refresh});
   final Repository repo;
-  final VoidCallback onOpenWatch;      // the AI Watch tab: what you are watching for
   final CameraItem? startWizardFor;
   final VoidCallback? onChanged;
   final Listenable? refresh;
@@ -52,7 +51,6 @@ class _AlertsPageState extends State<AlertsPage> {
     if (saved == true) _reload();
   }
 
-  void _manage() => widget.onOpenWatch();
 
   @override
   Widget build(BuildContext context) {
@@ -75,8 +73,6 @@ class _AlertsPageState extends State<AlertsPage> {
         return RefreshIndicator(
           onRefresh: () async => _reload(),
           child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 14, pad, navClear), children: [
-            _WatchingCard(watching: watching, onManage: _manage),
-            const SizedBox(height: 16),
             Row(children: [
               SegmentedButton<bool>(showSelectedIcon: false, segments: const [ButtonSegment(value: true, label: Text('Needs you')), ButtonSegment(value: false, label: Text('History'))], selected: {openOnly}, onSelectionChanged: (v) => setState(() => openOnly = v.first)),
               Expanded(child: Align(alignment: Alignment.centerRight, child: openOnly && openCount > 0 ? TextButton(onPressed: () async { for (final g in all) { await doneGroup(widget.repo, g); } _reload(); }, child: Text('Mark all done ($openCount)', overflow: TextOverflow.ellipsis)) : const SizedBox())),
@@ -98,39 +94,6 @@ class _AlertsPageState extends State<AlertsPage> {
   }
 }
 
-/// "What am I watching for?" in one tap, so the inbox and the settings are never mixed up.
-class _WatchingCard extends StatelessWidget {
-  const _WatchingCard({required this.watching, required this.onManage});
-  final int watching;
-  final VoidCallback onManage;
-  @override
-  Widget build(BuildContext context) {
-    final t = Tok.of(context);
-    return Semantics(
-      button: true,
-      label: 'Manage alerts. You are watching for $watching things.',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onManage,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-          decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.line)),
-          child: Row(children: [
-            Container(width: 44, height: 44, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(14)), child: Icon(Icons.tune_rounded, color: t.brand)),
-            const SizedBox(width: 14),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(watching == 0 ? 'Not watching for anything yet' : 'Watching for $watching ${watching == 1 ? 'thing' : 'things'}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
-              Text('Choose what you hear about', style: TextStyle(color: t.fg2, fontSize: 13)),
-            ])),
-            Text('Manage', style: TextStyle(color: t.brand, fontWeight: FontWeight.w700)),
-            Icon(Icons.chevron_right_rounded, color: t.brand),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
 /// Manage alerts: what you are watching for, switched on or off, and a way to add more.
 class ManageAlertsPage extends StatefulWidget {
   const ManageAlertsPage({super.key, required this.repo, this.embedded = false});
@@ -142,6 +105,7 @@ class ManageAlertsPage extends StatefulWidget {
 
 class _ManageAlertsPageState extends State<ManageAlertsPage> {
   late Future<List<AlertDef>> mine = widget.repo.alertDefs();
+  bool smartTab = false;      // System alerts (recorders and cameras) or Smart alerts (what the AI sees)
 
   Future<void> _wizard({AlertDef? edit}) async {
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, edit: edit)));
@@ -182,8 +146,10 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
             builder: (context, snap) {
               if (snap.hasError) return Center(child: Text('${snap.error}'));
               if (!snap.hasData) return const Loading();
-              final on = snap.data!.where((d) => d.enabled).toList();
-              final off = snap.data!.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
+              final all = snap.data!.where((d) => d.smart == smartTab).toList();
+              final nSystem = snap.data!.where((d) => !d.smart && d.enabled).length, nSmart = snap.data!.where((d) => d.smart && d.enabled).length;
+              final on = all.where((d) => d.enabled).toList();
+              final off = all.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
               Widget row(AlertDef m) => InkWell(
                     onTap: () => _wizard(edit: m),
                     child: Padding(
@@ -200,7 +166,23 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
                     ),
                   );
               return ListView(padding: EdgeInsets.fromLTRB(16, 6, 16, widget.embedded ? navClear : 40), children: [
-                if (on.isEmpty && off.isEmpty) EmptyState(icon: Icons.notifications_none_rounded, title: 'No alerts on yet', text: 'Choose what you want to hear about. We message you on WhatsApp.', action: FilledButton.icon(onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded), label: const Text('New alert'))),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(value: false, label: Text('System alerts ($nSystem)', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      ButtonSegment(value: true, label: Text('Smart alerts ($nSmart)', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    ],
+                    selected: {smartTab},
+                    onSelectionChanged: (v) => setState(() { smartTab = v.first; }),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+                  child: Text(smartTab ? 'The AI watches your cameras for people, vehicles and queues in the places you mark.' : 'We tell you when a recorder or camera has a problem.', style: TextStyle(color: t.fg2, fontSize: 13.5, height: 1.35)),
+                ),
+                if (on.isEmpty && off.isEmpty) EmptyState(icon: smartTab ? Icons.auto_awesome_rounded : Icons.notifications_none_rounded, title: smartTab ? 'No smart alerts yet' : 'No system alerts on', text: 'Choose what you want to hear about. We message you on WhatsApp.', action: FilledButton.icon(onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded), label: const Text('New alert'))),
                 if (on.isNotEmpty) ...[const GroupLabel('On'), Group(children: [for (final m in on) row(m)])],
                 if (off.isNotEmpty) ...[const GroupLabel('Off'), Group(children: [for (final m in off) row(m)])],
               ]);
