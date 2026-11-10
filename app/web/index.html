@@ -18,21 +18,28 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Jas iVision customer app">
+  <meta name="description" content="Jas iVision. Intelligent Vision. Automated Insights.">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="ivision_app">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#F2F5FA">
+  <meta name="apple-mobile-web-app-title" content="Jas iVision">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>ivision_app</title>
+  <title>Jas iVision</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { margin: 0; height: 100%; background: #F2F5FA; }
+    #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; }
+    #splash img { width: 96px; height: 96px; }
+  </style>
 </head>
 <body>
+  <div id="splash" role="status" aria-label="Loading Jas iVision"><img src="splash.svg" alt=""></div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

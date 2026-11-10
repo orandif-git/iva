@@ -137,3 +137,11 @@ class Footfall {
     return Footfall(j['people_in'] as int, j['people_out'] as int, t == null ? null : '$h ${t.hour < 12 ? 'am' : 'pm'}');
   }
 }
+
+/// Who is signed in and which business they belong to.
+class Me {
+  final String name, business, role;
+  const Me(this.name, this.business, this.role);
+  String get first => name.split(RegExp(r'[ ,(]')).first;
+  factory Me.fromJson(Map<String, dynamic> j) => Me(j['user']['name'] as String, j['tenant']['name'] as String, (j['user']['role'] ?? '') as String);
+}

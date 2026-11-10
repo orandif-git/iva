@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../repo.dart';
 import '../theme.dart';
+import '../widgets/brand.dart';
 import 'common.dart';
 
 class ReportsPage extends StatelessWidget {
@@ -12,7 +13,7 @@ class ReportsPage extends StatelessWidget {
         future: repo.reports(),
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('${snap.error}'));
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snap.hasData) return const Loading();
           final list = snap.data!;
           return ListView(padding: const EdgeInsets.all(16), children: [
             Section(
