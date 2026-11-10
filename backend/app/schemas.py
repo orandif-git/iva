@@ -485,6 +485,8 @@ class SetPasswordIn(Strict):
 class ChangePasswordIn(Strict):
     current_password: Secret
     new_password: Secret
+    sign_out_others: bool = True                       # sign out every other device and browser (the default)
+    refresh_token: str | None = Field(None, max_length=600)         # this device's own session, so it stays signed in
 
 
 class UserPatchIn(Strict):

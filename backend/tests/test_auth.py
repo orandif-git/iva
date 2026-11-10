@@ -255,6 +255,42 @@ async def test_a_customer_changes_their_own_password(client, make, su):
     assert (await client.post("/v1/auth/refresh", json={"refresh_token": b["refresh_token"]})).status_code == 401        # other devices sign in again
 
 
+async def test_changing_the_password_keeps_this_device_and_signs_out_the_others_by_default(client, make, su):
+    t = await make.tenant()
+    uid, email = await person(su, t)
+    here, other = (await login(client, email)).json(), (await login(client, email)).json()
+    h = {"Authorization": "Bearer " + here["access_token"]}
+    r = await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "refresh_token": here["refresh_token"]}, headers=h)
+    assert r.status_code == 204
+    assert (await client.post("/v1/auth/refresh", json={"refresh_token": here["refresh_token"]})).status_code == 200          # this device stays signed in
+    assert (await client.post("/v1/auth/refresh", json={"refresh_token": other["refresh_token"]})).status_code == 401         # the other one signs in again
+
+
+async def test_the_other_devices_can_be_left_signed_in_when_the_person_chooses(client, make, su):
+    t = await make.tenant()
+    uid, email = await person(su, t)
+    here, other = (await login(client, email)).json(), (await login(client, email)).json()
+    h = {"Authorization": "Bearer " + here["access_token"]}
+    r = await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "sign_out_others": False, "refresh_token": here["refresh_token"]}, headers=h)
+    assert r.status_code == 204
+    assert (await client.post("/v1/auth/refresh", json={"refresh_token": other["refresh_token"]})).status_code == 200
+    assert (await login(client, email, "a brand new password")).status_code == 200                                              # the new password is the only one that works now
+    assert (await login(client, email, PW)).status_code == 401
+
+
+async def test_a_session_that_is_not_theirs_cannot_be_used_to_keep_a_device(client, make, su):
+    t = await make.tenant()
+    uid, email = await person(su, t)
+    t2 = await make.tenant()
+    uid2, email2 = await person(su, t2)
+    mine, mine2 = (await login(client, email)).json(), (await login(client, email)).json()
+    theirs = (await login(client, email2)).json()
+    h = {"Authorization": "Bearer " + mine["access_token"]}
+    await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "refresh_token": theirs["refresh_token"]}, headers=h)
+    assert (await client.post("/v1/auth/refresh", json={"refresh_token": mine["refresh_token"]})).status_code == 401           # nothing was kept, so every one of their devices signs in again
+    assert (await client.post("/v1/auth/refresh", json={"refresh_token": theirs["refresh_token"]})).status_code == 200          # and the other person was not touched
+
+
 async def test_staff_viewing_as_a_customer_cannot_change_their_password(client, make, su):
     staff = await make.staff("owner")
     t = await make.tenant()

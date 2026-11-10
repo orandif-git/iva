@@ -190,6 +190,40 @@ void profileTests() {
     expect((await SharedPreferences.getInstance()).getString('gi_next_theme'), 'dark');
   });
 
+  testWidgets('Change password opens inside the menu, with no pop-up, and passes the sign-out choice', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(ProfileButton));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Change password'));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    for (final x in ['Current password', 'New password', 'Confirm new password', 'Sign out of all other devices']) {
+      expect(find.text(x), findsOneWidget, reason: x);
+    }
+    final fields = find.byType(TextField);
+    await t.enterText(fields.at(0), 'old password 1');
+    await t.enterText(fields.at(1), 'a long new password');
+    await t.enterText(fields.at(2), 'something else entirely');
+    await t.ensureVisible(find.widgetWithText(FilledButton, 'Change password'));
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(FilledButton, 'Change password'));
+    await t.pumpAndSettle();
+    expect(find.text('The two new passwords are not the same.'), findsOneWidget);
+    await t.enterText(fields.at(2), 'a long new password');
+    await t.tap(find.text('Sign out of all other devices'));
+    await t.pumpAndSettle();
+    await t.ensureVisible(find.widgetWithText(FilledButton, 'Change password'));
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(FilledButton, 'Change password'));
+    await t.pumpAndSettle();
+    expect(repo.lastSignOutOthers, false);
+    expect(find.text('Password changed.'), findsOneWidget);
+    expect(find.text('Sign out'), findsWidgets, reason: 'this device stays signed in');
+  });
+
   testWidgets('the theme starts on light, whatever the device says, and remembers a choice', (t) async {
     SharedPreferences.setMockInitialValues({'gi_next_theme': 'auto'});
     await phone(t);

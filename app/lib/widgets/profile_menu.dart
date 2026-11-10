@@ -88,6 +88,8 @@ class ProfileMenu extends StatefulWidget {
 
 class _ProfileMenuState extends State<ProfileMenu> {
   late ThemeChoice choice = widget.choice;
+  bool changing = false;
+  String? note;
 
   String get role => switch (widget.me?.role) { 'admin' => 'Owner or manager', 'regular' => 'Team member', _ => '' };
 
@@ -95,9 +97,9 @@ class _ProfileMenuState extends State<ProfileMenu> {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     final m = widget.me;
-    Widget row(IconData icon, String label, VoidCallback onTap, {Color? color}) => InkWell(
+    Widget row(IconData icon, String label, VoidCallback onTap, {Color? color, bool open = false}) => InkWell(
           onTap: onTap,
-          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (color == null) Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))])),
+          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), child: Row(children: [Icon(icon, size: 22, color: color ?? t.fg2), const SizedBox(width: 14), Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5, color: color ?? t.fg))), if (color == null) Icon(open ? Icons.expand_less_rounded : Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6))])),
         );
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (m != null && m.name.isNotEmpty)
@@ -131,40 +133,52 @@ class _ProfileMenuState extends State<ProfileMenu> {
       Divider(height: 1, color: t.line),
       row(Icons.tune_rounded, 'Settings', widget.onSettings),
       Divider(height: 1, indent: 18, color: t.line),
-      row(Icons.lock_outline_rounded, 'Change password', () => _changePassword(context)),
+      row(Icons.lock_outline_rounded, 'Change password', () => setState(() { changing = !changing; note = null; }), open: changing),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: changing
+            ? ChangePasswordPanel(repo: widget.repo, onCancel: () => setState(() => changing = false), onDone: (others) => setState(() { changing = false; note = others ? 'Password changed. Other devices were signed out.' : 'Password changed.'; }))
+            : (note == null ? const SizedBox(width: double.infinity) : Padding(padding: const EdgeInsets.fromLTRB(18, 0, 18, 12), child: Row(children: [Icon(Icons.check_circle_rounded, color: t.okInk, size: 18), const SizedBox(width: 8), Expanded(child: Text(note!, style: TextStyle(color: t.okInk, fontWeight: FontWeight.w600, fontSize: 13.5)))]))),
+      ),
       Divider(height: 1, indent: 18, color: t.line),
       row(Icons.logout_rounded, 'Sign out', () => widget.onSignOut(null), color: t.crit),
       const SizedBox(height: 6),
     ]);
   }
-
-  Future<void> _changePassword(BuildContext context) async {
-    if (await showChangePassword(context, widget.repo)) widget.onSignOut('Your password was changed. Please sign in again.');
-  }
 }
 
-/// Asks for the current and a new password. True when it was changed (the server then signs the person out everywhere).
-Future<bool> showChangePassword(BuildContext context, Repository repo) async => (await showDialog<bool>(context: context, builder: (_) => _PasswordDialog(repo: repo))) == true;
-
-class _PasswordDialog extends StatefulWidget {
-  const _PasswordDialog({required this.repo});
+/// Changing the password, right inside the menu: no pop-up. This device stays signed in; the checkbox decides whether every other device is signed out.
+class ChangePasswordPanel extends StatefulWidget {
+  const ChangePasswordPanel({super.key, required this.repo, required this.onCancel, required this.onDone});
   final Repository repo;
+  final VoidCallback onCancel;
+  final void Function(bool signedOutOthers) onDone;
   @override
-  State<_PasswordDialog> createState() => _PasswordDialogState();
+  State<ChangePasswordPanel> createState() => _ChangePasswordPanelState();
 }
 
-class _PasswordDialogState extends State<_PasswordDialog> {
+class _ChangePasswordPanelState extends State<ChangePasswordPanel> {
   final cur = TextEditingController(), a = TextEditingController(), b = TextEditingController();
-  bool busy = false;
+  bool busy = false, others = true, show = false;
   String? error;
 
+  @override
+  void initState() {
+    super.initState();
+    // On a short phone the form opens below the fold: bring it into view once it has grown.
+    Future.delayed(const Duration(milliseconds: 240), () { if (mounted) Scrollable.ensureVisible(context, duration: const Duration(milliseconds: 200), curve: Curves.easeOut, alignment: 1); });
+  }
+
   Future<void> _save() async {
-    if (a.text != b.text) return setState(() => error = 'The two new passwords are not the same.');
+    if (cur.text.isEmpty) return setState(() => error = 'Enter your current password.');
     if (a.text.length < 10) return setState(() => error = 'Use at least 10 characters. A few words together is easy to remember and hard to guess.');
+    if (a.text != b.text) return setState(() => error = 'The two new passwords are not the same.');
     setState(() { busy = true; error = null; });
     try {
-      await widget.repo.changePassword(cur.text, a.text);
-      if (mounted) Navigator.of(context).pop(true);
+      await widget.repo.changePassword(cur.text, a.text, signOutOthers: others);
+      if (mounted) widget.onDone(others);
     } on ApiError catch (e) {
       setState(() { busy = false; error = e.message; });
     } catch (_) {
@@ -175,24 +189,38 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return AlertDialog(
-      title: const Text('Change password'),
-      content: SizedBox(
-        width: 380,
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: cur, obscureText: true, autofillHints: const [AutofillHints.password], decoration: const InputDecoration(labelText: 'Current password')),
-            const SizedBox(height: 12),
-            TextField(controller: a, obscureText: true, autofillHints: const [AutofillHints.newPassword], decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 10 characters')),
-            const SizedBox(height: 12),
-            TextField(controller: b, obscureText: true, decoration: const InputDecoration(labelText: 'Type it again')),
-            if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
-            const SizedBox(height: 8),
-            Text('You will be signed out everywhere and sign in again with the new password.', style: TextStyle(color: t.fg2, fontSize: 12.5)),
-          ]),
+    InputDecoration dec(String label, {String? helper}) => InputDecoration(labelText: label, helperText: helper, isDense: true, suffixIcon: null);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(controller: cur, obscureText: !show, autofillHints: const [AutofillHints.password], decoration: dec('Current password')),
+        const SizedBox(height: 10),
+        TextField(controller: a, obscureText: !show, autofillHints: const [AutofillHints.newPassword], decoration: dec('New password', helper: 'At least 10 characters')),
+        const SizedBox(height: 10),
+        TextField(controller: b, obscureText: !show, onSubmitted: (_) => busy ? null : _save(), decoration: dec('Confirm new password')),
+        Align(alignment: Alignment.centerLeft, child: TextButton.icon(style: TextButton.styleFrom(minimumSize: const Size(44, 36), padding: const EdgeInsets.symmetric(horizontal: 4)), onPressed: () => setState(() => show = !show), icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18), label: Text(show ? 'Hide passwords' : 'Show passwords'))),
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => others = !others),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Checkbox(value: others, onChanged: (v) => setState(() => others = v ?? true), visualDensity: VisualDensity.compact),
+              Expanded(child: Padding(padding: const EdgeInsets.only(top: 6), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Sign out of all other devices', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                Text('This device stays signed in. Others sign in again with the new password.', style: TextStyle(color: t.fg2, fontSize: 12.5, height: 1.35)),
+              ]))),
+            ]),
+          ),
         ),
-      ),
-      actions: [TextButton(onPressed: busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')), FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Saving…' : 'Change password'))],
+        if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600, fontSize: 13))),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: OutlinedButton(onPressed: busy ? null : widget.onCancel, child: const Text('Cancel'))),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Saving…' : 'Change password'))),
+        ]),
+      ]),
     );
   }
 }

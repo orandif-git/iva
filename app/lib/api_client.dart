@@ -27,6 +27,7 @@ class ApiClient {
   static const _key = 'gi_next_rt';
 
   bool get signedIn => _refresh != null || _access != null;
+  String? get refreshToken => _refresh;          // this device's own session, sent when the password is changed so this device stays signed in
 
   Future<void> restore() async {
     _prefs ??= await SharedPreferences.getInstance();
