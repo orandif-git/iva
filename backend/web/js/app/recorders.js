@@ -42,8 +42,8 @@ function newRecorder(X) {
       try { created = await X.api.post("/v1/recorders", { brand: "dahua", ...(name.value.trim() ? { name: name.value.trim() } : {}) }); step2(); }
       catch (e) { toast(errText(e), true); go.disabled = false; }
     };
-    mount(box, h("div", { class: "card stack" }, h("h3", {}, "Which brand is your recorder?"), go,
-      h("button", { class: "btn gray block", type: "button", disabled: true }, "Hikvision · coming soon"), field("Give it a name (optional)", name, "Helps you tell recorders apart."),
+    mount(box, h("div", { class: "card stack" }, h("h3", {}, "Connect your Dahua recorder"), go,
+      field("Give it a name (optional)", name, "Helps you tell recorders apart."),
       h("p", { class: "sub" }, "Your recorder connects out to us over the internet. You do not need a static IP, a VPN or any port forwarding.")));
   };
 

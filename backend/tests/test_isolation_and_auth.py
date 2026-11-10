@@ -6,7 +6,7 @@ from app.security import issue_token
 async def test_tenant_cannot_see_another_tenants_recorders(client, make):
     a, b = await make.tenant(), await make.tenant()
     ua, ub = await make.user(a), await make.user(b)
-    r = await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=ua["headers"])
+    r = await client.post("/v1/recorders", json={"brand": "dahua"}, headers=ua["headers"])
     assert r.status_code == 201
     rid = r.json()["recorder_id"]
     assert [x["id"] for x in (await client.get("/v1/recorders", headers=ua["headers"])).json()] == [rid]

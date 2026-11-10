@@ -10,7 +10,7 @@ _ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"   # no look-alikes (0/o, 1/l/i): c
 
 
 class KeyVault:
-    """Encrypts recorder keys at rest. ISUP-style protocols need the real key to verify a device,
+    """Encrypts recorder keys at rest. Recorder protocols (Dahua Auto Register, GB28181) need the real key to verify a device,
     so it cannot be a one-way hash. The device id is bound in as associated data, so a ciphertext
     copied onto another recorder's row will not decrypt. Swap this class for a KMS call in production."""
 

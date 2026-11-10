@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=500)]
+# "hikvision" and "isup" stay valid here so old rows can still be read, but creating them is refused (services/recorders.py).
 Brand = Literal["hikvision", "dahua", "other"]
 Protocol = Literal["isup", "auto_register", "gb28181"]
 
@@ -100,11 +101,12 @@ class AdminRecorderOut(RecorderOut):
 
 
 class RecorderCreateAdmin(Strict):
-    tenant_id: UUID
+    """Staff add a recorder for a customer: the only way to connect GB28181 or a brand other than Dahua."""
     brand: Brand
-    protocol: Protocol | None = None        # default: hikvision -> isup, dahua -> auto_register. "other" needs gb28181.
+    protocol: Protocol | None = None        # default: dahua -> auto_register. "other" needs gb28181.
     site_id: UUID | None = None
     name: Name | None = None
+    reason: Reason
 
 
 class RecorderCreateCustomer(Strict):

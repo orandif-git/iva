@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     key_encryption_key: str                 # base64 of 32 bytes. Replace with KMS in production.
 
     registrar_host: str = "connect.example.com"
-    isup_port: int = 7660
     auto_register_port: int = 7000
     # GB28181 (SIP) settings handed to customers. The registrar must be configured with the same realm and server id.
     gb_realm: str = "3402000000"            # 10 digits: the SIP domain

@@ -238,18 +238,18 @@ var TEN=[
  {id:"t10",n:"Tuticorin Salt Works",city:"Tuticorin",st:"active",plan:"quick",cams:9,lim:10,pt:"p2",td:0,fr:30.5,wa:980,gb:150,since:"Jul 2026"}
 ];
 var REC=[
- {id:"SHARMA-001",br:"Hikvision",pr:"ISUP",t:"t1",st:"online",seen:"12 s ago",ch:8,ip:"49.205.118.40"},
+ {id:"SHARMA-001",br:"Dahua",pr:"Auto Register",t:"t1",st:"online",seen:"12 s ago",ch:8,ip:"49.205.118.40"},
  {id:"MDU-TEX-001",br:"Dahua",pr:"Auto Register",t:"t2",st:"online",seen:"8 s ago",ch:16,ip:"117.211.4.92"},
- {id:"MDU-TEX-002",br:"Hikvision",pr:"ISUP",t:"t2",st:"offline",seen:"47 min ago",ch:8,ip:"117.211.4.92"},
- {id:"TVL-COLD-001",br:"Hikvision",pr:"ISUP",t:"t3",st:"online",seen:"20 s ago",ch:4,ip:"152.58.31.7"},
+ {id:"MDU-TEX-002",br:"Dahua",pr:"Auto Register",t:"t2",st:"offline",seen:"47 min ago",ch:8,ip:"117.211.4.92"},
+ {id:"TVL-COLD-001",br:"Dahua",pr:"Auto Register",t:"t3",st:"online",seen:"20 s ago",ch:4,ip:"152.58.31.7"},
  {id:"SLM-STEEL-001",br:"Dahua",pr:"Auto Register",t:"t4",st:"online",seen:"31 s ago",ch:8,ip:"106.51.77.130"},
- {id:"CBE-PUMP-001",br:"Hikvision",pr:"ISUP",t:"t5",st:"online",seen:"5 s ago",ch:16,ip:"122.164.9.18"},
- {id:"CBE-PUMP-002",br:"Hikvision",pr:"ISUP",t:"t5",st:"online",seen:"9 s ago",ch:16,ip:"122.164.9.18"},
+ {id:"CBE-PUMP-001",br:"Dahua",pr:"Auto Register",t:"t5",st:"online",seen:"5 s ago",ch:16,ip:"122.164.9.18"},
+ {id:"CBE-PUMP-002",br:"Dahua",pr:"Auto Register",t:"t5",st:"online",seen:"9 s ago",ch:16,ip:"122.164.9.18"},
  {id:"HSR-PACK-001",br:"Dahua",pr:"Auto Register",t:"t6",st:"offline",seen:"6 days ago",ch:8,ip:"-"},
  {id:"TRY-MART-001",br:"Dahua",pr:"Auto Register",t:"t7",st:"online",seen:"14 s ago",ch:4,ip:"223.185.40.66"},
- {id:"NGL-FISH-001",br:"Hikvision",pr:"ISUP",t:"t8",st:"never",seen:"never connected",ch:0,ip:"-"},
- {id:"ERD-SPIN-001",br:"Hikvision",pr:"ISUP",t:"t9",st:"online",seen:"3 s ago",ch:32,ip:"61.2.171.205"},
- {id:"ERD-SPIN-002",br:"Hikvision",pr:"ISUP",t:"t9",st:"offline",seen:"2 h ago",ch:16,ip:"61.2.171.205"},
+ {id:"NGL-FISH-001",br:"Dahua",pr:"Auto Register",t:"t8",st:"never",seen:"never connected",ch:0,ip:"-"},
+ {id:"ERD-SPIN-001",br:"Dahua",pr:"Auto Register",t:"t9",st:"online",seen:"3 s ago",ch:32,ip:"61.2.171.205"},
+ {id:"ERD-SPIN-002",br:"Dahua",pr:"Auto Register",t:"t9",st:"offline",seen:"2 h ago",ch:16,ip:"61.2.171.205"},
  {id:"TUT-SALT-001",br:"Dahua",pr:"Auto Register",t:"t10",st:"online",seen:"22 s ago",ch:16,ip:"103.88.14.51"}
 ];
 var NAMES=["Anbu","Meena","Selvam","Kavitha","Murugan","Lakshmi","Dinesh","Revathi"];
@@ -353,7 +353,7 @@ function pOverview(){
   +'<div class="grid split" style="margin-bottom:14px"><div class="panel"><div class="panel-h"><h2>Frames analysed per hour, last 24 h</h2><span class="muted">millions</span></div><svg class="chart" viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Frames analysed per hour">'+grid+'<path d="'+area+'" fill="var(--accent)" opacity=".14"/><path d="'+line+'" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="'+pts[23][0]+'" cy="'+pts[23][1]+'" r="3.5" fill="var(--accent)"/></svg></div>'
   +'<div class="panel"><div class="panel-h"><h2>Needs attention</h2><span class="pill acc">'+att.length+'</span></div><ul class="list">'+att.slice(0,6).map(function(a){return '<li><span class="fi '+a.k+'"></span><div class="grow"><b>'+esc(a.h)+'</b><p>'+esc(a.p)+'</p></div><button class="btn sm" data-go="'+a.go+'"'+(a.tid?' data-tid="'+a.tid+'"':"")+'>Open</button></li>'}).join("")+'</ul></div></div>'
   +'<div class="panel"><div class="panel-h"><h2>System health</h2></div><div class="hl">'
-  +[["Registrar (ISUP / Auto Register)","ok","Running","412 sessions open"],["Media relay","ok","Running","138 streams, 5 fps"],["AI workers","warn","61% CPU","14 of 16 busy"],["Job queue","warn","1,240 waiting","Normal under 2,000"],["Database","ok","Running","p95 query 18 ms"],["WhatsApp API","warn","98.8% delivered","34 failures today"]]
+  +[["Registrar (Dahua Auto Register / GB28181)","ok","Running","412 sessions open"],["Media relay","ok","Running","138 streams, 5 fps"],["AI workers","warn","61% CPU","14 of 16 busy"],["Job queue","warn","1,240 waiting","Normal under 2,000"],["Database","ok","Running","p95 query 18 ms"],["WhatsApp API","warn","98.8% delivered","34 failures today"]]
   .map(function(h){return '<div><b>'+h[0]+'<span class="pill '+h[1]+'">'+h[2]+'</span></b><span>'+h[3]+'</span></div>'}).join("")+'</div></div>';
 }
 
@@ -488,7 +488,7 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!$("#ov").h
 $("#ov").addEventListener("mousedown",function(e){if(e.target===$("#ov"))closeModal()});
 function rnd(n){var c="abcdefghjkmnpqrstuvwxyz23456789",s="";for(var i=0;i<n;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
 function credHTML(id,key,br){
-  var port=br==="Dahua"?"9500":"7660",rows=[["Server","connect.gateinsight.in"],["Port",port],["Device ID",id],["Key",key]];
+  var port=br==="Dahua"?"9500":"5060",rows=[["Server","connect.gateinsight.in"],["Port",port],["Device ID",id],["Key",key]];
   return '<div class="cred">'+rows.map(function(r){return '<div><span>'+r[0]+'</span><code>'+r[1]+'</code><button class="btn sm" data-cp="'+r[1]+'">Copy</button></div>'}).join("")+'</div><div class="note">The key is shown only now. After you close this window it is kept only in encrypted form, so a lost key means issuing a new one.</div>'
 }
 function mReason(title,desc,btn,extra,onok,danger){
@@ -804,9 +804,9 @@ document.addEventListener("click",function(e){
     $("#mok").onclick=function(){var n=$("#nn").value.trim();if(!n){$("#err").textContent="Enter the organisation name.";return}
       var t={id:"t"+(TEN.length+1),n:n,city:$("#nc").value.trim()||"-",st:"trial",plan:$("#npl").value,cams:0,lim:5,pt:$("#np").value,td:14,fr:0,wa:0,gb:0,since:"Nov 2026"};TEN.unshift(t);logA("tenant.create",n,n,"New trial");closeModal();go("tenants",t.id);toast("Tenant created, invitation emailed")}}
   if(id==="regBtn"){
-    openModal('<h2>Register a recorder</h2><p>This creates the device ID and key the customer types into their recorder.</p><div class="field"><label for="rt">Tenant</label><select id="rt">'+TEN.filter(function(t){return t.st!=="suspended"}).map(function(t){return '<option value="'+t.id+'">'+esc(t.n)+'</option>'}).join("")+'</select></div><div class="field"><label for="rb">Recorder brand</label><select id="rb"><option>Hikvision</option><option>Dahua</option></select></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Generate credentials</button></div>');
+    openModal('<h2>Register a recorder</h2><p>This creates the device ID and key the customer types into their recorder.</p><div class="field"><label for="rt">Tenant</label><select id="rt">'+TEN.filter(function(t){return t.st!=="suspended"}).map(function(t){return '<option value="'+t.id+'">'+esc(t.n)+'</option>'}).join("")+'</select></div><div class="field"><label for="rb">Recorder brand</label><select id="rb"><option value="Dahua">Dahua</option><option value="Other">Other brand (GB28181, staff only)</option></select></div><div class="mbtns"><button class="btn" data-close>Cancel</button><button class="btn primary" id="mok">Generate credentials</button></div>');
     $("#mok").onclick=function(){var t=tn($("#rt").value),br=$("#rb").value,n=recsOf(t.id).length+1,pre=t.n.split(" ")[0].toUpperCase().slice(0,6),id=pre+"-"+("00"+n).slice(-3),key=rnd(4)+"-"+rnd(4);
-      REC.push({id:id,br:br,pr:br==="Dahua"?"Auto Register":"ISUP",t:t.id,st:"never",seen:"never connected",ch:0,ip:"-"});logA("recorder.register",id,t.n,"New recorder");
+      REC.push({id:id,br:br,pr:br==="Dahua"?"Auto Register":"GB28181",t:t.id,st:"never",seen:"never connected",ch:0,ip:"-"});logA("recorder.register",id,t.n,"New recorder");
       openModal('<h2>Credentials for '+esc(t.n)+'</h2><p>Send these to the customer, or fill them in on their recorder.</p>'+credHTML(id,key,br)+'<div class="ban">Status will change to Online here as soon as the recorder connects.</div><div class="mbtns"><button class="btn primary" data-close>Done</button></div>');render()}}
   if(id==="newPartner"||id==="inviteStaff"){toast("Invitation form opens here: email, role, MFA required on first sign-in.")}
 });

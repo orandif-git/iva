@@ -1,5 +1,5 @@
 """A stand-in for a GB28181 recorder. It computes Digest authentication itself (not with the registrar's code), sends XML in
-GB2312 like real Hikvision/Dahua units, answers catalogue queries, accepts live-video requests, and sends real RTP packets."""
+GB2312 like real Dahua units, answers catalogue queries, accepts live-video requests, and sends real RTP packets."""
 import asyncio
 import hashlib
 import re

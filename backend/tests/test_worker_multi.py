@@ -297,7 +297,7 @@ async def test_three_cameras_in_one_process_each_get_their_own_counts_with_analy
 # ---------------------------------------------------------------------------------- which cameras a worker runs
 async def test_each_camera_belongs_to_exactly_one_worker_and_only_runnable_cameras_are_listed(client, make, su):
     tech = await make.staff("owner")
-    t, u, foot, anpr = await setup_cameras(client, make, footfall=3, anpr=3)
+    t, u, foot, anpr = await setup_cameras(client, make, footfall=3, anpr=3, su=su, no_route=True)        # an RTSP-only recorder: no video route
     ids = foot + anpr
     for cam in ids[:2] + ids[3:5]:                                                                     # these four get an address: runnable
         await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": "rtsp://v:p@10.20.0.14/x", "reason": "Site VPN is up"}, headers=tech["headers"])

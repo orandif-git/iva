@@ -46,7 +46,7 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | GET | `/v1/recorders` | A R | List recorders with status |
-| POST | `/v1/recorders` | A | Start onboarding: body `{ brand, protocol?, site_id?, name? }` (`protocol`: `gb28181`, `isup`, `auto_register`). Returns `{ recorder_id, server, port, device_id, key }` plus `server_id` and `domain` for GB28181. **The key is returned once.** |
+| POST | `/v1/recorders` | A | Start onboarding: body `{ brand: "dahua", protocol?: "auto_register", site_id?, name? }`. Customers can add Dahua recorders only: any other brand or `gb28181` is refused with 403 `staff_only` (staff add those, see `POST /admin/v1/tenants/{id}/recorders`), and Hikvision or `isup` with 422 `not_supported`. Returns `{ recorder_id, server, port, device_id, key, viewer_user }`. **The key is returned once.** |
 | GET | `/v1/recorders/{id}` | A R | Detail and status |
 | GET | `/v1/recorders/{id}/status` | A | Poll for the connect screen: `{ status, checks: [reached, key_ok, channels_found, preview_ok] }` |
 | GET | `/v1/recorders/{id}/events` | A | Same as above as server-sent events, so the page updates itself |
@@ -133,7 +133,7 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 >
 > | POST | `/v1/auth/sign-in` | public | **One sign-in for everyone.** `{ email, password, tenant?, code? }`. Staff are checked first, then customers. Answers `{ kind: "staff" \| "customer", access_token, refresh_token, ... }`, or `{ next: "code" }` when a staff member has the right password and still needs their authenticator code. A wrong password always gets the same plain answer. |
 >
-> Recorders are connected, renamed and removed by the customer. Staff can list them (`GET /admin/v1/recorders`) and read their connection details, nothing more.
+> Customers connect their own Dahua recorders, rename them and remove them. Staff can list recorders, read their connection details, and add the types customers cannot (GB28181 recorders and the "other" brand) with `POST /admin/v1/tenants/{id}/recorders`. Hikvision is not supported.
 
 
 Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analyst. Every route also requires `mfa=true` in the token.
@@ -185,7 +185,7 @@ Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analys
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | GET | `/admin/v1/recorders` | all | `?status&tenant_id&q` |
-| POST | `/admin/v1/recorders` | O T | Register for a tenant. Returns server, port, device id and key once. |
+| POST | `/admin/v1/tenants/{id}/recorders` | O | `{ brand, protocol?, site_id?, name?, reason }`. Adds a recorder for a tenant, including GB28181 and the "other" brand, which customers cannot add. Hikvision and `isup` are refused (422 `not_supported`). Returns server, port, device id and key once (`no-store`); the key is never written to the audit log. |
 | POST | `/admin/v1/recorders/{id}/rotate-key` | O T | `{ reason }`. New key shown once. |
 | POST | `/admin/v1/recorders/{id}/restart-stream` | O T S | Ask the registrar to restart the stream |
 | DELETE | `/admin/v1/recorders/{id}` | O | `{ reason }` |

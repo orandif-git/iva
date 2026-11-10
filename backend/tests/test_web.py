@@ -155,8 +155,8 @@ async def test_an_rtsp_camera_picture_uses_its_own_address_without_a_format(clie
     assert seen == [("rtsp://v:p@10.20.0.14/x", None)]
 
 
-async def test_a_camera_with_no_source_says_so(client, make):
-    t, u, foot, _ = await setup_cameras(client, make, footfall=1, anpr=0)        # a hikvision (isup) recorder: no video route yet
+async def test_a_camera_with_no_source_says_so(client, make, su):
+    t, u, foot, _ = await setup_cameras(client, make, footfall=1, anpr=0, su=su, no_route=True)        # an RTSP-only recorder: no video route
     r = await client.get(f"/v1/cameras/{foot[0]}/snapshot", headers=u["headers"])
     assert r.status_code == 409 and r.json()["error"]["code"] == "no_video_source"
 

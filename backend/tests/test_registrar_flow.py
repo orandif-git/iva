@@ -39,7 +39,8 @@ async def env(client, make, su):
     async def onboard(plan="full", protocol="gb28181", transport="udp", **dev_kw):
         t = await make.tenant(plan=plan)
         u = await make.user(t)
-        r = await client.post("/v1/recorders", json={"brand": "hikvision", "protocol": protocol}, headers=u["headers"])
+        tech = await make.staff("owner")                       # customers cannot add GB28181 recorders; staff can
+        r = await client.post(f"/admin/v1/tenants/{t}/recorders", json={"brand": "dahua", "protocol": protocol, "reason": "Test: add a recorder"}, headers=tech["headers"])
         assert r.status_code == 201, r.text
         cred = r.json()
         port = reg.udp_port if transport == "udp" else reg.tcp_port
@@ -122,8 +123,8 @@ async def test_a_captured_login_cannot_be_replayed(env):
 
 
 async def test_only_gb28181_recorders_can_register_here(env):
-    t, u, cred, dev = await env.onboard(protocol="isup")
-    assert await dev.register() == 403                              # right key, wrong protocol
+    t, u, cred, dev = await env.onboard(protocol="auto_register")
+    assert await dev.register() == 403                              # right key, wrong protocol (a Dahua Auto Register recorder)
 
 
 async def test_suspended_tenant_cannot_register_and_is_dropped_when_suspended(env, su):

@@ -8,7 +8,10 @@ from ..config import get_settings
 from ..crypto import generate_key, vault
 from ..errors import ApiError
 
-BRAND_PROTOCOL = {"hikvision": "isup", "dahua": "auto_register"}
+# The product connects Dahua recorders (Auto Register). Hikvision is not supported: its recorders stay on Hik-Connect.
+# GB28181 and the "other" brand still work, but only when staff add the recorder (see create_recorder, staff=True).
+BRAND_PROTOCOL = {"dahua": "auto_register"}
+CUSTOMER_PROTOCOLS = (None, "auto_register")
 
 # Columns safe to return. The encrypted key is never selected into API responses.
 RECORDER_COLS = """r.id, r.tenant_id, r.site_id, r.device_id, r.brand::text AS brand, r.protocol::text AS protocol,
@@ -18,13 +21,17 @@ RECORDER_COLS = """r.id, r.tenant_id, r.site_id, r.device_id, r.brand::text AS b
 _ID_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"        # no look-alikes, because customers type this on a recorder
 
 
-def resolve_protocol(brand: str, protocol: str | None) -> str:
+def resolve_protocol(brand: str, protocol: str | None, *, staff: bool = False) -> str:
+    """Which connection type a new recorder gets. Customers can add Dahua recorders (Auto Register) only; staff may also add
+    GB28181 recorders and the "other" brand. Hikvision, ISUP and cloud_api are refused for everyone."""
+    if brand == "hikvision" or protocol in ("isup", "cloud_api"):
+        raise ApiError(422, "not_supported", "Hikvision recorders are not supported yet. Only Dahua recorders can be connected.")
+    if not staff and (brand != "dahua" or protocol not in CUSTOMER_PROTOCOLS):
+        raise ApiError(403, "staff_only", "Only Dahua recorders can be added here. Contact support to connect another type of recorder.")
     if protocol is None:
         if brand not in BRAND_PROTOCOL:
             raise ApiError(422, "protocol_required", "Choose gb28181 for this brand.")
         return BRAND_PROTOCOL[brand]
-    if protocol == "isup" and brand != "hikvision":
-        raise ApiError(422, "protocol_mismatch", "ISUP is only for Hikvision recorders.")
     if protocol == "auto_register" and brand != "dahua":
         raise ApiError(422, "protocol_mismatch", "Auto Register is only for Dahua recorders.")
     return protocol
@@ -32,7 +39,10 @@ def resolve_protocol(brand: str, protocol: str | None) -> str:
 
 def registrar_endpoint(protocol: str) -> tuple[str, int]:
     s = get_settings()
-    return s.registrar_host, {"isup": s.isup_port, "auto_register": s.auto_register_port, "gb28181": s.gb_port}[protocol]
+    ports = {"auto_register": s.auto_register_port, "gb28181": s.gb_port}
+    if protocol not in ports:        # an old row from a connection type that is no longer offered
+        raise ApiError(409, "protocol_not_supported", "This recorder uses a connection type that is no longer supported.")
+    return s.registrar_host, ports[protocol]
 
 
 def extras(protocol: str) -> dict:
@@ -70,8 +80,9 @@ def _new_device_id(protocol: str, slug: str) -> str:
     return f"{_prefix(slug)}-{''.join(secrets.choice(_ID_CHARS) for _ in range(4))}"
 
 
-async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, created_by, protocol: str | None = None, name: str | None = None) -> dict:
-    protocol = resolve_protocol(brand, protocol)
+async def create_recorder(conn, tenant_id: uuid.UUID, brand: str, site_id, created_by, protocol: str | None = None, name: str | None = None,
+                          *, staff: bool = False) -> dict:
+    protocol = resolve_protocol(brand, protocol, staff=staff)
     tenant = await conn.fetchrow("SELECT slug::text AS slug, status::text AS status FROM app.tenants WHERE id=$1", tenant_id)
     if not tenant:
         raise ApiError(404, "tenant_not_found", "Tenant not found.")

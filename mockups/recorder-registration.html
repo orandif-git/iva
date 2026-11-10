@@ -179,7 +179,7 @@ var T={
   steps:["Recorder","Connect","Cameras","Done"],
   s1h:"Connect your recorder",s1p:"It takes about 2 minutes. You type 4 values into your recorder. No router changes, no IP address, no VPN.",
   s1q:"Which brand is your recorder?",s1help:"Look at the front panel or the label on the recorder.",
-  b_hik:"Hikvision",b_hik_s:"Also sold as Prama, Secureye",b_dah:"Dahua",b_dah_s:"Also sold as CP Plus, Imou",b_not:"Not sure",b_not_s:"We will help you find out",
+  b_dah:"Dahua",b_dah_s:"Also sold as CP Plus, Imou",b_not:"Not sure",b_not_s:"We will help you find out",
   next:"Next",back:"Back",
   s2h:"Type these 4 values into your recorder",s2p:"We prepared them for you. Copy each one, or read them out.",
   where:"On the recorder, open",
@@ -205,7 +205,7 @@ var T={
   steps:["ரெக்கார்டர்","இணைப்பு","கேமராக்கள்","முடிந்தது"],
   s1h:"உங்கள் ரெக்கார்டரை இணைக்கவும்",s1p:"சுமார் 2 நிமிடங்கள் ஆகும். உங்கள் ரெக்கார்டரில் 4 விவரங்களை உள்ளிட வேண்டும். ரவுட்டர் மாற்றம், ஐபி முகவரி, வி.பி.என் எதுவும் தேவையில்லை.",
   s1q:"உங்கள் ரெக்கார்டர் எந்த பிராண்ட்?",s1help:"ரெக்கார்டரின் முன்புறம் அல்லது லேபிளைப் பாருங்கள்.",
-  b_hik:"ஹிக்விஷன்",b_hik_s:"பிரமா, செக்யூரே என்றும் விற்கப்படுகிறது",b_dah:"தஹுவா",b_dah_s:"சிபி பிளஸ், இமோ என்றும் விற்கப்படுகிறது",b_not:"தெரியவில்லை",b_not_s:"கண்டுபிடிக்க உதவுவோம்",
+  b_dah:"தஹுவா",b_dah_s:"சிபி பிளஸ், இமோ என்றும் விற்கப்படுகிறது",b_not:"தெரியவில்லை",b_not_s:"கண்டுபிடிக்க உதவுவோம்",
   next:"அடுத்து",back:"பின்செல்",
   s2h:"இந்த 4 விவரங்களை உங்கள் ரெக்கார்டரில் உள்ளிடவும்",s2p:"உங்களுக்காக தயாராக வைத்துள்ளோம். ஒவ்வொன்றையும் நகலெடுக்கவும் அல்லது படித்துச் சொல்லவும்.",
   where:"ரெக்கார்டரில் திறக்கவும்",
@@ -229,11 +229,10 @@ var T={
   cams:["நுழைவாயில்","கேட்","வரவேற்பு","கிடங்கு","பார்க்கிங்","பணப் பெட்டி","பின் கதவு","கேமரா 8"]}
 };
 var BR={
- hik:{n:"Hikvision",proto:"ISUP",port:"7660",path:["Configuration","Network","Advanced Settings","Platform Access"],lab:["lbl_server","lbl_port","lbl_id","lbl_key"],rlab:["Server Address","Port","Device ID","Encryption Key"],side:["Basic","TCP/IP","Port","DDNS","Platform Access","Email"],sideOn:4},
  dah:{n:"Dahua",proto:"Auto Register",port:"9500",path:["Setup","Network","Register"],lab:["lbl_server","lbl_port","lbl_id","lbl_pass"],rlab:["Server Address","Port","Device ID","Password"],side:["TCP/IP","Port","DDNS","Register","Email","UPnP"],sideOn:3}
 };
 var S={lang:"en",step:1,brand:null,sel:{},rec:{en:false,v:["","","",""],status:"off",err:-1,msg:""},steps:{c:[0,0,0,0,0]},connected:false,log:[],busy:false,ch:[]};
-var VALUES=["connect.gateinsight.in","7660","SHARMA-001","k7P4-x92m"];
+var VALUES=["connect.gateinsight.in","9500","SHARMA-001","k7P4-x92m"];
 function t(k,o){var s=T[S.lang][k];if(s===undefined)s=T.en[k];if(o)for(var x in o)s=s.replace("{"+x+"}",o[x]);return s}
 function vals(){var b=BR[S.brand];var v=VALUES.slice();v[1]=b.port;return v}
 
@@ -263,7 +262,7 @@ function render(){
   renderSteps();var v=$("#view"),h="";
   if(S.step===1){
     h='<div class="card"><h1>'+t("s1h")+'</h1><p class="lead">'+t("s1p")+'</p><h2 style="margin-top:22px">'+t("s1q")+'</h2><p class="lead" style="margin-top:2px">'+t("s1help")+'</p><div class="brands">'
-    +[["hik","b_hik","b_hik_s"],["dah","b_dah","b_dah_s"],["not","b_not","b_not_s"]].map(function(b){
+    +[["dah","b_dah","b_dah_s"],["not","b_not","b_not_s"]].map(function(b){
       return '<button class="brandbtn" data-brand="'+b[0]+'" aria-pressed="'+(S.brand===b[0])+'"><div class="rec-pic"><i></i><u></u><u style="flex:.4"></u></div><b>'+t(b[1])+'</b><span>'+t(b[2])+'</span></button>'}).join("")
     +'</div>'+(S.brand==="not"?'<p class="path" style="margin-top:14px">'+t("notsure")+'</p>':'')
     +'<div class="nav"><span></span><button class="btn primary big" id="n1"'+((S.brand&&S.brand!=="not")?"":" disabled")+'>'+t("next")+'</button></div></div>'+helpBox();
@@ -271,7 +270,7 @@ function render(){
   if(S.step===2){
     var b=BR[S.brand],vv=vals(),i;
     h='<div class="grid cols"><div class="card"><h2>'+t("s2h")+'</h2><p class="lead">'+t("s2p")+'</p>'
-    +'<div class="path" style="margin-top:14px">'+t("where")+': <b>'+b.path.join(" → ")+'</b><br><span class="muted" style="color:var(--muted)">'+(S.brand==="hik"?"Mode: ISUP":"Auto Register: Enable")+'</span></div><div class="vals">';
+    +'<div class="path" style="margin-top:14px">'+t("where")+': <b>'+b.path.join(" → ")+'</b><br><span class="muted" style="color:var(--muted)">'+"Auto Register: Enable"+'</span></div><div class="vals">';
     for(i=0;i<4;i++)h+='<div class="val" id="val'+i+'"><small>'+(i+1)+'. '+t(b.lab[i])+'</small><code>'+vv[i]+'</code><button data-copy="'+i+'">'+t("copy")+'</button></div>';
     h+='</div><ul class="check" id="chk">'+[0,1,2,3,4].map(function(k){return '<li id="ck'+k+'" class="'+ckClass(k)+'"><span class="ic">'+(S.steps.c[k]===2?"✓":S.steps.c[k]===3?"!":"")+'</span>'+t("c"+k)+'</li>'}).join("")+'</ul>'
     +'<p class="lead" style="font-size:13.5px;margin-top:12px" id="waitnote">'+(S.connected?"":t("waitnote"))+'</p>'

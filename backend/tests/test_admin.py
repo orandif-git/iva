@@ -34,7 +34,7 @@ async def test_plan_change_blocked_while_a_removed_feature_is_in_use(client, mak
     owner = await make.staff("owner")
     t = await make.tenant(plan="full")
     u = await make.user(t)
-    cred = (await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])).json()
+    cred = (await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])).json()
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.1.1.1", "channels": [{"channel_no": 1}]})
     await client.post("/v1/cameras", json={"recorder_id": cred["recorder_id"], "channel_no": 1, "name": "Gate", "use_anpr": True}, headers=u["headers"])
     r = await client.post(f"/admin/v1/tenants/{t}/plan", json={"plan_id": "quick", "reason": "Customer asked to downgrade"}, headers=owner["headers"])
@@ -45,7 +45,7 @@ async def test_lowering_limit_below_usage_is_refused(client, make):
     owner = await make.staff("owner")
     t = await make.tenant(limit=5)
     u = await make.user(t)
-    cred = (await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])).json()
+    cred = (await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])).json()
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.1.1.1", "channels": [{"channel_no": 1}, {"channel_no": 2}]})
     for n in (1, 2):
         await client.post("/v1/cameras", json={"recorder_id": cred["recorder_id"], "channel_no": n, "name": f"C{n}", "use_footfall": True}, headers=u["headers"])

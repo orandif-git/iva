@@ -113,7 +113,8 @@ Other settings (`GI_REG_` prefix): `SIP_PORT` (5060), `REALM`, `SERVER_ID` (thes
 
 ## Not covered
 
-- **Hikvision ISUP** needs Hikvision's proprietary SDK and is not built. **Dahua Auto Register** is built (`python -m dahua`, needs Dahua's NetSDK Python wrapper; see DEPLOY.md 10b); GB28181 is also implemented.
+- **Hikvision is not supported** (product decision, November 2026): Hikvision recorders stay on Hik-Connect. A trial with Hikvision's Device Gateway (ISUP 5.0) registered a recorder and read its status, but live video was never proven, so the work was parked. Creating a Hikvision or ISUP recorder is refused.
+- **Dahua Auto Register** is the product's route (`python -m dahua`, needs Dahua's NetSDK Python wrapper; see DEPLOY.md 10b). GB28181 is also implemented as a fallback, but only staff can add GB28181 recorders and the "other" brand (`POST /admin/v1/tenants/{id}/recorders`).
 - **Real recorders.** All tests use a simulated recorder written from the standard. Real units have quirks (field names, timing,
   which transport they prefer, unusual catalogue contents). Test every model before promising support for it.
 - **Live video for analysis.** The registrar proves video flows (counts RTP packets, then hangs up). Relaying streams to the AI

@@ -196,11 +196,11 @@ Security of the pages: they load only their own scripts and styles (a strict con
 
 ## 8. Register the recorder (the real test)
 
-1. [ ] Ask for credentials. **For Dahua, section 10b (Auto Register) is the main route; say `gb28181` only to use this GB28181 route:**
+1. [ ] Ask for credentials. **For Dahua, section 10b (Auto Register) is the main route. The GB28181 route is staff-only: customers cannot ask for it, so use a staff (owner) token and the tenant's id:**
    ```bash
-   curl -s -X POST http://localhost:8000/v1/recorders \
-     -H "Authorization: Bearer <customer admin token>" -H "Content-Type: application/json" \
-     -d '{"brand":"dahua","protocol":"gb28181"}'
+   curl -s -X POST http://localhost:8000/admin/v1/tenants/<tenant id>/recorders \
+     -H "Authorization: Bearer <staff owner token>" -H "Content-Type: application/json" \
+     -d '{"brand":"dahua","protocol":"gb28181","reason":"This model has no Auto Register page"}'
    ```
    The answer is shown **once**: `server`, `port`, `server_id`, `domain`, `device_id` (20 digits), `key`. Copy it now.
 2. [ ] On the recorder, open the menu that points it at a server. Look under **Network** (or Network → Advanced / Platform Access) for **GB28181**.
@@ -313,4 +313,4 @@ These are gaps in the product itself, not in this checklist:
 4. **HTTPS and hardening:** the API is plain HTTP on localhost here. Before any customer: nginx with a real certificate, `GI_ENV=production`, CORS set, rate limiting at nginx, automatic OS updates, off-server backups of the database and of `GI_KEY_ENCRYPTION_KEY`.
 5. **Monitoring:** nothing alerts you if the registrar or worker dies (systemd restarts them, but you are not told).
 6. **Invoicing** is built but paused: not reviewed for GST rules, no screens.
-7. **Hikvision ISUP** is not built. Dahua Auto Register is built (section 10b) but tested only with one NVR model; GB28181 and RTSP also work.
+7. **Hikvision is not supported** (the product connects Dahua recorders only). Dahua Auto Register is built (section 10b) but tested only with one NVR model; GB28181 and RTSP also work as fallbacks that staff set up.

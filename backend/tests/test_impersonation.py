@@ -2,7 +2,7 @@ async def test_view_as_customer_is_read_only_and_logged(client, make, su):
     support, owner = await make.staff("support"), await make.staff("owner")
     t = await make.tenant()
     u = await make.user(t)
-    await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])
+    await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])
 
     assert (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "no", "minutes": 30}, headers=support["headers"])).status_code == 422
     assert (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Missing plate reads", "minutes": 5}, headers=support["headers"])).status_code == 422

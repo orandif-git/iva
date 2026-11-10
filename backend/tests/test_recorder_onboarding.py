@@ -6,7 +6,7 @@ KEY_RE = re.compile(r"^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$")
 async def _onboard(client, make, plan="full", limit=5):
     t = await make.tenant(plan=plan, limit=limit)
     u = await make.user(t)
-    r = await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])
+    r = await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])
     assert r.status_code == 201, r.text
     return t, u, r.json()
 
@@ -14,7 +14,7 @@ async def _onboard(client, make, plan="full", limit=5):
 async def test_full_registration_flow(client, make, su):
     t, u, cred = await _onboard(client, make)
     assert r"no-store" in (await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])).headers["cache-control"]
-    assert cred["server"] and cred["port"] == 7660 and KEY_RE.match(cred["key"])
+    assert cred["server"] and cred["port"] == 7000 and KEY_RE.match(cred["key"])
     rid, dev = cred["recorder_id"], cred["device_id"]
 
     st = (await client.get(f"/v1/recorders/{rid}/status", headers=u["headers"])).json()

@@ -159,7 +159,7 @@ async def test_stream_address_validation_and_roles(client, make):
 async def test_source_is_withheld_when_missing_inactive_or_tampered(client, make, su):
     import uuid
     tech = await make.staff("owner")
-    t, u, (cam,), _ = await setup_cameras(client, make)
+    t, u, (cam,), _ = await setup_cameras(client, make, su=su, no_route=True)                  # an RTSP-only recorder: no video route
     assert (await client.get(f"/internal/v1/cameras/{cam}/source", headers=make.service())).json()["error"]["code"] == "no_source"
     await client.put(f"/admin/v1/cameras/{cam}/source", json={"url": URL, "reason": "Site VPN is up"}, headers=tech["headers"])
     other = (await setup_cameras(client, make))[2][0]
@@ -228,7 +228,7 @@ async def test_a_camera_on_a_registered_recorder_is_served_by_the_relay_unless_a
     tech = await make.staff("owner")
     t = await make.tenant()
     u = await make.user(t)
-    cred = (await client.post("/v1/recorders", json={"brand": "hikvision", "protocol": "gb28181"}, headers=u["headers"])).json()
+    cred = (await client.post(f"/admin/v1/tenants/{t}/recorders", json={"brand": "dahua", "protocol": "gb28181", "reason": "Test: GB28181 recorder"}, headers=tech["headers"])).json()
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(),
                       json={"ip": "1.2.3.4", "channels": [{"channel_no": 1}, {"channel_no": 2}]})
     cam = (await client.post("/v1/cameras", json={"recorder_id": cred["recorder_id"], "channel_no": 2, "name": "Gate", "use_footfall": True}, headers=u["headers"])).json()["id"]
@@ -246,7 +246,7 @@ async def test_the_worker_link_turns_the_answer_into_a_relay_source_or_an_addres
     tech = await make.staff("owner")
     t = await make.tenant()
     u = await make.user(t)
-    cred = (await client.post("/v1/recorders", json={"brand": "dahua", "protocol": "gb28181"}, headers=u["headers"])).json()
+    cred = (await client.post(f"/admin/v1/tenants/{t}/recorders", json={"brand": "dahua", "protocol": "gb28181", "reason": "Test: GB28181 recorder"}, headers=tech["headers"])).json()
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.2.3.4", "channels": [{"channel_no": 1}]})
     cam = (await client.post("/v1/cameras", json={"recorder_id": cred["recorder_id"], "channel_no": 1, "name": "Gate", "use_footfall": True}, headers=u["headers"])).json()["id"]
     link = WorkerBackend(client, make.service()["Authorization"].split()[1], cam)

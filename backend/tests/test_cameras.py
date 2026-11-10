@@ -1,7 +1,7 @@
 async def _online(client, make, plan="full", limit=5, channels=6):
     t = await make.tenant(plan=plan, limit=limit)
     u = await make.user(t)
-    cred = (await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])).json()
+    cred = (await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])).json()
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(),
                       json={"ip": "1.2.3.4", "channels": [{"channel_no": n, "name": f"C{n}"} for n in range(1, channels + 1)]})
     return t, u, cred["recorder_id"]

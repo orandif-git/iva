@@ -1,14 +1,27 @@
-"""Staff can see every recorder and how to connect it. Recorders are connected, renamed and removed by the customer, not here."""
+"""Staff can see every recorder and how to connect it. Customers connect their own Dahua recorders, rename them and remove them;
+only staff can add the other types (GB28181 recorders and the "other" brand), here."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
-from ..schemas import AdminRecorderOut, RecorderConnection
+from ..schemas import AdminRecorderOut, RecorderConnection, RecorderCreateAdmin, RecorderCredentials
 from ..services import recorders as svc
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: recorders"])
+ROLES = ("owner",)
+
+
+@router.post("/tenants/{tenant_id}/recorders", response_model=RecorderCredentials, status_code=201)
+async def add_recorder(tenant_id: UUID, body: RecorderCreateAdmin, response: Response, ctx: AdminCtx = Depends(admin_ctx(*ROLES))):
+    """Adds a recorder for a customer, including the types customers cannot add themselves (GB28181, the "other" brand).
+    Hikvision, ISUP and cloud_api are refused. The answer carries the key, shown once and never stored in the audit log."""
+    out = await svc.create_recorder(ctx.conn, tenant_id, body.brand, body.site_id, None, body.protocol, body.name, staff=True)
+    await ctx.audit("recorder.admin_register", tenant_id=tenant_id, target_type="recorder", target_id=out["recorder_id"], reason=body.reason,
+                    after={"device_id": out["device_id"], "brand": body.brand, "protocol": out["protocol"]})
+    response.headers["Cache-Control"] = "no-store"
+    return out
 
 
 @router.get("/recorders", response_model=list[AdminRecorderOut])

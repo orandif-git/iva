@@ -29,9 +29,10 @@ async def test_the_customer_is_told_what_to_type_on_a_dahua_recorder(client, mak
     assert cred["viewer_user"] == "giview" and cred["device_id"] and cred["key"] and cred["server"]
 
 
-async def test_hikvision_and_gb28181_recorders_do_not_get_a_viewer_user(client, make):
-    u = await make.user(await make.tenant())
-    assert (await client.post("/v1/recorders", json={"brand": "hikvision"}, headers=u["headers"])).json()["viewer_user"] is None
+async def test_gb28181_recorders_do_not_get_a_viewer_user(client, make):
+    t, tech = await make.tenant(), await make.staff("owner")
+    r = await client.post(f"/admin/v1/tenants/{t}/recorders", json={"brand": "dahua", "protocol": "gb28181", "reason": "Test: GB28181 recorder"}, headers=tech["headers"])
+    assert r.status_code == 201 and r.json()["viewer_user"] is None
 
 
 async def test_a_dahua_camera_is_listed_for_workers_and_its_source_names_the_gateway(client, make):
