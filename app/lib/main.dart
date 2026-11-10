@@ -17,7 +17,8 @@ import 'screens/cameras.dart';
 import 'screens/home.dart';
 import 'theme.dart';
 
-/// `--dart-define=DEMO=true` runs with demo data. Otherwise the app signs in against the server it was loaded from (or `API_BASE`).
+/// `--dart-define=DEMO=true` runs with demo data. Otherwise the app signs in against the server it was loaded from (or `API_BASE`). The phone apps have no
+/// "server it was loaded from", so they are built with `--dart-define=API_BASE=https://your-domain` (see docs/MOBILE.md).
 const _demo = bool.fromEnvironment('DEMO');
 const _base = String.fromEnvironment('API_BASE');
 
