@@ -35,6 +35,7 @@ abstract class Repository {
   Future<void> deleteSchedule(String id);
   Future<List<MadeReport>> madeReports();
   Future<void> makeReport(String type, DateTime from, DateTime to);
+  Future<({String name, Uint8List bytes})> downloadReport(String id);
   Future<LiveSession> startLive(String cameraId, LiveMode mode);
   Future<void> extendLive(LiveSession s);
   Future<void> stopLive(LiveSession s);
@@ -207,6 +208,9 @@ class ApiRepository implements Repository {
   }
 
   @override
+  Future<({String name, Uint8List bytes})> downloadReport(String id) => api.file('/v1/reports/$id/download', fallbackName: 'report.xlsx');
+
+  @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async {
     final j = await api.call('POST', '/v1/cameras/$cameraId/live', body: {'mode': mode.name});
     return LiveSession(j['id'], mode);
@@ -346,6 +350,8 @@ class MockRepository implements Repository {
   Future<List<MadeReport>> madeReports() async => List.of(_made);
   @override
   Future<void> makeReport(String type, DateTime from, DateTime to) async => _made.insert(0, MadeReport('m${_made.length + 1}', type, 'queued', 'Today', null));
+  @override
+  Future<({String name, Uint8List bytes})> downloadReport(String id) async => (name: 'Report $id.xlsx', bytes: Uint8List.fromList([80, 75, 3, 4]));
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async => LiveSession('demo-$cameraId', mode);
   @override

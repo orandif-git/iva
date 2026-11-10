@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -108,6 +109,14 @@ class ApiClient {
       throw ApiError(401, 'Please sign in again.', code: 'signed_out');
     }
     return r;
+  }
+
+  /// A file the person asked for (a report), with the name the server gave it.
+  Future<({String name, Uint8List bytes})> file(String path, {String fallbackName = 'download'}) async {
+    final r = await raw('GET', path);
+    if (r.statusCode < 200 || r.statusCode >= 300) _decode(r);
+    final m = RegExp(r'filename="?([^";]+)"?').firstMatch(r.headers['content-disposition'] ?? '');
+    return (name: m?.group(1) ?? fallbackName, bytes: r.bodyBytes);
   }
 
   Future<dynamic> call(String method, String path, {Object? body, Map<String, String>? query}) async => _decode(await raw(method, path, body: body, query: query));

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+
+import '../save_file.dart';
 
 import '../models.dart';
 import '../repo.dart';
@@ -77,6 +80,9 @@ class _ReportsScreen extends StatelessWidget {
 }
 
 /// Reports: the ones sent on WhatsApp on a schedule, and making one now. Download of a made report is in the current app for now.
+/// How a downloaded report is saved. Tests swap it; the app uses the browser download (or the share sheet on a phone).
+Future<void> Function(String name, Uint8List bytes, String mime) fileSaver = saveFile;
+
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key, required this.repo});
   final Repository repo;
@@ -97,6 +103,19 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   void _reload() => setState(() { data = _load(); });
+
+  Future<void> _download(MadeReport m) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final f = await widget.repo.downloadReport(m.id);
+      await fileSaver(f.name, f.bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      messenger.showSnackBar(SnackBar(content: Text('Downloaded ${f.name}')));
+    } on ApiError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('We could not save the file on this device.')));
+    }
+  }
 
   Future<void> _edit(ReportSchedule? s, List<Person> people) async {
     final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => ScheduleEditor(repo: widget.repo, schedule: s, people: people)));
@@ -186,10 +205,11 @@ class _ReportsPageState extends State<ReportsPage> {
                     const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(m.title, style: const TextStyle(fontWeight: FontWeight.w700)), Text([m.period, if (m.rows != null) '${m.rows} rows'].where((x) => x.isNotEmpty).join(' · '), style: TextStyle(color: t.fg2, fontSize: 13))])),
                     Pill(m.failed ? 'Failed' : (m.ready ? 'Ready' : 'Preparing'), m.failed ? Level.bad : (m.ready ? Level.ok : Level.warn), dot: !m.ready),
+                    if (m.ready) IconButton(tooltip: 'Download ${m.title}', onPressed: () => _download(m), icon: Icon(Icons.download_rounded, color: t.brand)),
                   ]),
                 ),
             ]),
-            Padding(padding: const EdgeInsets.fromLTRB(6, 8, 6, 0), child: Text('Scheduled reports arrive as a link on WhatsApp. To download one made here, open Reports in the current app for now.', style: TextStyle(color: t.fg2, fontSize: 12.5))),
+            Padding(padding: const EdgeInsets.fromLTRB(6, 8, 6, 0), child: Text('Scheduled reports arrive as a link on WhatsApp. Tap the arrow on a ready report to download it as a spreadsheet.', style: TextStyle(color: t.fg2, fontSize: 12.5))),
           ],
         ]);
       },
