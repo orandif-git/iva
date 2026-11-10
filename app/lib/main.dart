@@ -1,27 +1,55 @@
 import 'package:flutter/material.dart';
 
+import 'api_client.dart';
 import 'models.dart';
 import 'repo.dart';
+import 'scope.dart';
+import 'screens/more.dart';
+import 'screens/signin.dart';
 import 'screens/alerts.dart';
 import 'screens/cameras.dart';
 import 'screens/home.dart';
 import 'theme.dart';
 
-/// Run against a server with `--dart-define=API_BASE=https://host --dart-define=API_TOKEN=...`. Without them the app shows demo data.
+/// `--dart-define=DEMO=true` runs with demo data. Otherwise the app signs in against the server it was loaded from (or `API_BASE`).
+const _demo = bool.fromEnvironment('DEMO');
 const _base = String.fromEnvironment('API_BASE');
-const _token = String.fromEnvironment('API_TOKEN');
 
-void main() => runApp(IVisionApp(repo: _base.isEmpty ? MockRepository() : ApiRepository(_base, _token)));
+void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base)));
 
 class IVisionApp extends StatefulWidget {
-  const IVisionApp({super.key, required this.repo});
-  final Repository repo;
+  const IVisionApp({super.key, this.repo, this.client});
+  final Repository? repo; // given: no sign-in (demo and tests)
+  final ApiClient? client;
   @override
   State<IVisionApp> createState() => _IVisionAppState();
 }
 
 class _IVisionAppState extends State<IVisionApp> {
   ThemeMode mode = ThemeMode.light; // light by default, dark only when chosen
+  Repository? repo;
+  bool starting = false;
+  String? note;
+
+  @override
+  void initState() {
+    super.initState();
+    repo = widget.repo;
+    final c = widget.client;
+    if (repo == null && c != null) {
+      starting = true;
+      c.restore().then((_) {
+        if (!mounted) return;
+        setState(() { starting = false; if (c.signedIn) repo = ApiRepository(c); });
+      });
+    }
+  }
+
+  void _signedIn() => setState(() { repo = ApiRepository(widget.client!); note = null; });
+  Future<void> _signOut([String? message]) async {
+    await repo?.signOut();
+    if (mounted) setState(() { repo = widget.repo; note = message; });
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -30,15 +58,22 @@ class _IVisionAppState extends State<IVisionApp> {
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
         themeMode: mode,
-        home: Shell(repo: widget.repo, dark: mode == ThemeMode.dark, onTheme: (d) => setState(() => mode = d ? ThemeMode.dark : ThemeMode.light)),
+        home: starting
+            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+            : repo == null
+                ? SignInPage(client: widget.client!, onDone: _signedIn, message: note)
+                : AppScope(
+                    onSignedOut: () => _signOut('Please sign in again.'),
+                    child: Shell(repo: repo!, dark: mode == ThemeMode.dark, onTheme: (d) => setState(() => mode = d ? ThemeMode.dark : ThemeMode.light), onSignOut: _signOut)),
       );
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.repo, required this.dark, required this.onTheme});
+  const Shell({super.key, required this.repo, required this.dark, required this.onTheme, required this.onSignOut});
   final Repository repo;
   final bool dark;
   final ValueChanged<bool> onTheme;
+  final VoidCallback onSignOut;
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -60,8 +95,8 @@ class _ShellState extends State<Shell> {
         0 => HomePage(repo: widget.repo, onOpenAlerts: () => setState(() => tab = 1), onOpenCameras: () => setState(() => tab = 2)),
         1 => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, startWizardFor: alertFor),
         2 => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; tab = 1; })),
-        3 => const Center(child: Text('Reports: scheduled summaries by email')),
-        _ => _Settings(dark: widget.dark, onTheme: widget.onTheme),
+        3 => ReportsPage(repo: widget.repo),
+        _ => SettingsPage(repo: widget.repo, dark: widget.dark, onTheme: widget.onTheme, onSignOut: widget.onSignOut),
       };
 
   @override
@@ -101,14 +136,4 @@ class _ShellState extends State<Shell> {
       ),
     );
   }
-}
-
-class _Settings extends StatelessWidget {
-  const _Settings({required this.dark, required this.onTheme});
-  final bool dark;
-  final ValueChanged<bool> onTheme;
-  @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
-        Card(child: ListTile(title: const Text('Appearance'), subtitle: const Text('Light is the default.'), trailing: SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Light')), ButtonSegment(value: true, label: Text('Dark'))], selected: {dark}, onSelectionChanged: (v) => onTheme(v.first)))),
-      ]);
 }

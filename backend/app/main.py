@@ -22,6 +22,9 @@ logging.basicConfig(level=logging.INFO)
 # The web pages load only their own scripts and styles and talk only to this server, so a page cannot be made to load or send anything elsewhere.
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; manifest-src 'self'; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+# The new customer app (Flutter, served at /next/) draws on a canvas, so it needs WebAssembly and its own inline styles. It still loads and talks only to this server.
+NEXT_CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; manifest-src 'self'; "
+            "connect-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 _DOCS = ("/docs", "/openapi.json")
 # A request that came through a proxy (the website's front door) carries one of these headers; our own services call the API directly and do not.
 _PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")
@@ -65,7 +68,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         if not request.url.path.startswith(_DOCS):
             response.headers.setdefault("X-Frame-Options", "DENY")
             if response.headers.get("content-type", "").startswith("text/html"):
-                response.headers.setdefault("Content-Security-Policy", CSP)         # a page with its own policy (the evidence viewer plays video) keeps it
+                response.headers.setdefault("Content-Security-Policy", NEXT_CSP if request.url.path.startswith("/next") else CSP)         # a page with its own policy (the evidence viewer plays video) keeps it
             if not request.url.path.startswith(("/v1", "/admin/v1", "/internal")):
                 response.headers.setdefault("Cache-Control", "no-cache")        # pages and scripts are re-checked each time, so an update reaches everyone
         if request.url.scheme == "https":
@@ -92,6 +95,9 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         @app.get("/staff/set-password", include_in_schema=False)
         async def staff_set_password_page():
             return FileResponse(web / "staff" / "index.html")
+        nxt = web.parent / "web_next"
+        if (nxt / "index.html").is_file():          # the new customer app, built from /app (see scripts/build_app.sh)
+            app.mount("/next", StaticFiles(directory=nxt, html=True), name="web_next")
         app.mount("/", StaticFiles(directory=web, html=True), name="web")        # last, so it never hides an API route
     return app
 

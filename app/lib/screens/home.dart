@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../repo.dart';
+import '../scope.dart';
 import '../theme.dart';
 import 'common.dart';
 
@@ -15,9 +16,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<(Health, List<AlertItem>)> data = _load();
+  late Future<(Health, List<AlertItem>, Footfall)> data = _load();
 
-  Future<(Health, List<AlertItem>)> _load() async => (await widget.repo.health(), await widget.repo.alerts());
+  Future<(Health, List<AlertItem>, Footfall)> _load() async {
+    final r = await Future.wait([widget.repo.health(), widget.repo.alerts(), widget.repo.today()]);
+    return (r[0] as Health, r[1] as List<AlertItem>, r[2] as Footfall);
+  }
   void _reload() => setState(() => data = _load());
 
   @override
@@ -26,9 +30,13 @@ class _HomePageState extends State<HomePage> {
     return FutureBuilder(
       future: data,
       builder: (context, snap) {
+        if (snap.hasError && snap.error is ApiError && (snap.error as ApiError).code == 'signed_out') {
+          WidgetsBinding.instance.addPostFrameCallback((_) => AppScope.maybeOf(context)?.onSignedOut());
+          return const SizedBox();
+        }
         if (snap.hasError) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text('${snap.error}'), const SizedBox(height: 8), OutlinedButton(onPressed: _reload, child: const Text('Try again'))]));
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final (h, alerts) = snap.data!;
+        final (h, alerts, foot) = snap.data!;
         final need = alerts.where((a) => a.state == AlertState.open).take(3).toList();
         return RefreshIndicator(
           onRefresh: () async => _reload(),
@@ -46,7 +54,7 @@ class _HomePageState extends State<HomePage> {
                           contentPadding: EdgeInsets.zero,
                           leading: Badge2(a.smart ? Icons.auto_awesome : Icons.warning_amber_rounded, a.smart ? Level.ai : Level.bad),
                           title: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text('${a.where} · ${a.when}'),
+                          subtitle: Text([a.where, a.when].where((x) => x.isNotEmpty).join(' · ')),
                           trailing: Wrap(spacing: 6, children: [
                             TextButton(onPressed: () async { await widget.repo.snooze(a.id); _reload(); }, child: const Text('Snooze')),
                             FilledButton(onPressed: () async { await widget.repo.done(a.id); _reload(); }, child: const Text('Done')),
@@ -57,9 +65,9 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 14),
             IntrinsicHeight(
               child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Expanded(child: _Num('People in today', '342', t)),
+                Expanded(child: _Num('People in today', '${foot.peopleIn}', t)),
                 const SizedBox(width: 10),
-                Expanded(child: _Num('Inside now', '18', t)),
+                Expanded(child: _Num('Inside now', '${foot.insideNow}', t, note: foot.peakHour == null ? null : 'Busiest hour: ${foot.peakHour}')),
                 const SizedBox(width: 10),
                 Expanded(child: _Num('Alerts', '${alerts.length}', t)),
               ]),
@@ -110,13 +118,15 @@ class _Banner extends StatelessWidget {
 }
 
 class _Num extends StatelessWidget {
-  const _Num(this.label, this.value, this.t);
+  const _Num(this.label, this.value, this.t, {this.note});
   final String label, value;
+  final String? note;
   final Tok t;
   @override
   Widget build(BuildContext context) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
         Text(label, style: TextStyle(color: t.fg2, fontSize: 12.5), maxLines: 2),
         Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, height: 1.15)),
+        if (note != null) Text(note!, style: TextStyle(color: t.fg2, fontSize: 12)),
       ])));
 }
 

@@ -16,12 +16,7 @@ class AlertsPage extends StatefulWidget {
 
 class _AlertsPageState extends State<AlertsPage> {
   late Future<List<AlertItem>> items = widget.repo.alerts();
-  final List<SavedAlert> mine = [
-    SavedAlert(AlertKinds.byId('camera_offline'), 'All cameras · after 15 min', true),
-    SavedAlert(AlertKinds.byId('recorder_offline'), 'Both recorders · after 10 min', true),
-    SavedAlert(AlertKinds.byId('queue_long'), 'Billing queue · over 6 people, 5 min wait', true),
-    SavedAlert(AlertKinds.byId('people_in_area'), 'Aisle 1 · over 10 for 10 min', false),
-  ];
+  late Future<List<AlertDef>> mine = widget.repo.alertDefs();
   bool openOnly = true;
 
   @override
@@ -32,9 +27,9 @@ class _AlertsPageState extends State<AlertsPage> {
 
   void _reload() => setState(() => items = widget.repo.alerts());
 
-  Future<void> _wizard({CameraItem? camera}) async {
-    final saved = await Navigator.of(context).push<SavedAlert>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, preselected: camera)));
-    if (saved != null) setState(() => mine.insert(0, saved));
+  Future<void> _wizard({CameraItem? camera, AlertDef? edit}) async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, preselected: camera, edit: edit)));
+    if (saved == true) setState(() { mine = widget.repo.alertDefs(); items = widget.repo.alerts(); });
   }
 
   @override
@@ -65,7 +60,7 @@ class _AlertsPageState extends State<AlertsPage> {
                           shape: const Border(),
                           leading: Badge2(a.smart ? Icons.auto_awesome : Icons.warning_amber_rounded, a.smart ? Level.ai : Level.bad),
                           title: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text('${a.where} · ${a.when}'),
+                          subtitle: Text([a.where, a.when].where((x) => x.isNotEmpty).join(' · ')),
                           trailing: Pill(switch (a.state) { AlertState.open => 'Open', AlertState.snoozed => 'Snoozed', AlertState.done => 'Done' }, a.state == AlertState.open ? Level.bad : Level.mute),
                           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           expandedCrossAxisAlignment: CrossAxisAlignment.start,
@@ -82,18 +77,28 @@ class _AlertsPageState extends State<AlertsPage> {
                   ]);
                 },
               ),
-              ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
-                for (final m in mine)
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading: Badge2(m.kind.icon, m.kind.smart ? Level.ai : Level.ok),
-                      title: Row(children: [Flexible(child: Text(m.kind.name, style: const TextStyle(fontWeight: FontWeight.w600))), if (m.kind.smart) ...[const SizedBox(width: 8), const Pill('Smart', Level.ai, icon: Icons.auto_awesome)]]),
-                      subtitle: Text(m.summary),
-                      trailing: Switch(value: m.on, onChanged: (v) => setState(() => m.on = v)),
-                    ),
-                  ),
-              ]),
+              FutureBuilder(
+                future: mine,
+                builder: (context, snap) {
+                  if (snap.hasError) return Center(child: Text('${snap.error}'));
+                  if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                  final defs = snap.data!.where((d) => d.enabled).toList() + snap.data!.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
+                  return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
+                    if (defs.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('You have no alerts on yet. Tap New alert to set one up.')),
+                    for (final m in defs)
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          onTap: () => _wizard(edit: m),
+                          leading: Badge2(iconFor(m), m.smart ? Level.ai : Level.ok),
+                          title: Row(children: [Flexible(child: Text(m.title, style: const TextStyle(fontWeight: FontWeight.w600))), if (m.smart) ...[const SizedBox(width: 8), const Pill('Smart', Level.ai, icon: Icons.auto_awesome)]]),
+                          subtitle: Text(m.summary),
+                          trailing: Semantics(label: '${m.title} is ${m.enabled ? 'on' : 'off'}', child: Switch(value: m.enabled, onChanged: (v) async { await widget.repo.setEnabled(m, v); if (mounted) setState(() => mine = Future.value(snap.data!)); })),
+                        ),
+                      ),
+                  ]);
+                },
+              ),
             ]),
           ),
         ]),
