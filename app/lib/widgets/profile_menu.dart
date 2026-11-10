@@ -139,10 +139,12 @@ class _ProfileMenuState extends State<ProfileMenu> {
   }
 
   Future<void> _changePassword(BuildContext context) async {
-    final ok = await showDialog<bool>(context: context, builder: (_) => _PasswordDialog(repo: widget.repo));
-    if (ok == true) widget.onSignOut('Your password was changed. Please sign in again.');
+    if (await showChangePassword(context, widget.repo)) widget.onSignOut('Your password was changed. Please sign in again.');
   }
 }
+
+/// Asks for the current and a new password. True when it was changed (the server then signs the person out everywhere).
+Future<bool> showChangePassword(BuildContext context, Repository repo) async => (await showDialog<bool>(context: context, builder: (_) => _PasswordDialog(repo: repo))) == true;
 
 class _PasswordDialog extends StatefulWidget {
   const _PasswordDialog({required this.repo});

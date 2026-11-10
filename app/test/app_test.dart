@@ -9,6 +9,7 @@ import 'package:ivision_app/main.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
 import 'package:ivision_app/screens/wizard.dart';
+import 'package:ivision_app/widgets/glass_nav.dart';
 import 'package:ivision_app/widgets/profile_menu.dart';
 import 'package:ivision_app/widgets/area_editor.dart';
 
@@ -251,6 +252,74 @@ void profileTests() {
     await t.tap(find.text('Home'));
     await t.pump();
     expect(find.text('Needs you'), findsOneWidget, reason: 'Home is still there, no reload spinner');
+  });
+
+  testWidgets('the tab bar floats above the page as a rounded pill', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    final bar = t.getRect(find.descendant(of: find.byType(AppTabBar), matching: find.byType(BackdropFilter)));
+    expect(bar.left, greaterThan(8), reason: 'not edge to edge');
+    expect(bar.right, lessThan(390 - 8));
+    expect(bar.bottom, lessThan(844 - 4), reason: 'it hovers, it does not sit on the edge of the screen');
+    expect(find.descendant(of: find.byType(AppTabBar), matching: find.byType(ClipRRect)), findsWidgets);
+  });
+
+  testWidgets('Cameras are grouped by recorder and tell you if they are all working', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Cameras').last);
+    await t.pumpAndSettle();
+    expect(find.text('All 8 cameras are working'), findsOneWidget);
+    expect(find.text('Store recorder'.toUpperCase()), findsOneWidget);
+    expect(find.text('Godown recorder'.toUpperCase()), findsOneWidget);
+    expect(find.textContaining('Needs attention'), findsNothing, reason: 'nothing to filter when all work');
+  });
+
+  testWidgets('with a camera down, Cameras says so and can show only what needs attention', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository(problems: true)));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Cameras').last);
+    await t.pumpAndSettle();
+    expect(find.text('1 of 8 cameras need attention'), findsOneWidget);
+    await t.tap(find.textContaining('Needs attention ('));
+    await t.pumpAndSettle();
+    expect(find.text('Stockroom'), findsOneWidget);
+    expect(find.text('Front door'), findsNothing);
+  });
+
+  testWidgets('Settings shows your plan, people, recorders and account, and can add a person', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(ProfileButton));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    expect(find.text('Full'), findsOneWidget);
+    expect(find.text('8 of 20 cameras'), findsOneWidget);
+    expect(find.text('PEOPLE WHO GET ALERTS'), findsOneWidget);
+    expect(find.text('Ravi, store manager'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Store recorder'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Store recorder'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Sign out'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Change password'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Add'), -600, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Add'));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField).at(0), 'Anita');
+    await t.enterText(find.byType(TextField).at(1), '98765 43299');
+    await t.tap(find.text('Add').last);
+    await t.pumpAndSettle();
+    expect(find.textContaining('agreed'), findsWidgets, reason: 'consent is required first');
+    await t.tap(find.byType(Checkbox));
+    await t.pump();
+    await t.tap(find.text('Add').last);
+    await t.pumpAndSettle();
+    expect((await repo.people()).map((p) => p.name), contains('Anita'));
   });
 
   test('only people with a mobile number can be sent a report', () {

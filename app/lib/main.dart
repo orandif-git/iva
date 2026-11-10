@@ -142,7 +142,7 @@ class _ShellState extends State<Shell> {
     _badge();
   }
 
-  void _settings() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(repo: widget.repo)));
+  void _settings() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m))));
 
   Widget _profile() => ProfileButton(me: me, choice: widget.choice, onChoice: widget.onChoice, repo: widget.repo, onSettings: _settings, onSignOut: (m) => widget.onSignOut(m));
 

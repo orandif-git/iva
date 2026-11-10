@@ -50,7 +50,16 @@ class AlertItem {
 class CameraItem {
   final String id, name, recorder;
   final bool working;
-  const CameraItem(this.id, this.name, this.recorder, this.working);
+  final int? seenAgo; // seconds since its last picture, when known
+  const CameraItem(this.id, this.name, this.recorder, this.working, {this.seenAgo});
+}
+
+class RecorderItem {
+  final String id, name, status; // status: online, offline, never
+  final int channels;
+  final int? seenAgo;
+  const RecorderItem(this.id, this.name, this.status, this.channels, {this.seenAgo});
+  bool get online => status == 'online';
 }
 
 /// One number the customer can set on an alert.
@@ -188,9 +197,12 @@ class Footfall {
 /// Who is signed in and which business they belong to.
 class Me {
   final String name, business, role;
-  const Me(this.name, this.business, this.role);
+  final String? plan;
+  final int? camerasInUse, cameraLimit;
+  const Me(this.name, this.business, this.role, {this.plan, this.camerasInUse, this.cameraLimit});
   String get first => name.split(RegExp(r'[ ,(]')).first;
-  factory Me.fromJson(Map<String, dynamic> j) => Me(j['user']['name'] as String, j['tenant']['name'] as String, (j['user']['role'] ?? '') as String);
+  factory Me.fromJson(Map<String, dynamic> j) => Me(j['user']['name'] as String, j['tenant']['name'] as String, (j['user']['role'] ?? '') as String,
+      plan: j['tenant']['plan_name'] as String?, camerasInUse: (j['tenant']['cameras_in_use'] as num?)?.toInt(), cameraLimit: (j['tenant']['camera_limit'] as num?)?.toInt());
 }
 
 /// Alerts of the same kind on the same camera or area, shown as one row: "Too many people · Aisle 1 · 9 times today".
