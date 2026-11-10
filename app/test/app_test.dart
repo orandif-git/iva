@@ -6,6 +6,8 @@ import 'package:http/testing.dart';
 import 'package:ivision_app/api_client.dart';
 import 'package:ivision_app/geometry/polygon.dart';
 import 'package:ivision_app/main.dart';
+import 'package:ivision_app/save_file.dart';
+import 'package:ivision_app/screens/more.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
 import 'package:ivision_app/screens/wizard.dart';
@@ -393,6 +395,27 @@ void profileTests() {
     expect(ReportSchedule(type: 'vehicle_audit', frequency: 'monthly', dayOfMonth: 1, sendAt: '07:00').when, 'On the 1st at 7 am');
     expect(ReportSchedule(type: 'vehicle_audit', frequency: 'monthly', dayOfMonth: 22, sendAt: '12:00').when, 'On the 22nd at 12 pm');
     expect(ReportSchedule(type: 'gate_register', frequency: 'weekly', weekday: 4, sendAt: '07:00', recipientIds: ['a']).toJson(), {'report_type': 'gate_register', 'frequency': 'weekly', 'send_at': '07:00', 'weekday': 4, 'recipient_ids': ['a'], 'enabled': true});
+  });
+
+  testWidgets('a ready report can be downloaded as a spreadsheet', (t) async {
+    await phone(t);
+    final saved = <String>[];
+    fileSaver = (name, bytes, mime) async { saved.add('$name ${bytes.length} $mime'); };
+    addTearDown(() => fileSaver = saveFile);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Reports'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Recent reports'.toUpperCase()), 300, scrollable: find.byType(Scrollable).first);
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -200));
+    await t.pumpAndSettle();
+    await t.tap(find.byTooltip('Download Footfall summary').first);
+    await t.pumpAndSettle();
+    expect(saved.length, 1);
+    expect(saved.first, contains('spreadsheetml.sheet'));
+    expect(find.textContaining('Downloaded'), findsOneWidget);
   });
 
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
