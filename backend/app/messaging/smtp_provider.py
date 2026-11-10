@@ -6,23 +6,22 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
 from . import netguard
-from .http_provider import Result
+from .webhook import Result
 
 PERMANENT = {550, 551, 552, 553, 554, 556}
 
 
 def validate_config(cfg: dict, *, allow_private: bool = False) -> None:
-    from .render import RenderError
     if not isinstance(cfg.get("host"), str) or not cfg["host"] or any(c in cfg["host"] for c in " /\\@"):
-        raise RenderError("host is required, for example smtp.example.com")
+        raise ValueError("host is required, for example smtp.example.com")
     if not isinstance(cfg.get("port"), int) or not 1 <= cfg["port"] <= 65535:
-        raise RenderError("port is required, for example 587")
+        raise ValueError("port is required, for example 587")
     if cfg.get("security", "starttls") not in ("starttls", "ssl", "none"):
-        raise RenderError("security must be starttls, ssl or none")
+        raise ValueError("security must be starttls, ssl or none")
     if "@" not in str(cfg.get("from_email", "")):
-        raise RenderError("from_email is required")
+        raise ValueError("from_email is required")
     if not allow_private and cfg.get("security", "starttls") == "none":
-        raise RenderError("security 'none' sends passwords in clear text and is not allowed")
+        raise ValueError("security 'none' sends passwords in clear text and is not allowed")
 
 
 def _deliver(cfg: dict, secrets: dict, msg: EmailMessage, ctx: ssl.SSLContext | None) -> None:

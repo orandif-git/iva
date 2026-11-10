@@ -23,7 +23,7 @@ async def vehicle_overstay() -> int:
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle {r['plate_text']} has stayed too long",
                                      body=f"Entered at {r['camera']} and has not left after {hours:g} hours.", camera_id=r["camera_id"], camera_name=r["camera"],
-                                     details={"plate": r["plate_text"]}, dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7):
+                                     details={"plate": r["plate_text"], "hours": f"{hours:g}"}, dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7):
                     n += 1
     return n
 

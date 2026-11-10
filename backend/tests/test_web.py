@@ -300,15 +300,6 @@ async def test_pages_point_at_the_icons(client, path):
 
 
 # ------------------------------------------------------------------------------------------ no address is written into the code
-async def test_the_whatsapp_button_address_comes_from_the_configured_public_address(client, make):
-    owner = await make.staff("owner")
-    await client.post("/admin/v1/messaging/templates/install-defaults", headers=owner["headers"])
-    items = (await client.get("/admin/v1/messaging/templates", headers=owner["headers"])).json()
-    tpl = next(t for t in (items["items"] if isinstance(items, dict) else items) if t["key"] == "alert_link")
-    sheet = (await client.get(f"/admin/v1/messaging/templates/{tpl['id']}/submission", headers=owner["headers"])).json()
-    assert sheet["button"]["url"] == get_settings().public_base_url.rstrip("/") + "/e/{{1}}"           # the test setting is https://gi.test
-
-
 def test_no_real_looking_address_is_written_into_the_code():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]

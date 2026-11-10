@@ -124,7 +124,7 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
                     clips.append(ClipRequest(index=i, alert_id=alert_id, seconds_before=CLIP_BEFORE, seconds_after=CLIP_AFTER))
             else:
                 await raise_alert(conn, tenant, "low_confidence_plate", body=f"Read as {e.plate_raw} ({e.confidence}% sure) at {cam['name']}.", camera_id=e.camera_id,
-                                  camera_name=cam["name"], dedupe_key=f"lowconf:{e.camera_id}", cooldown_minutes=15, evidence_id=e.evidence_id, evidence_key=e.snapshot_key)
+                                  camera_name=cam["name"], details={"plate": e.plate_raw, "confidence": str(e.confidence)}, dedupe_key=f"lowconf:{e.camera_id}", cooldown_minutes=15, evidence_id=e.evidence_id, evidence_key=e.snapshot_key)
             accepted += 1
             latest[e.camera_id] = max(latest.get(e.camera_id, e.seen_at), e.seen_at)
     await _touch(conn, latest)

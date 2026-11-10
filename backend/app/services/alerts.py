@@ -52,7 +52,7 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
         if await conn.fetchval("SELECT 1 FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - make_interval(mins => $3)",
                                tenant_id, dedupe_key, cooldown_minutes):
             return None
-    tenant = await conn.fetchrow("SELECT timezone, msg_whatsapp, msg_email, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", tenant_id)
+    tenant = await conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", tenant_id)
     tz = ZoneInfo(tenant["timezone"])
     now = datetime.now(timezone.utc)
     title = title or meta["title"]
@@ -70,41 +70,45 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
         tenant_id, rule["id"] if rule else None, rule_type, camera_id, severity or meta["severity"], title, body, {**(details or {}), **payload},
         dedupe_key, evidence_key, evidence_id, wait_until)
     hold = None
-    if wait_until and await conn.fetchval("SELECT 1 FROM platform.message_templates WHERE channel='whatsapp' AND key='alert_clip' AND status='approved'"):
-        hold = wait_until            # only worth holding the WhatsApp message back when a video template can carry the clip
-    if rule and rule["recipients"] and rule["channels"]:
+    ep = await conn.fetchrow("SELECT active, payload_template FROM platform.webhook_endpoints WHERE alert_type=$1", rule_type)
+    if wait_until and ep and ep["active"] and "{clip_url}" in ep["payload_template"]:
+        hold = wait_until            # only worth holding the event back when its payload carries the clip
+    if rule and rule["recipients"]:
         quiet = in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
-        await fan_out(conn, tenant_id, tenant, alert_id, list(rule["channels"]), list(rule["recipients"]), payload, quiet, hold_until=hold)
+        await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold)
     return alert_id
 
 
-async def fan_out(conn, tenant_id, tenant, alert_id, channels: list[str], recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None) -> int:
-    people = await conn.fetch("SELECT id, name, phone, email FROM app.recipients WHERE tenant_id=$1 AND active AND id = ANY($2::uuid[])", tenant_id, recipient_ids)
+async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None) -> int:
+    """One queued event per person with a mobile number. Alerts go out by WhatsApp only, as a webhook event (see messaging/webhook.py).
+    A message that must not be sent (switched off, quiet hours, over a limit, no webhook set up) is still recorded, as suppressed, with the reason."""
+    people = await conn.fetch("SELECT id, name, phone FROM app.recipients WHERE tenant_id=$1 AND active AND id = ANY($2::uuid[])", tenant_id, recipient_ids)
     used = await conn.fetchval(
         """SELECT count(*) FROM app.notifications WHERE tenant_id=$1 AND channel='whatsapp' AND status NOT IN ('suppressed','cancelled')
            AND created_at >= date_trunc('month', now() AT TIME ZONE $2) AT TIME ZONE $2""", tenant_id, tenant["timezone"])
+    endpoint = await conn.fetchval("SELECT active FROM platform.webhook_endpoints WHERE alert_type=$1", alert_type)
     n = 0
     for p in people:
-        for ch in channels:
-            addr = p["phone"] if ch == "whatsapp" else p["email"] if ch == "email" else None
-            if not addr:
-                continue
-            why = None
-            if (ch == "whatsapp" and not tenant["msg_whatsapp"]) or (ch == "email" and not tenant["msg_email"]):
-                why = f"{ch.title()} messages are switched off for this account."
-            elif quiet:
-                why = "Quiet hours."
-            elif ch == "whatsapp" and tenant["msg_monthly_cap"] is not None and used >= tenant["msg_monthly_cap"]:
-                why = "The monthly WhatsApp message limit has been reached."
-            elif await conn.fetchval("SELECT count(*) FROM app.notifications WHERE recipient_id=$1 AND channel=$2::app.channel_kind AND created_at > now() - interval '1 hour' "
-                                     "AND status <> 'suppressed'", p["id"], ch) >= PER_RECIPIENT_PER_HOUR:
-                why = "Too many messages to this person in the last hour."
-            row = await conn.fetchval(
-                """INSERT INTO app.notifications (tenant_id, alert_id, recipient_id, channel, recipient, payload, status, error, next_attempt_at)
-                   VALUES ($1,$2,$3,$4::app.channel_kind,$5,$6,$7::app.delivery_status,$8, coalesce($9::timestamptz, now())) ON CONFLICT DO NOTHING RETURNING id""",
-                tenant_id, alert_id, p["id"], ch, addr, payload, "suppressed" if why else "queued", why, hold_until if ch == "whatsapp" else None)
-            if row:
-                n += 1
-                if ch == "whatsapp" and not why:
-                    used += 1
+        if not p["phone"]:
+            continue
+        why = None
+        if not tenant["msg_whatsapp"]:
+            why = "WhatsApp messages are switched off for this account."
+        elif not endpoint:
+            why = "No webhook is set up for this alert yet."
+        elif quiet:
+            why = "Quiet hours."
+        elif tenant["msg_monthly_cap"] is not None and used >= tenant["msg_monthly_cap"]:
+            why = "The monthly WhatsApp message limit has been reached."
+        elif await conn.fetchval("SELECT count(*) FROM app.notifications WHERE recipient_id=$1 AND channel='whatsapp' AND created_at > now() - interval '1 hour' "
+                                 "AND status <> 'suppressed'", p["id"]) >= PER_RECIPIENT_PER_HOUR:
+            why = "Too many messages to this person in the last hour."
+        row = await conn.fetchval(
+            """INSERT INTO app.notifications (tenant_id, alert_id, recipient_id, channel, recipient, payload, status, error, next_attempt_at, event)
+               VALUES ($1,$2,$3,'whatsapp',$4,$5,$6::app.delivery_status,$7, coalesce($8::timestamptz, now()), $9) ON CONFLICT DO NOTHING RETURNING id""",
+            tenant_id, alert_id, p["id"], p["phone"], payload, "suppressed" if why else "queued", why, hold_until, alert_catalog.event_name(alert_type))
+        if row:
+            n += 1
+            if not why:
+                used += 1
     return n

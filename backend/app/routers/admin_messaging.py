@@ -1,5 +1,5 @@
-"""Super-admin control of how messages leave the platform: the providers (WhatsApp BSP, email), the message templates, each account's
-messaging limits, and the delivery log. Providers and templates are owner-only because they hold secrets and cost money."""
+"""Super-admin control of how messages leave the platform: the email server used for scheduled reports, each account's messaging limits, and the delivery log.
+Alerts are not sent from here: they leave as webhook events (see admin_webhooks.py). The email server is owner-only because it holds a password."""
 import json
 import re
 from typing import Literal
@@ -13,8 +13,7 @@ from ..config import get_settings
 from ..crypto import vault
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
-from ..messaging import delivery, http_provider, netguard, render, smtp_provider
-from ..messaging.defaults import DEFAULT_TEMPLATES
+from ..messaging import delivery, netguard, smtp_provider
 from ..schemas import Strict
 
 router = APIRouter(prefix="/admin/v1/messaging", tags=["admin: messaging"])
@@ -22,9 +21,9 @@ SECRET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 
 class ProviderIn(Strict):
-    channel: Literal["whatsapp", "email"]
+    channel: Literal["email"]
     name: str = Field(min_length=2, max_length=80)
-    kind: Literal["http", "smtp"]
+    kind: Literal["smtp"]
     config: dict
     secrets: dict[str, str] = Field(default_factory=dict, max_length=20)
     rate_per_second: float = Field(5, gt=0, le=100)
@@ -48,15 +47,9 @@ def _check_secrets(secrets: dict) -> None:
 
 
 def _validate(kind: str, channel: str, config: dict, names: set[str]) -> None:
-    allow = get_settings().messaging_allow_private_hosts
     try:
-        if kind == "http":
-            http_provider.validate_config(config, names, allow_private=allow)
-        else:
-            if channel != "email":
-                raise render.RenderError("SMTP can only be used for email")
-            smtp_provider.validate_config(config, allow_private=allow)
-    except (render.RenderError, netguard.BlockedAddress) as e:
+        smtp_provider.validate_config(config, allow_private=get_settings().messaging_allow_private_hosts)
+    except (ValueError, netguard.BlockedAddress) as e:
         raise ApiError(422, "invalid_recipe", str(e))
 
 
@@ -155,132 +148,22 @@ async def delete_provider(pid: UUID, reason: str = Query(..., min_length=5, max_
 
 
 class TestIn(Strict):
-    to: str = Field(min_length=3, max_length=120)             # phone for WhatsApp, address for email
-    template_key: str | None = Field(None, max_length=40)
-    media_url: str | None = Field(None, max_length=500)
-    send: bool = False                                        # false = show the request that would be sent, send nothing
+    to: str = Field(min_length=3, max_length=120)             # the address to send a test to
+    send: bool = False                                        # false = show what would be sent, send nothing
 
 
 @router.post("/providers/{pid}/test")
 async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Preview (default) or really send a sample message, so a recipe can be tried before any customer depends on it."""
+    """Preview (default) or really send a test email, so the server can be tried before a report depends on it."""
     p = await _get(ctx, pid)
-    secrets, s = _secrets_of(p), get_settings()
-    sample_vars = ["Blocked vehicle TN72AB1234", "Main Gate", "05 Nov, 10:30 AM", "Seen entering"]
-    if p["kind"] == "smtp":
-        if not body.send:
-            return {"preview": {"to": body.to, "subject": "[Jas iVision] Test message", "from": p["config"].get("from_email")}}
-        res = await smtp_provider.send(p["config"], secrets, {"to": body.to, "name": "Test", "subject": "[Jas iVision] Test message",
-                                                              "text": "This is a test message from Jas iVision.", "html": None},
-                                       allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
-    else:
-        tpl = None
-        if body.template_key:
-            tpl = await ctx.conn.fetchrow("SELECT * FROM platform.message_templates WHERE channel=$1::app.channel_kind AND key=$2", p["channel"], body.template_key)
-            if not tpl:
-                raise ApiError(404, "template_not_found", "Template not found.")
-        phone = body.to if body.to.startswith("+") else "+" + body.to
-        msg = {"recipient": {"phone": phone, "name": "Test", "email": body.to}, "template": {"name": tpl["provider_template"] if tpl else "hello_world", "language": tpl["language"] if tpl else "en"},
-               "vars": sample_vars[:len(tpl["variables"])] if tpl else [], "media_type": tpl["media_type"] if tpl else None,
-               "media_url": body.media_url if tpl and tpl["media_type"] in ("image", "video") else None,
-               "link_url": f"{s.public_base_url.rstrip('/')}/e/sample", "link_token": "sample" if tpl and tpl["link_button"] else None, "message_id": "test",
-               "alert": {"title": sample_vars[0], "body": sample_vars[3], "camera": sample_vars[1], "time": sample_vars[2]}}
-        if not body.send:
-            return {"preview": await http_provider.send(p["config"], secrets, msg, dry_run=True)}
-        res = await http_provider.send(p["config"], secrets, msg, allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
+    if not body.send:
+        return {"preview": {"to": body.to, "subject": "[Jas iVision] Test message", "from": p["config"].get("from_email")}}
+    s = get_settings()
+    res = await smtp_provider.send(p["config"], _secrets_of(p), {"to": body.to, "name": "Test", "subject": "[Jas iVision] Test message",
+                                                                 "text": "This is a test message from Jas iVision.", "html": None},
+                                   allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
     await ctx.audit("messaging.provider.test", target_type="messaging_provider", target_id=pid, after={"ok": res.ok, "to_hint": body.to[:3] + "…" + body.to[-2:]})
     return {"ok": res.ok, "permanent": res.permanent, "status": res.status, "message_id": res.message_id, "error": res.error}
-
-
-# ----------------------------------------------------------------------------- templates
-class TemplateIn(Strict):
-    channel: Literal["whatsapp"] = "whatsapp"
-    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    provider_template: str = Field(pattern=r"^[a-z][a-z0-9_]{1,59}$")
-    language: str = Field("en", pattern=r"^[a-z]{2}(_[A-Z]{2})?$")
-    category: Literal["utility", "authentication", "marketing"] = "utility"
-    description: str | None = Field(None, max_length=300)
-    body_text: str = Field(min_length=5, max_length=1024)
-    media_type: Literal["none", "image", "video"] = "none"
-    link_button: bool = False
-    variables: list[str] = Field(default_factory=list, max_length=10)
-
-
-def _check_template(t: TemplateIn) -> None:
-    nums = re.findall(r"\{\{(\d+)\}\}", t.body_text)
-    if nums != [str(i) for i in range(1, len(t.variables) + 1)]:
-        raise ApiError(422, "variables_mismatch", "The body must use {{1}}, {{2}}, ... in order, once each, matching the variable list.")
-    if re.match(r"^\s*\{\{", t.body_text) or re.search(r"\}\}\s*$", t.body_text):
-        raise ApiError(422, "variable_at_edge", "WhatsApp does not accept a variable at the very start or end of the body.")
-    if t.category == "utility" and re.search(r"\b(offer|discount|sale|buy now|free)\b", t.body_text, re.I):
-        raise ApiError(422, "promotional_wording", "Utility templates must not sound promotional. Meta will reject it.")
-    bad = [v for v in t.variables if v not in ("event", "location", "time", "details")]
-    if bad:
-        raise ApiError(422, "unknown_variable", f"Unknown alert detail: {bad[0]}. Use event, location, time or details.")
-
-
-@router.get("/templates")
-async def list_templates(ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    return [dict(r) for r in await ctx.conn.fetch("SELECT * FROM platform.message_templates ORDER BY channel, key, language")]
-
-
-@router.post("/templates", status_code=201)
-async def create_template(body: TemplateIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    _check_template(body)
-    try:
-        row = await ctx.conn.fetchrow(
-            """INSERT INTO platform.message_templates (channel, key, provider_template, language, category, description, body_text, media_type, link_button, variables)
-               VALUES ($1::app.channel_kind,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *""", body.channel, body.key, body.provider_template, body.language, body.category,
-            body.description, body.body_text, body.media_type, body.link_button, body.variables)
-    except asyncpg.UniqueViolationError:
-        raise ApiError(409, "template_exists", "A template with this key and language already exists.")
-    await ctx.audit("messaging.template.create", target_type="message_template", target_id=row["id"], after={"key": body.key})
-    return dict(row)
-
-
-@router.post("/templates/install-defaults")
-async def install_defaults(ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Adds Jas iVision's standard templates as drafts. Templates that already exist are left alone."""
-    added = []
-    for t in DEFAULT_TEMPLATES:
-        r = await ctx.conn.fetchval(
-            """INSERT INTO platform.message_templates (channel, key, provider_template, language, category, description, body_text, media_type, link_button, variables)
-               VALUES ($1::app.channel_kind,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (channel, key, language) DO NOTHING RETURNING key""",
-            t["channel"], t["key"], t["provider_template"], t["language"], t["category"], t["description"], t["body_text"], t["media_type"], t["link_button"], t["variables"])
-        if r:
-            added.append(r)
-    await ctx.audit("messaging.template.install_defaults", after={"added": added})
-    return {"added": added}
-
-
-@router.get("/templates/{tid}/submission")
-async def submission_sheet(tid: UUID, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Everything to type into the provider's template form, including the samples Meta requires for each variable."""
-    t = await ctx.conn.fetchrow("SELECT * FROM platform.message_templates WHERE id=$1", tid)
-    if not t:
-        raise ApiError(404, "template_not_found", "Template not found.")
-    d = next((x for x in DEFAULT_TEMPLATES if x["key"] == t["key"]), {})
-    return {"name": t["provider_template"], "language": t["language"], "category": t["category"].upper(), "header": None if t["media_type"] == "none" else t["media_type"].upper(),
-            "body": t["body_text"], "samples": d.get("samples", []), "button": ({"type": "URL", "text": d.get("button_text", "View evidence"), "url": d.get("button_url", "{base}/e/{{1}}").replace("{base}", get_settings().public_base_url.rstrip("/")),
-                                                                                  "sample": "Ab3dEf"} if t["link_button"] else None)}
-
-
-@router.put("/templates/{tid}/status")
-async def set_template_status(tid: UUID, status: Literal["draft", "submitted", "approved", "rejected", "paused"], reason: str = Query(..., min_length=5, max_length=500),
-                              ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Record what the provider says about the template. Only 'approved' templates are ever used to send."""
-    r = await ctx.conn.fetchrow("UPDATE platform.message_templates SET status=$2 WHERE id=$1 RETURNING key", tid, status)
-    if not r:
-        raise ApiError(404, "template_not_found", "Template not found.")
-    await ctx.audit("messaging.template.status", target_type="message_template", target_id=tid, reason=reason, after={"key": r["key"], "status": status})
-    return {"status": status}
-
-
-@router.delete("/templates/{tid}", status_code=204)
-async def delete_template(tid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    if not await ctx.conn.fetchval("DELETE FROM platform.message_templates WHERE id=$1 RETURNING id", tid):
-        raise ApiError(404, "template_not_found", "Template not found.")
-    await ctx.audit("messaging.template.delete", target_type="message_template", target_id=tid, reason=reason)
 
 
 # ----------------------------------------------------------------------------- per-account limits
@@ -320,8 +203,8 @@ async def set_tenant_messaging(tenant_id: UUID, body: TenantMessaging, ctx: Admi
 async def all_notifications(tenant_id: UUID | None = None, status: str | None = Query(None, pattern="^(queued|sent|delivered|read|failed|suppressed|cancelled)$"),
                             limit: int = Query(50, ge=1, le=200), ctx: AdminCtx = Depends(admin_ctx())):
     rows = await ctx.conn.fetch(
-        """SELECT n.id, n.tenant_id, t.name AS tenant, n.channel::text AS channel, n.recipient, n.status::text AS status, n.template, n.attempts, n.error, n.created_at, n.sent_at,
-                  n.fallback_of IS NOT NULL AS is_fallback, a.title
+        """SELECT n.id, n.tenant_id, t.name AS tenant, n.channel::text AS channel, n.recipient, n.status::text AS status, n.event, n.attempts, n.response_status, n.error, n.created_at, n.sent_at,
+                  a.title
            FROM app.notifications n JOIN app.tenants t ON t.id=n.tenant_id LEFT JOIN app.alerts a ON a.id=n.alert_id
            WHERE ($1::uuid IS NULL OR n.tenant_id=$1) AND ($2::text IS NULL OR n.status::text=$2) ORDER BY n.created_at DESC LIMIT $3""", tenant_id, status, limit)
     return [dict(r) for r in rows]
