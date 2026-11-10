@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from .areas import AreaConfig, AreaMonitor, picture
 from .footfall import LineCounter
 from .geometry import point_in_polygon
 from .plates import vote
@@ -28,6 +29,7 @@ class CameraConfig:
     zone: list | None = None           # plate zone polygon, normalised. None means the whole picture
     zone_direction: tuple | None = None
     clips: bool = False                # keep recent pictures so a short video can be made when an alert asks for one
+    areas: tuple = ()                  # marked areas (AreaConfig): people in an area, queues, phone use in a staff area
 
     @classmethod
     def from_backend(cls, j: dict) -> "CameraConfig":
@@ -37,7 +39,8 @@ class CameraConfig:
                 line = (tuple(z["points"][0]), tuple(z["points"][1]), tuple(z["in_direction"]) if z.get("in_direction") else None)
             elif z["kind"] == "anpr_zone" and len(z["points"]) >= 3:
                 zone, zdir = [tuple(p) for p in z["points"]], (tuple(z["in_direction"]) if z.get("in_direction") else None)
-        return cls(j["camera_id"], j.get("name", "camera"), bool(j.get("use_footfall")), bool(j.get("use_anpr")), line, zone, zdir, bool(j.get("clips")))
+        areas = tuple(AreaConfig.from_backend(a) for a in j.get("areas", []) if len(a.get("points", [])) >= 3)
+        return cls(j["camera_id"], j.get("name", "camera"), bool(j.get("use_footfall")), bool(j.get("use_anpr")), line, zone, zdir, bool(j.get("clips")), areas)
 
 
 @dataclass
@@ -73,6 +76,7 @@ class CameraPipeline:
         self.people = Tracker()
         self.vehicles = Tracker(high=0.4)
         self.counter = LineCounter(*cfg.line) if (cfg.use_footfall and cfg.line) else None
+        self.areas = AreaMonitor(list(cfg.areas), warmup=3.0) if cfg.areas else None
         self.minutes: dict = {}
         self.visits: dict[int, Visit] = {}
         self.clips = None
@@ -92,20 +96,24 @@ class CameraPipeline:
         if self.clips is not None:
             self.clips.add(frame, ts)
         h, w = frame.shape[:2]
-        if not (self.counter or (self.cfg.use_anpr and self.reader)):
+        if not (self.counter or self.areas or (self.cfg.use_anpr and self.reader)):
             return Observation()
         dets = self.detector.detect(frame)
         self.stats["detect_ms"] += getattr(self.detector, "last_ms", 0.0)
-        relevant = any((d.label == "person" and self.counter) or (d.label in VEHICLE_LABELS and self.cfg.use_anpr and self.reader) for d in dets)
+        relevant = any((d.label == "person" and (self.counter or self.areas)) or (d.label in VEHICLE_LABELS and self.cfg.use_anpr and self.reader) for d in dets)
 
-        if self.counter:
+        if self.counter or self.areas:
             for tr in self.people.update([d for d in dets if d.label == "person"], ts.timestamp()):
-                x, y = tr.center if self.anchor == "center" else ((tr.box[0] + tr.box[2]) / 2, tr.box[3])
-                event = self.counter.update(tr.id, (x / w, y / h))
-                if event:
-                    self._count(ts, event)
+                if self.counter:
+                    x, y = tr.center if self.anchor == "center" else ((tr.box[0] + tr.box[2]) / 2, tr.box[3])
+                    event = self.counter.update(tr.id, (x / w, y / h))
+                    if event:
+                        self._count(ts, event)
             for tr in self.people.drain_finished():
-                self.counter.forget(tr.id)
+                if self.counter:
+                    self.counter.forget(tr.id)
+        if self.areas:
+            self._areas(frame, ts, dets, w, h)
 
         if self.cfg.use_anpr and self.reader:
             for tr in self.vehicles.update([d for d in dets if d.label in VEHICLE_LABELS], ts.timestamp()):
@@ -113,6 +121,15 @@ class CameraPipeline:
             for tr in self.vehicles.drain_finished():
                 self._emit(tr.id)
         return Observation(relevant, len(self.people.tracks) + len(self.vehicles.tracks), len(self.visits))
+
+    def _areas(self, frame, ts: datetime, dets: list, w: int, h: int) -> None:
+        people = [t for t in self.people.tracks if t.confirmed]
+        phones = [d for d in dets if d.label == "cell phone"]
+        for r in self.areas.update(ts.timestamp(), w, h, people, phones):
+            a = r["area"]
+            sample = {"zone_id": a.id, "at": iso(ts), "people": r["people"], "wait_seconds": r["wait_seconds"], "phone_seconds": r["phone_seconds"]}
+            self.sink.add_zone(self.cfg.camera_id, sample, picture(frame, a, r["inside"], phones) if r["take_picture"] else None)
+            self.stats["area_reports"] = self.stats.get("area_reports", 0) + 1
 
     def annotate(self, frame, fps: float | None = None) -> bytes | None:
         """The picture the detector just looked at, with what it found drawn on it: boxes with track numbers, the counting line with its
@@ -165,6 +182,8 @@ class CameraPipeline:
             self._emit(tr.id)
         for tid in list(self.visits):
             self._emit(tid)
+        if self.areas:
+            self.areas.forget()
 
     # --------------------------------------------------------------------- people
     def _count(self, ts: datetime, direction: str) -> None:

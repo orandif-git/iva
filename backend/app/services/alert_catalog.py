@@ -54,6 +54,12 @@ CATALOG: dict[str, dict] = {
     "crowding": _a(SMART, "People", "Too many people", "The number of people counted inside goes above your limit.", built=True, shortcodes=["people", "limit"], needs="People counting",
                    params={"people": {"type": "integer", "default": 50, "min": 1, "max": 100000}}),
     "after_hours": _a(SMART, "People", "Movement after closing time", "A person is seen when the shop should be empty.", media="image_clip", needs="People counting and opening hours", uses_evidence=True),
+    "people_in_area": _a(SMART, "People", "Too many people in an area", "The number of people in an area you marked stays above your limit.", built=True, shortcodes=["area", "people", "limit", "minutes"],
+                         needs="People counting in a marked area"),
+    "queue_long": _a(SMART, "People", "Queue too long", "The queue in an area you marked is longer than your limit, or someone has waited too long.", built=True, shortcodes=["area", "length", "limit", "minutes", "wait_minutes"],
+                     needs="People counting in a marked area"),
+    "phone_use": _a(SMART, "People", "Possible phone use in a staff area", "A phone seems to be in use in an area you marked for staff. It names the area, never a person.", built=True, severity="info",
+                    media="image", shortcodes=["area", "seconds"], needs="Person and phone detection in a marked area", uses_evidence=True),
     # ---- Smart Alerts: vehicles
     "blocked_plate": _a(SMART, "Vehicles", "Blocked vehicle seen", "A vehicle on your blocked list is read at any camera.", built=True, severity="critical", uses_evidence=True, media="image_clip",
                         shortcodes=["plate", "direction"], needs="Number plates", params={"clip": {"type": "boolean", "default": True}}),
@@ -82,6 +88,10 @@ def alert_for_event(event: str) -> str | None:
 def shortcodes_for(alert_type: str) -> list[str]:
     meta = CATALOG[alert_type]
     return COMMON_SHORTCODES + meta["shortcodes"] + MEDIA_SHORTCODES.get(meta["media"], [])
+
+
+# The three alerts that work on areas the customer marks on a camera picture, and the kind of area each one uses.
+AREA_ALERTS = {"area_count": "people_in_area", "queue_area": "queue_long", "staff_area": "phone_use"}
 
 
 # What a plan with no explicit list is given when it is created: every System Alert that is built, people counting, and vehicles when the plan reads plates.

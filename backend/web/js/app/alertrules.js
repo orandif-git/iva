@@ -4,6 +4,7 @@
 import { errText, h, mount } from "../lib.js";
 import { closeSheet, empty, field, ic, note, openSheet, toast, toggle } from "./ui.js";
 
+const AREA_ALERTS = ["people_in_area", "queue_long", "phone_use"];
 const PARAMS = { people: ["Alert above", "people", 1, 100000], max_hours: ["Alert after", "hours", 1, 168], drops: ["Alert after", "drops in an hour", 2, 20], percent: ["Warn at", "% used", 50, 100],
   days: ["Remind me", "days before it is due", 0, 14], hour: ["Send at", "o'clock, 24-hour", 0, 23] };
 
@@ -67,7 +68,7 @@ export async function ruleSheet(X, t, redraw) {
       closeSheet(); toast(r.warnings?.[0] || "Saved."); redraw();
     } catch (e) { mount(err, note(errText(e), "err")); btn.disabled = false; }
   };
-  openSheet(t.title, h("p", { class: "sub" }, t.description), fields,
+  openSheet(t.title, h("p", { class: "sub" }, t.description), AREA_ALERTS.includes(t.type) ? h("p", { class: "sub" }, "The limits for this alert are set on each area. Open a camera on the ", h("a", { href: "#/cameras", onclick: () => closeSheet() }, "Cameras page"), " and mark an area.") : null, fields,
     h("div", { class: "gh" }, "Who is told"), who, h("p", { class: "sub" }, "Alerts are sent by WhatsApp to the mobile number of each person you choose."),
     X.isAdmin ? h("button", { class: "btn gray sm", type: "button", onclick: () => personSheet(X, () => ruleSheet(X, t, redraw)) }, ic("plus"), "Add a person") : null,
     h("div", { class: "gh" }, "Quiet hours"), h("div", { class: "two" }, field("From", qs), field("Until", qe)), h("p", { class: "sub" }, "No messages in these hours. The alert is still kept in the app."),

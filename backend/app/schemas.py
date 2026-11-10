@@ -194,6 +194,7 @@ class CameraOut(BaseModel):
     enabled: bool
     use_footfall: bool
     use_anpr: bool
+    use_areas: bool = False
     stream: str
     last_frame_at: datetime | None
     stream_state: str
@@ -211,6 +212,48 @@ class ZoneIn(Strict):
             if not all(0.0 <= c <= 1.0 for c in p):
                 raise ValueError("points must be normalised between 0 and 1")
         return pts
+
+
+class AreaIn(Strict):
+    id: UUID | None = None                      # send the id of an area to keep and change it; leave it out for a new one
+    kind: Literal["area_count", "queue_area", "staff_area"]
+    name: str = Field(min_length=1, max_length=60)
+    points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=3, max_length=24)
+    params: dict = Field(default_factory=dict)
+
+    @field_validator("points")
+    @classmethod
+    def _norm(cls, pts):
+        for p in pts:
+            if not all(0.0 <= c <= 1.0 for c in p):
+                raise ValueError("points must be normalised between 0 and 1")
+        return pts
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v):
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("give the area a name")
+        return v
+
+
+class AreasPut(Strict):
+    areas: list[AreaIn] = Field(max_length=6)
+
+
+class ZoneSampleIn(Strict):
+    camera_id: UUID
+    zone_id: UUID
+    at: datetime
+    people: int = Field(ge=0, le=10000)
+    wait_seconds: float | None = Field(None, ge=0, le=86400)
+    phone_seconds: float | None = Field(None, ge=0, le=86400)
+    evidence_id: UUID | None = None
+
+
+class ZoneBatch(Strict):
+    events: list[ZoneSampleIn] = Field(min_length=1, max_length=500)
 
 
 class ZonesPut(Strict):

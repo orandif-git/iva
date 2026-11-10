@@ -488,3 +488,7 @@ a{color:var(--brand)}
 .ax .ep .tg{flex:none}
 .ax .cred dd.mono{word-break:break-all}
 .ax .tg{display:inline-block;vertical-align:middle}
+
+/* ---------- marked areas ---------- */
+.ax .dotc{display:none}
+.ax .scene.editor svg.over text{pointer-events:none}

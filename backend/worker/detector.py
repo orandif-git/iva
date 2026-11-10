@@ -13,6 +13,7 @@ from .tracker import Detection
 # COCO class ids that matter here. Everything else the model can see is ignored.
 PERSON = {0: "person"}
 VEHICLES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+PHONE = {67: "cell phone"}          # only used inside staff areas; every other class the model can see is ignored
 
 
 def _nms(boxes: np.ndarray, scores: np.ndarray, thresh: float) -> list[int]:
@@ -58,7 +59,7 @@ class YoloxDetector:
         self.input_name = self.session.get_inputs()[0].name
         self.size = int(self.session.get_inputs()[0].shape[2])
         self.conf, self.nms_iou = conf, nms_iou
-        self.classes = classes or {**PERSON, **VEHICLES}
+        self.classes = classes or {**PERSON, **VEHICLES, **PHONE}
         self.last_ms = 0.0
 
     def detect(self, frame: np.ndarray) -> list[Detection]:

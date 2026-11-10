@@ -3,6 +3,7 @@ import { ago, clear, errText, fmtDateTime, fmtNum, h, istDay, mount, qs } from "
 import { barChart, chips, confirmSheet, empty, field, ic, kpi, legend, loadPicture, note, onSheetClose, openSheet, closeSheet, pictureFrame, pill, sec, seg, toast, toggle } from "./ui.js";
 import { recorderScreens } from "./recorders.js";
 import { ruleGroups } from "./alertrules.js";
+import { areasCard } from "./areas.js";
 
 const TZ = "Asia/Kolkata";
 export const STATE = { streaming: ["Live", "ok"], reconnecting: ["Reconnecting", "warn"], offline: ["Offline", "crit"], unknown: ["Waiting", ""] };
@@ -71,7 +72,7 @@ async function cameraPage(X, id) {
   if (!cam) return [note("That camera was not found.", "err"), h("a", { class: "btn gray", href: "#/cameras" }, "Back to cameras")];
   const [t, k] = camState(cam);
   const out = [h("a", { class: "backlink", href: "#/cameras" }, ic("chev"), "Cameras"), title(cam.name, null, pill(t, k))];
-  const feats = [cam.use_footfall ? "Counting people" : null, cam.use_anpr ? "Reading number plates" : null].filter(Boolean).join(" · ");
+  const feats = [cam.use_footfall ? "Counting people" : null, cam.use_anpr ? "Reading number plates" : null, cam.use_areas ? "Watching marked areas" : null].filter(Boolean).join(" · ");
   out.push(h("p", { class: "sub" }, `${feats || "Not counting"} · last picture ${ago(cam.last_frame_at)}`));
   if (!X.isAdmin) { out.push(pictureFrame(api, cam)); return out; }
 
@@ -130,6 +131,9 @@ async function cameraPage(X, id) {
     cam.use_anpr ? h("button", { class: "btn gray sm", type: "button", onclick: (ev) => { ed.mode = ed.mode === "poly" ? null : "poly"; if (ed.mode) ed.poly = []; ev.currentTarget.lastChild.textContent = ed.mode ? "Done" : "Draw plate area"; redraw(); } }, ic("line"), "Draw plate area") : null,
     h("button", { class: "btn gray sm", type: "button", onclick: () => showPicture(true) }, "New picture"), saveBtn);
   out.push(h("div", { class: "card" }, h("h3", {}, cam.use_footfall && cam.use_anpr ? "Counting line and plate area" : cam.use_footfall ? "Counting line" : "Plate area"), frame, help, tools));
+
+  const areas = await areasCard(X, cam).catch(() => null);        // only when this customer has a kind of area to draw
+  if (areas) out.push(areas);
 
   // Settings
   const quality = h("select", { onchange: async () => { try { await api.patch("/v1/cameras/" + id, { stream: quality.value }); toast("Picture quality changed. It applies at the next reconnect."); } catch (e) { toast(errText(e), true); } } },

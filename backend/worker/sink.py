@@ -28,6 +28,7 @@ class BackendSink:
         self.max_buffer, self.clock, self.sleep = max_buffer, clock, sleep
         self.footfall: dict = {}                       # (camera_id, minute) -> [in, out]; later values replace earlier ones
         self.plates: deque = deque()
+        self.zones: deque = deque()                    # what was seen in marked areas
         self.stats: Counter = Counter()
         self.rejected: Counter = Counter()
         self.fatal: str | None = None
@@ -63,9 +64,22 @@ class BackendSink:
                 self.plates.popleft()
                 self.stats["dropped"] += 1
 
+    def add_zone(self, camera_id: str, sample: dict, snapshot: bytes | None = None) -> None:
+        """One report for a marked area: {zone_id, at, people, wait_seconds, phone_seconds}. A `snapshot` is uploaded first so the alert can show it."""
+        item = {"camera_id": camera_id, **sample}
+        if snapshot:
+            item["_jpeg"], item["_tries"] = snapshot, 0
+        with self._lk:
+            if camera_id in self.fatal_cameras:
+                return
+            self.zones.append(item)
+            while len(self.zones) > self.max_buffer:
+                self.zones.popleft()
+                self.stats["dropped"] += 1
+
     @property
     def pending(self) -> int:
-        return len(self.footfall) + len(self.plates)
+        return len(self.footfall) + len(self.plates) + len(self.zones)
 
     def view(self, camera_id: str) -> "SinkView":
         """What one camera's pipeline uses when several cameras share this sink."""
@@ -148,6 +162,8 @@ class BackendSink:
                 del self.footfall[k]
             if any(p["camera_id"] in self.fatal_cameras for p in self.plates):
                 self.plates = deque(p for p in self.plates if p["camera_id"] not in self.fatal_cameras)
+            if any(z["camera_id"] in self.fatal_cameras for z in self.zones):
+                self.zones = deque(z for z in self.zones if z["camera_id"] not in self.fatal_cameras)
 
     async def flush(self, force: bool = False) -> bool:
         """Try to send everything pending. Returns True when nothing is left to send. Only one flush runs at a time."""
@@ -203,6 +219,24 @@ class BackendSink:
             with self._lk:
                 self.plates = deque(p for p in self.plates if id(p) not in sent)
             self._drop_fatal()
+        while ok and self.zones and not self.fatal:
+            with self._lk:
+                chunk = list(self.zones)[:200]
+            for item in chunk:
+                await self._upload_picture(item)
+            if any("_jpeg" in it for it in chunk):              # a picture is still being retried: hold the reports a little
+                ok = False
+                break
+            res = await self._post("/internal/v1/events/zones", [{k: v for k, v in it.items() if not k.startswith("_")} for it in chunk])
+            if res is None:
+                ok = False
+                break
+            self._note(res, [it["camera_id"] for it in chunk])
+            self.stats["zones_sent"] += res.get("accepted", 0)
+            sent = {id(it) for it in chunk}
+            with self._lk:
+                self.zones = deque(z for z in self.zones if id(z) not in sent)
+            self._drop_fatal()
         if ok:
             self._failures, self._next = 0, 0.0
         elif not self.fatal:
@@ -231,6 +265,9 @@ class SinkView:
 
     def add_plate(self, *a, **k):
         self._sink.add_plate(*a, **k)
+
+    def add_zone(self, *a, **k):
+        self._sink.add_zone(*a, **k)
 
     @property
     def fatal(self):
@@ -277,6 +314,7 @@ class MemorySink:
     def __init__(self):
         self.footfall: dict = {}
         self.plates: list = []
+        self.zones: list = []
         self.fatal = None
         self.stats: Counter = Counter()
 
@@ -292,6 +330,9 @@ class MemorySink:
 
     def add_plate(self, camera_id, event, snapshot=None):
         self.plates.append({"camera_id": camera_id, **event})
+
+    def add_zone(self, camera_id, sample, snapshot=None):
+        self.zones.append({"camera_id": camera_id, **sample, "has_picture": bool(snapshot)})
 
     async def flush(self, force=False):
         return True

@@ -25,6 +25,34 @@ customer sees them.
 | Blocked vehicle, Vehicle stayed too long, Plate needs checking | Smart | Number plates | see the Smart Alerts section |
 | Too many people | Smart | People counting | `people` |
 
+## Smart Alerts on marked areas
+
+Three Smart Alerts work on **areas** the customer marks on a camera picture (camera page, "Marked areas"). Each area has a name and **its own limits**, so two
+counters can have two limits. The alert (on or off, who is told, quiet hours) is set on the Alerts page as for any other alert. **An event is sent only when the
+condition is met**, and the same area is not reported again for `repeat_minutes` (default 15).
+
+| Alert | Area kind | Condition (the customer sets the numbers) | Shortcodes |
+|---|---|---|---|
+| Too many people in an area | `area_count` | The count stays at `limit` or more for `minutes` (every report in that time) | `{area} {people} {limit} {minutes}` |
+| Queue too long | `queue_area` | The queue stays at `length` or more for `minutes`, **or** the longest wait reaches `wait_minutes` (0 turns the wait off) | `{area} {length} {limit} {minutes} {wait_minutes}` |
+| Possible phone use in a staff area | `staff_area` | A phone has been in use for `seconds` without a break. Comes with a picture | `{area} {seconds}` and `{image_url}` |
+
+* **Staff area.** Anyone standing in it counts as staff, so nobody is identified. The customer must confirm that **staff have been told the area is watched**
+  (who confirmed, and when, is stored). The alert says "possible phone use" and names the area, never a person.
+* **How the worker measures.** Every ten seconds per area it reports how many people stand in the shape (their floor point, or their middle for a staff area), for
+  a queue how long the longest-waiting person has been there, and for a staff area how long a phone has been in use. A phone counts as in use when the detector sees
+  a phone in the upper part of the box of a person inside the area; a break of five seconds ends it. A picture is taken once the area's `seconds` is reached.
+  The first report waits three seconds so people are confirmed first. A camera with no areas does no area work.
+* **Accuracy.** Counting is as good as the people detector (best from an angled or overhead view); a queue where people overlap is under-counted, so the wait is more
+  reliable than the length; **a phone is a small object, so expect false alarms and misses**. For cameras with staff areas use the larger model
+  (`GI_DETECTOR_MODEL=yolox_s`) and the full-quality stream, and treat the alerts as "possible".
+* **Which areas a camera analyses.** Only kinds whose alert is on for the customer (built, on in the catalogue, in their plan or added). Saving an area switches the
+  camera's `use_areas` on; removing the last one switches it off (a camera used for nothing else cannot lose its last area while it is enabled).
+* **API.** Customer: `GET /v1/area-kinds`, `GET/PUT /v1/cameras/{id}/areas` (the list is replaced; an area sent with its `id` keeps its history). Worker: the camera config
+  has `areas`, and reports go to `POST /internal/v1/events/zones`. Reports are kept for 3 days (`app.zone_samples`).
+* **Launch.** The three alerts start **switched off in the catalogue** (migration 010 and `schema.sql`). Turn them on in the staff console (Alerts) once they have been
+  tried on real footage; a customer sees nothing until then.
+
 Detectors run every five minutes in the API process (`services/maintenance.py`). The connection history (`app.recorder_link_events`) is kept for
 14 days. A sign-in device is a short fingerprint of the browser's name plus a label such as "Chrome on Windows"; no address is kept.
 
