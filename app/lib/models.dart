@@ -1,3 +1,4 @@
+import 'geometry/polygon.dart';
 import 'package:flutter/material.dart' show Icons;
 class Issue {
   final String kind, level, title;
@@ -223,6 +224,54 @@ const settingWords = {
 String _clock(num h) {
   final n = h.toInt();
   return '${n % 12 == 0 ? 12 : n % 12} ${n < 12 ? 'am' : 'pm'}';
+}
+
+/// A camera's own settings, as the owner sees them when setting it up.
+class CameraSettings {
+  final String id, name, stream;     // stream: sub (light, enough to count people) or main (full quality, for number plates)
+  final bool useFootfall, useAnpr, enabled;
+  final List<CameraZone> zones;
+  const CameraSettings(this.id, this.name, {required this.useFootfall, required this.useAnpr, required this.enabled, required this.stream, this.zones = const []});
+  CameraZone? zone(String kind) => zones.where((z) => z.kind == kind).firstOrNull;
+}
+
+/// The counting line (count_line: two points and which way is "in") or the plate area (anpr_zone: a shape), as fractions of the picture.
+class CameraZone {
+  final String kind;
+  final List<Pt> points;
+  final Pt? inDirection;
+  const CameraZone(this.kind, this.points, {this.inDirection});
+}
+
+/// People counted over a period, by hour or by day.
+class FootfallRange {
+  final int peopleIn, peopleOut;
+  final String? peakLabel;
+  final List<FootfallBar> bars;
+  const FootfallRange(this.peopleIn, this.peopleOut, this.peakLabel, this.bars);
+  int get net => peopleIn - peopleOut;
+}
+
+class FootfallBar {
+  final String label;
+  final int peopleIn, peopleOut;
+  const FootfallBar(this.label, this.peopleIn, this.peopleOut);
+}
+
+/// One number plate read.
+class PlateRead {
+  final String id, cameraId;
+  final String? plate, vehicle, direction;   // direction: in or out
+  final DateTime? seen;
+  final bool blocked, needsReview, hasPicture;
+  final int? confidence, dwellMinutes;
+  const PlateRead(this.id, this.cameraId, this.plate, this.seen, {this.vehicle, this.direction, this.blocked = false, this.needsReview = false, this.hasPicture = false, this.confidence, this.dwellMinutes});
+}
+
+class PlatePage {
+  final List<PlateRead> items;
+  final String? next;
+  const PlatePage(this.items, this.next);
 }
 
 /// Today's people count, from the cameras that count people.

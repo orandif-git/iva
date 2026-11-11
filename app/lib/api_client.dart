@@ -27,6 +27,28 @@ class ApiClient {
   String? _access, _refresh;
   static const _key = 'gi_next_rt';
 
+  String? _staffToken;
+  bool _viewing = false;
+
+  /// The staff sign-in from the last [signIn] that was a staff account, once: the page passes it to the staff console.
+  String? takeStaffToken() {
+    final t = _staffToken;
+    _staffToken = null;
+    return t;
+  }
+
+  /// Staff looking at a customer's app: a view-only access token for this tab only. Nothing is stored, and it is never renewed.
+  void useViewAs(String token) {
+    _access = token;
+    _refresh = null;
+    _viewing = true;
+  }
+
+  /// Saves the password someone chose from an invitation link.
+  Future<void> setPassword(String token, String password) async {
+    _decode(await _c.post(Uri.parse('$base/v1/auth/set-password'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'token': token, 'password': password})));
+  }
+
   bool get signedIn => _refresh != null || _access != null;
   String? get refreshToken => _refresh;          // this device's own session, sent when the password is changed so this device stays signed in
 
@@ -41,7 +63,10 @@ class ApiClient {
         headers: {'Content-Type': 'application/json'}, body: jsonEncode({'email': email, 'password': password, if (org != null && org.isNotEmpty) 'tenant': org, if (code != null && code.isNotEmpty) 'code': code}));
     final j = _decode(r);
     if (j is Map && j['next'] == 'code') return 'code';
-    if (j is Map && j['kind'] == 'staff') throw ApiError(403, 'This is a staff account. Staff sign in at /staff/.');
+    if (j is Map && j['kind'] == 'staff') {
+      _staffToken = j['refresh_token'] as String?;        // not kept: it is handed to the staff console (see SignInPage) and forgotten
+      return 'staff';
+    }
     await _store(j as Map);
     return null;
   }
@@ -77,6 +102,7 @@ class ApiClient {
   }
 
   Future<bool> _renewOnce() async {
+    if (_viewing) return false;
     final rt = _refresh;
     if (rt == null) return false;
     try {

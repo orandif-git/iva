@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     ffmpeg_path: str = "ffmpeg"                          # used to take one picture from a camera for the "draw your counting line" screen
     dahua_relay_url: str = "http://127.0.0.1:8082"       # the Dahua gateway's video relay
     gb_relay_url: str = "http://127.0.0.1:8081"          # the registrar's video relay
-    default_app: str = "classic"                         # which customer app opens at the plain address: classic (the current one) or next (the new one, always reachable at /next/)
     web_dir: str = ""                                    # folder of the web pages; default: backend/web next to this package
     ffprobe_path: str = "ffprobe"                       # used to check an RTSP address before a camera is created from it
     delivery_batch: int = 20

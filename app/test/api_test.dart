@@ -83,10 +83,13 @@ void main() {
     expect(c.signedIn, isFalse);
   });
 
-  test('a staff account is sent to the staff console, not signed in here', () async {
+  test('a staff account is handed to the staff console, not signed in here', () async {
     final c = ApiClient(base: 'http://x', client: MockClient((r) async => http.Response('{"kind":"staff","access_token":"s","refresh_token":"t"}', 200)));
     await c.restore();
-    expect(() => c.signIn('s@b.test', 'pw'), throwsA(isA<ApiError>()));
+    expect(await c.signIn('s@b.test', 'pw'), 'staff');
+    expect(c.takeStaffToken(), 't', reason: 'handed to the console, once');
+    expect(c.takeStaffToken(), isNull);
+    expect(c.signedIn, false, reason: 'not signed in to the customer app');
   });
 
   test('an expired token is refreshed once and the call is retried', () async {

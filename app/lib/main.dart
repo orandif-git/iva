@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 import 'models.dart';
+import 'browser.dart';
 import 'firebase_push.dart';
 import 'push.dart';
 import 'repo.dart';
@@ -16,6 +17,7 @@ import 'screens/signin.dart';
 import 'screens/alerts.dart';
 import 'screens/cameras.dart';
 import 'screens/home.dart';
+import 'screens/set_password.dart';
 import 'theme.dart';
 
 /// `--dart-define=DEMO=true` runs with demo data. Otherwise the app signs in against the server it was loaded from (or `API_BASE`). The phone apps have no
@@ -23,7 +25,7 @@ import 'theme.dart';
 const _demo = bool.fromEnvironment('DEMO');
 const _base = String.fromEnvironment('API_BASE');
 
-void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base), push: const FirebasePush()));
+void main() => runApp(_demo ? IVisionApp(repo: MockRepository()) : IVisionApp(client: ApiClient(base: _base.isEmpty ? null : _base), push: const FirebasePush(), browser: realBrowser()));
 
 /// Screens slide in from the right and can be dragged back from the left edge, on every platform, the way iPhone apps (and WhatsApp on iPhone) do.
 const _pageTransitions = PageTransitionsTheme(builders: {
@@ -36,10 +38,11 @@ const _pageTransitions = PageTransitionsTheme(builders: {
 });
 
 class IVisionApp extends StatefulWidget {
-  const IVisionApp({super.key, this.repo, this.client, this.push = const NoPush()});
+  const IVisionApp({super.key, this.repo, this.client, this.push = const NoPush(), this.browser = const Browser()});
   final Repository? repo; // given: no sign-in (demo and tests)
   final ApiClient? client;
   final PushService push;        // where this device's push address comes from (nothing until the Firebase project exists)
+  final Browser browser;         // the address the app was opened at, and the hand-offs to the staff console
   @override
   State<IVisionApp> createState() => _IVisionAppState();
 }
@@ -50,6 +53,9 @@ class _IVisionAppState extends State<IVisionApp> {
   bool starting = false;
   String? note;
   PushRegistration? _push;
+  String? _inviteToken;        // opened from an invitation link: choose a password first
+  bool _waitingForConsole = false, _viewEnded = false;
+  ViewAsGrant? _viewAs;        // staff looking at this customer's app, view only
   static const _themeKey = 'gi_next_theme';
 
   @override
@@ -59,6 +65,16 @@ class _IVisionAppState extends State<IVisionApp> {
     if (repo != null) _startPush();
     _loadTheme();
     final c = widget.client;
+    if (c != null && widget.browser.path == '/set-password') {
+      _inviteToken = widget.browser.query['token'] ?? '';
+      widget.browser.replaceUrl('/set-password');           // the one-time token does not stay in the address bar
+      return;
+    }
+    if (c != null && widget.browser.openedByStaff) {
+      _waitingForConsole = true;
+      _receiveView(c);
+      return;
+    }
     if (repo == null && c != null) {
       starting = true;
       c.restore().then((_) {
@@ -72,6 +88,20 @@ class _IVisionAppState extends State<IVisionApp> {
         });
       });
     }
+  }
+
+  /// Staff opened this tab from the console: wait for the view-only session, then show the customer's app.
+  Future<void> _receiveView(ApiClient c) async {
+    final g = await widget.browser.waitForViewAs();
+    if (!mounted) return;
+    setState(() {
+      _waitingForConsole = false;
+      if (g == null) return;
+      c.useViewAs(g.token);
+      _viewAs = g;
+      repo = ApiRepository(c);
+      widget.browser.replaceUrl('/');
+    });
   }
 
   Future<void> _loadTheme() async {
@@ -104,6 +134,12 @@ class _IVisionAppState extends State<IVisionApp> {
   }
 
   Future<void> _signOut([String? message]) async {
+    final v = _viewAs;
+    if (v != null) {                         // "Stop" on the view-only banner: tell the console, which ends the session
+      widget.browser.stopViewAs(v.sessionId);
+      if (mounted) setState(() { _viewAs = null; repo = null; _viewEnded = true; });
+      return;
+    }
     await _push?.stop();
     _push = null;
     await repo?.signOut();
@@ -117,21 +153,30 @@ class _IVisionAppState extends State<IVisionApp> {
         theme: buildTheme(Brightness.light).copyWith(pageTransitionsTheme: _pageTransitions),
         darkTheme: buildTheme(Brightness.dark).copyWith(pageTransitionsTheme: _pageTransitions),
         themeMode: switch (choice) { ThemeChoice.light => ThemeMode.light, ThemeChoice.dark => ThemeMode.dark, ThemeChoice.auto => ThemeMode.system },
-        home: starting
-            ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
-            : repo == null
-                ? SignInPage(client: widget.client!, onDone: _signedIn, message: note)
-                : AppScope(onSignedOut: () => _signOut('Please sign in again.'), child: Shell(repo: repo!, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push)),
+        home: _inviteToken != null
+            ? SetPasswordPage(client: widget.client!, token: _inviteToken!, onDone: () { widget.browser.replaceUrl('/'); setState(() { _inviteToken = null; note = 'Your password is saved. Sign in with it now.'; }); })
+            : _waitingForConsole
+                ? const Scaffold(body: Loading(text: "Opening the customer's app"))
+                : _viewEnded
+                    ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('The view-only session has ended. You can close this tab.', textAlign: TextAlign.center))))
+                    : starting
+                        ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
+                        : repo == null
+                            ? (_viewAs == null && widget.browser.openedByStaff
+                                ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text("Could not open the customer's app. Close this tab and try again from the console.", textAlign: TextAlign.center))))
+                                : SignInPage(client: widget.client!, onDone: _signedIn, message: note, browser: widget.browser))
+                            : AppScope(onSignedOut: () => _signOut('Please sign in again.'), child: Shell(repo: repo!, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push, viewing: _viewAs?.tenant)),
       );
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.repo, required this.choice, required this.onChoice, required this.onSignOut, this.push});
+  const Shell({super.key, required this.repo, required this.choice, required this.onChoice, required this.onSignOut, this.push, this.viewing});
   final Repository repo;
   final ThemeChoice choice;
   final ValueChanged<ThemeChoice> onChoice;
   final void Function([String? message]) onSignOut;
   final PushRegistration? push;      // this device's push, for the "Turn on notifications" button
+  final String? viewing;             // staff looking at this customer's app: the customer's name, and a banner saying so
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -192,7 +237,8 @@ class _ShellState extends State<Shell> {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final t = Tok.of(context);
     // Switching places is instant and each keeps its scroll position and what it loaded, like WhatsApp and the iPhone's own apps.
-    final body = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
+    final content = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
+    final body = widget.viewing == null ? content : Column(children: [_ViewBanner(name: widget.viewing!, onStop: () => widget.onSignOut()), Expanded(child: content)]);
     final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, badge: i == _alerts ? openAlerts : 0, custom: _defs[i].custom)];
     if (wide) {
       return Scaffold(
@@ -276,6 +322,32 @@ class _NavItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Shown while staff look at a customer's app: it says so, and "Stop" ends the session.
+class _ViewBanner extends StatelessWidget {
+  const _ViewBanner({required this.name, required this.onStop});
+  final String name;
+  final VoidCallback onStop;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Container(
+      width: double.infinity,
+      color: t.warnSoft,
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(children: [
+        Icon(Icons.visibility_outlined, size: 18, color: t.warnInk),
+        const SizedBox(width: 10),
+        Expanded(child: Text.rich(TextSpan(style: TextStyle(color: t.warnInk, fontSize: 13.5, height: 1.3), children: [
+          const TextSpan(text: 'You are looking at '),
+          TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const TextSpan(text: ' as Jas iVision staff. View only. Everything you open is logged.'),
+        ]))),
+        TextButton(onPressed: onStop, child: Text('Stop', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w700))),
+      ]),
     );
   }
 }

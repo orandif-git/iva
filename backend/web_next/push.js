@@ -33,7 +33,7 @@
     if (!supported()) return null;
     if (Notification.permission === "default" && ask) await Notification.requestPermission();
     if (Notification.permission !== "granted") return null;
-    // Its own small scope inside /next/, so it never replaces the app's own service worker.
+    // Its own small scope inside the app, so it never replaces the app's own service worker.
     var reg = await navigator.serviceWorker.register("firebase-messaging-sw.js", { scope: "firebase-push/" });
     await active(reg);
     if (!messaging) {

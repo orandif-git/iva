@@ -180,7 +180,7 @@ The API serves the pages itself, so there is nothing else to install: no Node, n
 
 | Address | Who | What |
 |---|---|---|
-| `/` | customers | sign in, overview, connect a recorder, cameras and counting lines, people count, number plates, account |
+| `/` | customers | the customer app: sign in, home, cameras (live view, counting line, plate area), AI Watch, alerts, reports, activity, settings, recorders |
 | `/staff/` | your team | sign in (password + authenticator code), overview, customers, invite users, add recorders, camera health |
 | `/set-password?token=...` | invited customers | the one-time link staff send; they choose their own password |
 
@@ -191,7 +191,7 @@ The API serves the pages itself, so there is nothing else to install: no Node, n
 - [ ] Staff pages: sign in with the account from section 6b. In the console: **Customers → New customer → Invite a user**, copy the link, send it to the customer (for example on WhatsApp).
 - [ ] Taking a camera picture (the "draw your counting line" screen) needs FFmpeg on the server (`ffmpeg -version`) and the Dahua gateway or registrar running. Settings if they are elsewhere: `GI_DAHUA_RELAY_URL` (default `http://127.0.0.1:8082`), `GI_GB_RELAY_URL` (default `http://127.0.0.1:8081`), `GI_FFMPEG_PATH`.
 
-**The new customer app** is at `/next/` (built from `app/`, see `scripts/build_app.sh`). To make it the one that opens at `/`, add `GI_DEFAULT_APP=next` to `.env` and restart `gi-api`. The current app is not removed: `/?classic=1` opens it (and remembers that for 30 days in that browser), `/?next=1` goes back. Password links and `/staff/` are not affected. While the switch is on, the server also answers the old app's service worker (`/sw.js`) with one that clears its caches and removes itself, so phones that still hold the old app move over by themselves on their next visit. To undo the switch, remove the line (or set `GI_DEFAULT_APP=classic`) and restart.
+**The customer app** (Flutter, built from `app/` by `scripts/build_app.sh` into `backend/web_next`) is served at the plain address. The old customer pages are gone. The staff console is still at `/staff/`. Old addresses keep working: `/next/...` redirects to `/`, and the old app's cached helper (`/sw.js`) is answered with one that empties its caches and removes itself, so phones that still hold the old app move over by themselves. A staff member who signs in on the customer page is handed on to the staff console, and "open the customer's app" from the console opens the customer view-only in the same app.
 
 Live view (moving pictures) uses FFmpeg on the server and keeps a connection open while someone watches. If you put a proxy in front, turn response buffering off for `/v1/live/` (the API already sends `X-Accel-Buffering: no`, which nginx honours). `GI_LIVE_STREAM_MAX` (default 8) is how many cameras can be watched at once on one server; `GI_LIVE_STREAM_FPS` (default 6) is the pictures a second. Push notifications are in `docs/PUSH.md`.
 

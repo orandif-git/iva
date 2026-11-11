@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../browser.dart';
 import '../theme.dart';
 import '../widgets/brand.dart';
 
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key, required this.client, required this.onDone, this.message});
+  const SignInPage({super.key, required this.client, required this.onDone, this.message, this.browser = const Browser()});
   final ApiClient client;
+  final Browser browser;      // staff accounts are handed on to the staff console
   final VoidCallback onDone;
   final String? message;
   @override
@@ -26,6 +28,11 @@ class _SignInPageState extends State<SignInPage> {
       final next = await widget.client.signIn(email.text.trim(), password.text, org: org.text.trim(), code: code.text.trim());
       if (next == 'code') {
         setState(() { askCode = true; busy = false; error = 'Enter the 6-digit code from your authenticator app.'; });
+        return;
+      }
+      if (next == 'staff') {
+        // One sign-in page for everyone: a staff member who signs in here is taken to the staff console, already signed in.
+        widget.browser.handOffToStaff(widget.client.takeStaffToken() ?? '');
         return;
       }
       widget.onDone();
