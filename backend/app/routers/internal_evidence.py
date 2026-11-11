@@ -35,15 +35,11 @@ async def upload_evidence(request: Request, camera_id: UUID = Query(...), kind: 
         raise ApiError(404, "camera_not_found", "Unknown camera.")
     if cam["status"] in ("suspended", "cancelled"):
         raise ApiError(403, "tenant_suspended", "This account is suspended.")
-    eid = uuid.uuid4()
-    key = evidence.storage_key(cam["tenant_id"], eid, kind)
     try:
-        await evidence.store().put(key, data, "image/jpeg")
+        eid = await evidence.save_image(ctx.conn, cam["tenant_id"], camera_id, data, cam["retention_snapshots_days"])
     except Exception:
         log.exception("could not store evidence")
         raise ApiError(502, "storage_unavailable", "Could not store the picture. Try again.")
-    await ctx.conn.execute("INSERT INTO app.evidence (id, tenant_id, camera_id, kind, storage_key, content_type, bytes, expires_at) VALUES ($1,$2,$3,'image',$4,'image/jpeg',$5,$6)",
-                           eid, cam["tenant_id"], camera_id, key, len(data), datetime.now(timezone.utc) + timedelta(days=cam["retention_snapshots_days"]))
     return {"evidence_id": eid}
 
 

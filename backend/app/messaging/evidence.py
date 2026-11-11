@@ -185,3 +185,14 @@ def clip_url(token: str) -> str:
 
 def image_url(token: str) -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/e/{token}/image.jpg"
+
+
+async def save_image(conn, tenant_id, camera_id, data: bytes, retention_days: int) -> uuid.UUID:
+    """Keeps a JPEG in the evidence store and records it; it is deleted after `retention_days` (the customer's setting, which only Jas iVision staff change)."""
+    from datetime import datetime, timedelta, timezone
+    eid = uuid.uuid4()
+    key = storage_key(tenant_id, eid, "image")
+    await store().put(key, data, "image/jpeg")
+    await conn.execute("INSERT INTO app.evidence (id, tenant_id, camera_id, kind, storage_key, content_type, bytes, expires_at) VALUES ($1,$2,$3,'image',$4,'image/jpeg',$5,$6)",
+                       eid, tenant_id, camera_id, key, len(data), datetime.now(timezone.utc) + timedelta(days=retention_days))
+    return eid

@@ -161,8 +161,9 @@ backend attaches it and releases the held event at once  ->  sent with clip_url 
 | Plate needs checking | the picture of the read |
 | Vehicle has stayed too long | the picture taken as the vehicle came in |
 | Possible phone use | a picture with the area, the people and the phone marked |
-| Too many people in an area, Queue too long | a picture with the area and people marked: the worker takes one when the limit is first reached and another every `picture_minutes` while it stays (the customer sets it on the area, default 2, `0` for no pictures), and the alert shows the newest |
-| Too many people (count), camera and recorder alerts, account alerts | none: a count has no single moment to show and an offline camera has no picture |
+| Too many people in an area, Queue too long | a picture with the area and people marked: the worker takes one when the limit is first reached and another every `picture_minutes` while it stays (the customer sets it on the area, default 15, `0` for no pictures), and the alert shows the newest |
+| Too many people (the count) | a picture of the camera that has counted the most people today, taken when the alert is sent. While the crowd stays over the limit a new one is taken only every `picture_minutes` (the customer sets it, default 15, `0` for none), and the alert shows the newest. If the camera cannot be reached the alert still goes out |
+| Camera and recorder alerts, account alerts | none: an offline camera has no picture |
 
 * **Nothing identifies a person.** The pictures mark places and people-shaped boxes, never names.
 * **How long.** Pictures and clips are deleted after the customer's `retention_snapshots_days`, which only Jas iVision staff change (per customer, 7 days by default). There is no "keep" for customers.

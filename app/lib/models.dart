@@ -136,11 +136,13 @@ class AlertDef {
   AlertDef({required this.type, required this.title, required this.description, required this.smart, this.area = false, this.areaKind, this.settings = const [], this.enabled = false, this.params = const {}, this.recipientIds = const []});
 
   /// One plain sentence from the numbers: "Alert when more than 6 people waiting, for at least 5 minutes".
-  String get summary {
-    if (!enabled && params.isEmpty) return description;
+  String get summary => !enabled && params.isEmpty ? description : sentence(params);
+
+  /// The same sentence for another set of numbers (an area has its own).
+  String sentence(Map<String, num> p) {
     final bits = <String>[];
     for (final st in settings) {
-      final v = params[st.key];
+      final v = p[st.key];
       if (v == null || (st.key == 'wait_minutes' && v == 0) || st.key == 'picture_minutes') continue;       // picture_minutes is set in the editor, not read out in the sentence
       final n = v == v.roundToDouble() ? '${v.toInt()}' : '$v';
       final text = st.key == 'hour' ? '${st.label} ${_clock(v)}' : [st.label, n, st.unit].where((x) => x.isNotEmpty).join(' ');
@@ -148,6 +150,14 @@ class AlertDef {
     }
     return bits.isEmpty ? description : bits.join(', ');
   }
+}
+
+/// A marked area on a camera: a crowd, a queue or a staff area, with its own numbers.
+class AreaInfo {
+  final String id, cameraId, cameraName, kind;       // kind: area_count, queue_area, staff_area
+  final List<Pt> points;
+  final Map<String, num> params;
+  const AreaInfo(this.id, this.cameraId, this.cameraName, this.kind, this.points, this.params);
 }
 
 class Person {
@@ -212,7 +222,8 @@ class NewAlert {
   final List<String> recipientIds;
   final String? cameraId, cameraName;
   final List<List<double>>? area;
-  const NewAlert(this.def, this.params, this.recipientIds, {this.cameraId, this.cameraName, this.area});
+  final String? areaId;          // set when an existing area is being changed, so it is updated and not added again
+  const NewAlert(this.def, this.params, this.recipientIds, {this.cameraId, this.cameraName, this.area, this.areaId});
 }
 
 /// "10:42 am" for today, "Yesterday" or "12 Nov" otherwise.

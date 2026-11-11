@@ -1,9 +1,13 @@
 """Alerts that come from looking at the data over time rather than from a single event: vehicles that stay too long, and crowding."""
+import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from ..db import db
+from ..messaging import evidence
+from . import snapshot
 from .alerts import raise_alert
 
 log = logging.getLogger("gateinsight.detectors")
@@ -46,6 +50,39 @@ async def vehicle_overstay() -> int:
     return n
 
 
+_crowd_pictures: dict = {}          # tenant -> (when it was taken, evidence id): kept in memory, so a restart simply takes a fresh one
+
+
+async def _crowd_picture(conn, tenant_id, tz: str, minutes: int):
+    """A picture for the "Too many people" alert: the camera that has counted the most people today, taken now. While the crowd stays over its limit a new one is taken
+    only every `minutes` (the customer sets it; 0 means no pictures), and the alert shows the newest. If the camera cannot be reached the alert goes out without one."""
+    if minutes <= 0:
+        return None
+    now = time.monotonic()
+    kept = _crowd_pictures.get(tenant_id)
+    if kept and now - kept[0] < minutes * 60 and await conn.fetchval("SELECT expires_at > now() FROM app.evidence WHERE id=$1", kept[1]):
+        return kept[1]
+    cam = await conn.fetchrow(
+        """SELECT c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol, t.retention_snapshots_days
+           FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id LEFT JOIN app.recorders r ON r.id = c.recorder_id JOIN app.tenants t ON t.id = c.tenant_id
+           WHERE f.tenant_id=$1 AND c.enabled AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2
+           GROUP BY c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol, t.retention_snapshots_days ORDER BY sum(f.people_in) DESC LIMIT 1""", tenant_id, tz)
+    if not cam:
+        return None
+    try:
+        def decrypt():
+            from ..crypto import vault
+            return vault().decrypt(bytes(cam["source_ciphertext"]), str(cam["id"]))
+        url, fmt = await asyncio.wait_for(snapshot.source_for(cam, decrypt), 20)
+        jpeg = await asyncio.wait_for(snapshot.grab(url, fmt), snapshot.GRAB_TIMEOUT + 5)
+        eid = await evidence.save_image(conn, tenant_id, cam["id"], jpeg, cam["retention_snapshots_days"])
+    except Exception as e:                                  # a picture is a bonus: never hold an alert back for it
+        log.info("no picture for the crowding alert: %s", type(e).__name__)
+        return None
+    _crowd_pictures[tenant_id] = (now, eid)
+    return eid
+
+
 async def crowding() -> int:
     """People counted in minus out today (the tenant's day), across all cameras, at or above the limit. At most one alert an hour.
     This is an estimate: a person missed at the door is never corrected, so counts drift. It is meant as a warning, not a head count."""
@@ -53,12 +90,17 @@ async def crowding() -> int:
     async with db.service_tx() as conn:
         rules = await conn.fetch("SELECT r.tenant_id, r.params, t.timezone FROM app.alert_rules r JOIN app.tenants t ON t.id=r.tenant_id WHERE r.rule_type='crowding' AND r.enabled")
         for rule in rules:
-            limit = int((rule["params"] or {}).get("people", 50))
+            params = rule["params"] or {}
+            limit = int(params.get("people", 50))
             inside = await conn.fetchval(
                 """SELECT greatest(coalesce(sum(people_in) - sum(people_out), 0), 0) FROM app.footfall_counts
                    WHERE tenant_id=$1 AND bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2""", rule["tenant_id"], rule["timezone"])
-            if inside >= limit and await raise_alert(conn, rule["tenant_id"], "crowding", body=f"About {inside} people are inside. Your limit is {limit}.",
-                                                     camera_name="All cameras", details={"people": int(inside), "limit": limit}, dedupe_key="crowding", cooldown_minutes=60):
+            if inside < limit:
+                _crowd_pictures.pop(rule["tenant_id"], None)           # back under the limit: the next time starts again
+                continue
+            pic = await _crowd_picture(conn, rule["tenant_id"], rule["timezone"], int(params.get("picture_minutes", 15)))
+            if await raise_alert(conn, rule["tenant_id"], "crowding", body=f"About {inside} people are inside. Your limit is {limit}.",
+                                 camera_name="All cameras", details={"people": int(inside), "limit": limit}, dedupe_key="crowding", cooldown_minutes=60, evidence_id=pic):
                 n += 1
     return n
 

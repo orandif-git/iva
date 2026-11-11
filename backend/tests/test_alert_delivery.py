@@ -255,7 +255,7 @@ async def test_the_alert_catalog_and_customer_choices(client, make, world):
     assert cat["blocked_plate"]["enabled"] is True and cat["crowding"]["enabled"] is False and cat["camera_offline"]["recipient_ids"] == [rid]
     assert cat["crowding"]["ai"] is True and cat["camera_offline"]["ai"] is False and cat["camera_offline"]["channels"] == ["whatsapp"]
     r = await client.put("/v1/alert-types/crowding", json={"enabled": True, "params": {"people": 80}, "recipient_ids": [rid], "quiet_start": "22:00", "quiet_end": "06:00"}, headers=h)
-    assert r.status_code == 200 and r.json()["params"] == {"people": 80} and r.json()["quiet_start"] == "22:00" and r.json()["channels"] == ["whatsapp"]
+    assert r.status_code == 200 and r.json()["params"] == {"people": 80, "picture_minutes": 15} and r.json()["quiet_start"] == "22:00" and r.json()["channels"] == ["whatsapp"]
     off = await client.put("/v1/alert-types/blocked_plate", json={"enabled": False}, headers=h)
     assert off.json()["enabled"] is False and not any(c["type"] == "blocked_plate" and c["enabled"] for c in (await client.get("/v1/alert-types", headers=h)).json())
     for body in ({"enabled": True, "params": {"people": 0}}, {"enabled": True, "params": {"people": "many"}}, {"enabled": True, "params": {"nope": 1}},

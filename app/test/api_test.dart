@@ -140,6 +140,20 @@ void main() {
     expect(defs.first.settings, isEmpty);
   });
 
+  test('the areas an alert is watching are listed, and changing one updates it in place', () async {
+    final (repo, _, f) = await signedIn();
+    final areas = await repo.areas();
+    expect(areas.map((a) => (a.id, a.cameraId, a.kind)), [('z1', 'c1', 'area_count')]);
+    expect(areas.single.params, {'limit': 5});
+    final d = (await repo.alertDefs()).firstWhere((d) => d.type == 'queue_long');
+    await repo.saveAlert(NewAlert(d, {'length': 7, 'minutes': 3, 'picture_minutes': 20}, ['p1'], cameraId: 'c1', cameraName: 'Front door', area: [[0.2, 0.2], [0.7, 0.2], [0.7, 0.7]], areaId: 'z1'));
+    final sent = f.bodies['PUT /v1/cameras/c1/areas']['areas'] as List;
+    expect(sent.length, 1, reason: 'the area was changed, not added a second time');
+    expect(sent.single['id'], 'z1');
+    expect(sent.single['params'], {'length': 7, 'minutes': 3, 'picture_minutes': 20});
+    expect(sent.single['points'].first, [0.2, 0.2]);
+  });
+
   test('saving an area alert keeps the camera\'s other areas and turns the alert on', () async {
     final (repo, _, f) = await signedIn();
     final q = (await repo.alertDefs()).firstWhere((d) => d.type == 'queue_long');

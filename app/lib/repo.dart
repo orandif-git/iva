@@ -52,6 +52,7 @@ abstract class Repository {
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
   Future<Uint8List?> snapshot(String cameraId);
+  Future<List<AreaInfo>> areas();
   Future<void> saveAlert(NewAlert a);
   Future<void> setEnabled(AlertDef d, bool on);
   Future<void> sendTest(String alertType, String personId);
@@ -327,13 +328,38 @@ class ApiRepository implements Repository {
   }
 
   @override
+  Future<List<AreaInfo>> areas() async {
+    final cams = await api.call('GET', '/v1/cameras') as List;
+    final out = <AreaInfo>[];
+    await Future.wait([
+      for (final c in cams.cast<Map>())
+        () async {
+          try {
+            for (final z in await api.call('GET', '/v1/cameras/${c['id']}/areas') as List) {
+              final k = z['kind'] as String;
+              if (!_areaKinds.containsValue(k)) continue;
+              out.add(AreaInfo('${z['id']}', '${c['id']}', '${c['name']}', k, [for (final p in (z['points'] as List)) Pt((p[0] as num).toDouble(), (p[1] as num).toDouble())],
+                  {for (final e in ((z['params'] ?? {}) as Map).entries) if (e.value is num) '${e.key}': e.value as num}));
+            }
+          } catch (_) {/* a camera that cannot be asked is left out */}
+        }()
+    ]);
+    out.sort((a, b) => a.cameraName.compareTo(b.cameraName));
+    return out;
+  }
+
+  @override
   Future<void> saveAlert(NewAlert a) async {
     if (a.def.area && a.cameraId != null && a.area != null) {
       final existing = await api.call('GET', '/v1/cameras/${a.cameraId}/areas') as List;
       final params = {for (final e in a.params.entries) e.key: e.value, if (a.def.areaKind == 'staff_area') 'notice_confirmed': true};
       final areas = [
-        for (final z in existing) {'id': z['id'], 'kind': z['kind'], 'name': z['name'], 'points': z['points'], 'params': {...(z['params'] as Map), if (z['kind'] == 'staff_area') 'notice_confirmed': true}},
-        {'kind': a.def.areaKind, 'name': '${a.def.title} · ${a.cameraName ?? 'camera'}', 'points': a.area, 'params': params},
+        for (final z in existing)
+          if (z['id'] == a.areaId)
+            {'id': z['id'], 'kind': z['kind'], 'name': z['name'], 'points': a.area, 'params': params}         // the area being changed: updated in place, keeping its history
+          else
+            {'id': z['id'], 'kind': z['kind'], 'name': z['name'], 'points': z['points'], 'params': {...(z['params'] as Map), if (z['kind'] == 'staff_area') 'notice_confirmed': true}},
+        if (a.areaId == null || !existing.any((z) => z['id'] == a.areaId)) {'kind': a.def.areaKind, 'name': '${a.def.title} · ${a.cameraName ?? 'camera'}', 'points': a.area, 'params': params},
       ];
       await api.call('PUT', '/v1/cameras/${a.cameraId}/areas', body: {'areas': areas});
     }
@@ -430,8 +456,9 @@ class MockRepository implements Repository {
     AlertDef(type: 'camera_offline', title: 'Camera offline', description: 'A camera stops sending pictures.', smart: false, enabled: true),
     AlertDef(type: 'recorder_offline', title: 'Recorder offline', description: 'The recorder loses its link.', smart: false, enabled: true),
     AlertDef(type: 'connection_unstable', title: 'Connection keeps dropping', description: 'The link goes up and down.', smart: false, enabled: true, settings: const [Setting('drops', 'Tell me after this many drops in an hour', 'drops', 2, 20, 5)], params: {'drops': 5}),
-    AlertDef(type: 'people_in_area', title: 'Too many people in an area', description: 'Warns when a marked area is crowded.', smart: true, area: true, areaKind: 'area_count', settings: const [Setting('limit', 'Alert when more than', 'people', 1, 60, 10), Setting('minutes', 'for at least', 'minutes', 1, 60, 10), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 60, 2)]),
-    AlertDef(type: 'queue_long', title: 'Long queue', description: 'People wait too long at a counter.', smart: true, area: true, areaKind: 'queue_area', enabled: true, settings: const [Setting('length', 'Alert when more than', 'people waiting', 1, 40, 6), Setting('minutes', 'for at least', 'minutes', 1, 60, 5), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 60, 2)], params: {'length': 6, 'minutes': 5, 'picture_minutes': 2}),
+    AlertDef(type: 'people_in_area', title: 'Too many people in an area', description: 'Warns when a marked area is crowded.', smart: true, area: true, areaKind: 'area_count', settings: const [Setting('limit', 'Alert when more than', 'people', 1, 60, 10), Setting('minutes', 'for at least', 'minutes', 1, 60, 10), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)]),
+    AlertDef(type: 'crowding', title: 'Too many people', description: 'Warns when the people inside go above your limit.', smart: true, enabled: true, settings: const [Setting('people', 'Alert when more than', 'people inside', 1, 1000, 50), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)], params: {'people': 50, 'picture_minutes': 15}),
+    AlertDef(type: 'queue_long', title: 'Long queue', description: 'People wait too long at a counter.', smart: true, area: true, areaKind: 'queue_area', enabled: true, settings: const [Setting('length', 'Alert when more than', 'people waiting', 1, 40, 6), Setting('minutes', 'for at least', 'minutes', 1, 60, 5), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)], params: {'length': 6, 'minutes': 5, 'picture_minutes': 15}),
     AlertDef(type: 'phone_use', title: 'Phone in use at the counter', description: 'Possible phone use in a marked area.', smart: true, area: true, areaKind: 'staff_area', settings: const [Setting('seconds', 'Alert after', 'seconds', 10, 120, 30)]),
   ];
 
@@ -582,11 +609,23 @@ class MockRepository implements Repository {
   Future<List<Person>> people() async => List.of(_people);
   @override
   Future<Uint8List?> snapshot(String cameraId) async => null;
+  final areaList = <AreaInfo>[
+    AreaInfo('z1', 'c8', 'Billing queue', 'queue_area', const [Pt(.1, .1), Pt(.6, .1), Pt(.6, .6), Pt(.1, .6)], const {'length': 6, 'minutes': 5, 'picture_minutes': 15}),
+    AreaInfo('z2', 'c3', 'Aisle 1', 'area_count', const [Pt(.2, .2), Pt(.7, .2), Pt(.7, .7), Pt(.2, .7)], const {'limit': 8, 'minutes': 2, 'picture_minutes': 15}),
+  ];
+  @override
+  Future<List<AreaInfo>> areas() async => List.of(areaList);
   @override
   Future<void> saveAlert(NewAlert a) async {
     a.def.enabled = true;
-    a.def.params = a.params;
     a.def.recipientIds = a.recipientIds;
+    if (a.def.area && a.area != null && a.cameraId != null) {
+      final info = AreaInfo(a.areaId ?? 'z${areaList.length + 1}', a.cameraId!, a.cameraName ?? '', a.def.areaKind ?? 'area_count', [for (final p in a.area!) Pt(p[0], p[1])], a.params);
+      final i = areaList.indexWhere((x) => x.id == a.areaId);
+      if (i >= 0) { areaList[i] = info; } else { areaList.add(info); }
+    } else {
+      a.def.params = a.params;
+    }
   }
 
   @override
