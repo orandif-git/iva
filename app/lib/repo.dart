@@ -304,6 +304,9 @@ class ApiRepository implements Repository {
               area: area,
               areaKind: _areaKinds[type],
               settings: settings,
+              critical: j['severity'] == 'critical',
+              quietStart: j['quiet_start'] as String?,
+              quietEnd: j['quiet_end'] as String?,
               enabled: j['enabled'] == true,
               params: {for (final e in ((j['params'] ?? {}) as Map).entries) if (e.value is num) e.key as String: e.value as num},
               recipientIds: [for (final r in (j['recipient_ids'] as List)) r as String]);
@@ -363,12 +366,14 @@ class ApiRepository implements Repository {
       ];
       await api.call('PUT', '/v1/cameras/${a.cameraId}/areas', body: {'areas': areas});
     }
-    await api.call('PUT', '/v1/alert-types/${a.def.type}', body: {'enabled': true, 'params': a.def.area ? <String, num>{} : a.params, 'recipient_ids': a.recipientIds});
+    await api.call('PUT', '/v1/alert-types/${a.def.type}', body: {'enabled': true, 'params': a.def.area ? <String, num>{} : a.params, 'recipient_ids': a.recipientIds, 'quiet_start': a.quietStart, 'quiet_end': a.quietEnd});
+    a.def.quietStart = a.quietStart;
+    a.def.quietEnd = a.quietEnd;
   }
 
   @override
   Future<void> setEnabled(AlertDef d, bool on) async {
-    await api.call('PUT', '/v1/alert-types/${d.type}', body: {'enabled': on, 'params': d.area ? <String, num>{} : d.params, 'recipient_ids': d.recipientIds});
+    await api.call('PUT', '/v1/alert-types/${d.type}', body: {'enabled': on, 'params': d.area ? <String, num>{} : d.params, 'recipient_ids': d.recipientIds, 'quiet_start': d.quietStart, 'quiet_end': d.quietEnd});      // the quiet hours are kept
     d.enabled = on;
   }
 
@@ -452,12 +457,14 @@ class MockRepository implements Repository {
   MockRepository({this.problems = false});
   bool problems;
   final Map<String, AlertState> _state = {};
+  final List<NewAlert> saved = [];        // what was saved, in order (tests look at it)
+  PaymentDue? payment;                    // set to show the payment line on Home
   final List<AlertDef> _defs = [
     AlertDef(type: 'camera_offline', title: 'Camera offline', description: 'A camera stops sending pictures.', smart: false, enabled: true),
-    AlertDef(type: 'recorder_offline', title: 'Recorder offline', description: 'The recorder loses its link.', smart: false, enabled: true),
-    AlertDef(type: 'connection_unstable', title: 'Connection keeps dropping', description: 'The link goes up and down.', smart: false, enabled: true, settings: const [Setting('drops', 'Tell me after this many drops in an hour', 'drops', 2, 20, 5)], params: {'drops': 5}),
-    AlertDef(type: 'people_in_area', title: 'Too many people in an area', description: 'Warns when a marked area is crowded.', smart: true, area: true, areaKind: 'area_count', settings: const [Setting('limit', 'Alert when more than', 'people', 1, 60, 10), Setting('minutes', 'for at least', 'minutes', 1, 60, 10), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)]),
-    AlertDef(type: 'crowding', title: 'Too many people', description: 'Warns when the people inside go above your limit.', smart: true, enabled: true, settings: const [Setting('people', 'Alert when more than', 'people inside', 1, 1000, 50), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)], params: {'people': 50, 'picture_minutes': 15}),
+    AlertDef(type: 'recorder_offline', title: 'Recorder offline', description: 'The recorder loses its link.', smart: false, critical: true, enabled: true),
+    AlertDef(type: 'connection_unstable', title: 'Unstable connection', description: 'The link goes up and down.', smart: false, enabled: true, settings: const [Setting('drops', 'Tell me after this many drops in an hour', 'drops', 2, 20, 5)], params: {'drops': 5}),
+    AlertDef(type: 'people_in_area', title: 'Area occupancy limit exceeded', description: 'Warns when a marked area is crowded.', smart: true, area: true, areaKind: 'area_count', settings: const [Setting('limit', 'Alert when more than', 'people', 1, 60, 10), Setting('minutes', 'for at least', 'minutes', 1, 60, 10), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)]),
+    AlertDef(type: 'crowding', title: 'Occupancy limit exceeded', description: 'Warns when the people inside go above your limit.', smart: true, enabled: true, settings: const [Setting('people', 'Alert when more than', 'people inside', 1, 1000, 50), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)], params: {'people': 50, 'picture_minutes': 15}),
     AlertDef(type: 'queue_long', title: 'Long queue', description: 'People wait too long at a counter.', smart: true, area: true, areaKind: 'queue_area', enabled: true, settings: const [Setting('length', 'Alert when more than', 'people waiting', 1, 40, 6), Setting('minutes', 'for at least', 'minutes', 1, 60, 5), Setting('picture_minutes', 'Take another picture every', 'minutes (0 for no pictures)', 0, 240, 15)], params: {'length': 6, 'minutes': 5, 'picture_minutes': 15}),
     AlertDef(type: 'phone_use', title: 'Phone in use at the counter', description: 'Possible phone use in a marked area.', smart: true, area: true, areaKind: 'staff_area', settings: const [Setting('seconds', 'Alert after', 'seconds', 10, 120, 30)]),
   ];
@@ -477,6 +484,7 @@ class MockRepository implements Repository {
         sent24h: 12,
         failed24h: 0,
         dataSecondsAgo: problems ? 190 : 8,
+        payment: payment,
       );
 
   @override
@@ -619,6 +627,9 @@ class MockRepository implements Repository {
   Future<void> saveAlert(NewAlert a) async {
     a.def.enabled = true;
     a.def.recipientIds = a.recipientIds;
+    a.def.quietStart = a.quietStart;
+    a.def.quietEnd = a.quietEnd;
+    saved.add(a);
     if (a.def.area && a.area != null && a.cameraId != null) {
       final info = AreaInfo(a.areaId ?? 'z${areaList.length + 1}', a.cameraId!, a.cameraName ?? '', a.def.areaKind ?? 'area_count', [for (final p in a.area!) Pt(p[0], p[1])], a.params);
       final i = areaList.indexWhere((x) => x.id == a.areaId);
