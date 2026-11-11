@@ -93,7 +93,7 @@ async def test_areas_are_saved_with_their_own_limits_and_defaults(client, make, 
     got = await draw(client, u, cam, area("area_count", "Counter", limit=8), area("queue_area", "Queue", length=6), area("staff_area", "Behind the counter"))
     by = {a["name"]: a for a in got}
     assert by["Counter"]["params"] == {"limit": 8, "minutes": 2, "picture_minutes": 15, "repeat_minutes": 15} and by["Counter"]["alert"] == "people_in_area"
-    assert by["Queue"]["params"] == {"length": 6, "minutes": 2, "wait_minutes": 0, "picture_minutes": 15, "repeat_minutes": 15}
+    assert by["Queue"]["params"] == {"length": 6, "minutes": 2, "wait_minutes": 0, "staff": 0, "picture_minutes": 15, "repeat_minutes": 15}
     staff = by["Behind the counter"]["params"]
     assert staff["seconds"] == 20 and staff["notice_confirmed"] is True and staff["notice_confirmed_by"] == str(u["id"]) and staff["notice_confirmed_at"]
     assert await su.fetchval("SELECT use_areas FROM app.cameras WHERE id=$1", uuid.UUID(cam)) is True
@@ -212,9 +212,20 @@ async def test_people_in_an_area_raise_an_alert_only_when_the_count_holds_at_the
     await report(client, make, cam, a["id"], steady(7, 30))                                       # over the limit, but only for thirty seconds
     assert await alerts_of(su, t, "people_in_area") == []
     await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
-    dip = steady(7); dip[6] = (dip[6][0], 3, None, None, None)                                   # one report in the two minutes was under the limit
-    await report(client, make, cam, a["id"], dip)
+    gone = steady(7)
+    for i in range(3, 9):
+        gone[i] = (gone[i][0], 3, None, None, None)                                              # under the limit for half of the two minutes: the crowd really left for a while
+    await report(client, make, cam, a["id"], gone)
     assert await alerts_of(su, t, "people_in_area") == []
+    await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
+    last = steady(7); last[0] = (last[0][0], 3, None, None, None)                                # over the limit until just now, but the newest report is under it
+    await report(client, make, cam, a["id"], last)
+    assert await alerts_of(su, t, "people_in_area") == []
+    await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
+    dip = steady(7); dip[6] = (dip[6][0], 3, None, None, None)                                   # one low report in the two minutes: someone was hidden behind someone else
+    await report(client, make, cam, a["id"], dip)
+    assert len(await alerts_of(su, t, "people_in_area")) == 1, "one missed reading does not start the clock again"
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
     await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
     await report(client, make, cam, a["id"], steady(7))                                           # at or above five for the whole two minutes
     (alert,) = await alerts_of(su, t, "people_in_area")

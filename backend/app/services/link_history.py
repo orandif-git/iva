@@ -12,8 +12,8 @@ async def record(conn, tenant_id: UUID, recorder_id: UUID, status: str) -> None:
 
 
 async def recovered(conn, tenant_id: UUID, *, offline_rule: str, entity_id: UUID, name: str, camera_id: UUID | None = None):
-    """Tells the customer it is back, but only if they were told it was down in the last day. Returns the new alert id, or None."""
-    told = await conn.fetchval("SELECT id FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - interval '24 hours' ORDER BY created_at DESC LIMIT 1",
+    """Tells the customer it is back, but only if they were told it was down in the last week (a long outage still ends with good news). Returns the new alert id, or None."""
+    told = await conn.fetchval("SELECT id FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - interval '7 days' ORDER BY created_at DESC LIMIT 1",
                                tenant_id, f"{offline_rule}:{entity_id}")
     if not told:
         return None

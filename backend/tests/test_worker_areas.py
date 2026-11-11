@@ -73,8 +73,10 @@ def test_a_person_missed_for_a_moment_keeps_their_wait_but_one_who_left_starts_a
     m.update(110.0, W, H, [], [])                                                                      # not seen for a second
     assert m.update(112.0, W, H, [p], [])[0]["wait_seconds"] == 12.0                                   # missed for two seconds only: still the same wait since 100
     m.update(113.0, W, H, [], [])
-    m.update(118.0, W, H, [], [])                                                                      # gone for five seconds: they left
-    assert m.update(120.0, W, H, [p], [])[0]["wait_seconds"] == 0.0
+    assert m.update(119.0, W, H, [p], [])[0]["wait_seconds"] == 19.0                                   # lost by the tracker for six seconds in a crowd: still the same person waiting
+    m.update(120.0, W, H, [], [])
+    m.update(129.0, W, H, [], [])                                                                      # gone for nine seconds: they left
+    assert m.update(131.0, W, H, [p], [])[0]["wait_seconds"] == 0.0
 
 
 # ------------------------------------------------------------------------------------------ phones

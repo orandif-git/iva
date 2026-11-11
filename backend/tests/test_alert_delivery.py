@@ -618,7 +618,7 @@ async def test_offline_camera_and_recorder_alerts(client, make, su, world):
     events = sorted(c["headers"]["x-event"] for c in world["hook"].calls)
     assert events == ["system.camera_offline", "system.recorder_offline"]                                      # System Alerts, one event each
     rec = next(c["body"] for c in world["hook"].calls if c["headers"]["x-event"] == "system.recorder_offline")
-    assert rec["template_name"] == "system_recorder_offline_v1" and "stopped contacting" in rec["details"] and "image_url" not in rec
+    assert rec["template_name"] == "system_recorder_offline_v1" and "lost its connection" in rec["details"] and "image_url" not in rec
 
 
 async def test_overstay_detector(client, make, su, world):

@@ -283,7 +283,7 @@ class _AlertWizardState extends State<AlertWizard> {
         ],
         for (final s in def!.settings)
           _Stepper(s.label, values[s.key] ?? s.def, s.unit, (v) => setState(() => values[s.key] = v), min: s.min, max: s.max,
-              help: s.key == 'picture_minutes' ? ((values[s.key] ?? s.def) == 0 ? 'No pictures will be taken for this alert.' : 'A picture is kept with the alert: one the moment the limit is reached, then another every ${values[s.key] ?? s.def} minutes while it stays that way. The alert shows the newest. People in the picture are not named.') : null),
+              help: s.key == 'staff' ? 'For example the cashier. People who work inside the area you drew are left out, so the number above means customers only.' : s.key == 'picture_minutes' ? ((values[s.key] ?? s.def) == 0 ? 'No pictures will be taken for this alert.' : 'A picture is kept with the alert: one the moment the limit is reached, then another every ${values[s.key] ?? s.def} minutes while it stays that way. The alert shows the newest. People in the picture are not named.') : null),
         if (def!.type == 'phone_use') _Pick2(on: told, onTap: () => setState(() => told = !told), title: 'Our staff have been told this alert is on', sub: 'Required. The alert says "possible phone use in this area". It never names a person.'),
       ];
 

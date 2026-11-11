@@ -126,8 +126,10 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
             elif await alert_if_possibly_blocked(conn, tenant, res.text, e.plate_raw, e.confidence, e.camera_id, cam["name"], e.direction, e.snapshot_key, e.evidence_id):
                 pass                                    # an unclear read that looks like a blocked plate: the blocked-vehicle alert says so
             else:
-                await raise_alert(conn, tenant, "low_confidence_plate", body=f"Read as {e.plate_raw} ({e.confidence}% sure) at {cam['name']}.", camera_id=e.camera_id,
-                                  camera_name=cam["name"], details={"plate": e.plate_raw, "confidence": str(e.confidence)}, dedupe_key=f"lowconf:{e.camera_id}", cooldown_minutes=15, evidence_id=e.evidence_id, evidence_key=e.snapshot_key)
+                waiting = await conn.fetchval("SELECT count(*) FROM app.plate_events WHERE tenant_id=$1 AND review_status='needs_review' AND seen_at > now() - interval '24 hours'", tenant)
+                # At a busy gate unclear reads come all day. One message an hour for a camera, saying how many are waiting, instead of one every few minutes.
+                await raise_alert(conn, tenant, "low_confidence_plate", body=f"Read as {e.plate_raw} ({e.confidence}% sure) at {cam['name']}. {waiting} number plate{'s' if waiting != 1 else ''} from the last day need{'' if waiting != 1 else 's'} review.",
+                                  camera_id=e.camera_id, camera_name=cam["name"], details={"plate": e.plate_raw, "confidence": str(e.confidence)}, dedupe_key=f"lowconf:{e.camera_id}", cooldown_minutes=60, evidence_id=e.evidence_id, evidence_key=e.snapshot_key)
             accepted += 1
             latest[e.camera_id] = max(latest.get(e.camera_id, e.seen_at), e.seen_at)
     await _touch(conn, latest)

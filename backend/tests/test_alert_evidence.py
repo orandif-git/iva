@@ -167,8 +167,9 @@ async def test_a_new_crowd_picture_is_taken_only_after_the_chosen_minutes_and_ze
     await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)                          # the hour is up: the alert may be sent again
     await detectors.crowding()
     assert len(taken) == 1, "the picture from a few minutes ago is still fresh, so it is shown again"
-    first = detectors._crowd_pictures[t]
-    detectors._crowd_pictures[t] = (first[0] - 16 * 60, first[1])                               # 16 minutes pass
+    (key,) = [k for k in detectors._crowd_pictures if k[0] == t]                                # one place: this customer's recorder
+    first = detectors._crowd_pictures[key]
+    detectors._crowd_pictures[key] = (first[0] - 16 * 60, first[1])                             # 16 minutes pass
     await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
     await detectors.crowding()
     assert len(taken) == 2
