@@ -238,7 +238,7 @@ class StatStrip extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(items[i].$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.fg2, fontSize: 12.5)),
                   const SizedBox(height: 4),
-                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(items[i].$2, style: display(26).copyWith(fontFeatures: const [FontFeature.tabularFigures()]))),
+                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(items[i].$2, style: display(26))),
                 ]),
               ),
             ),
