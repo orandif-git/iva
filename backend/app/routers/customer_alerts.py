@@ -326,7 +326,7 @@ async def send_test(rule_type: str, body: TestIn, ctx: CustomerCtx = Depends(cus
         raise ApiError(404, "recipient_not_found", "That person was not found.")
     if not person["phone"]:
         raise ApiError(422, "no_mobile_number", f"{person['name']} has no mobile number.")
-    tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", ctx.tenant_id)
+    tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips FROM app.tenants WHERE id=$1", ctx.tenant_id)
     if not tenant["msg_whatsapp"]:
         raise ApiError(409, "whatsapp_off", "WhatsApp messages are switched off for your account. Contact support.")
     from ..services.alerts import clean_text, fan_out

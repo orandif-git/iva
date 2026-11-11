@@ -42,7 +42,7 @@ async def vehicle_overstay() -> int:
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events o WHERE o.entry_event_id = i.id)
                    ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes)
             for r in rows:
-                if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle {r['plate_text']} has stayed too long",
+                if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle overstay: {r['plate_text']}",
                                      body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
                                      details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes)},
                                      dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7, evidence_id=r["evidence_id"]):
@@ -130,63 +130,6 @@ async def connection_unstable() -> int:
     return n
 
 
-async def plan_limit() -> int:
-    """The customer is using `percent` of the cameras their plan allows (90 unless they changed it). Once a month at most."""
-    n = 0
-    async with db.service_tx() as conn:
-        rows = await conn.fetch(
-            """SELECT t.id, t.camera_limit, (SELECT count(*) FROM app.cameras c WHERE c.tenant_id = t.id AND c.enabled)::int AS used FROM app.tenants t
-               WHERE t.status::text IN ('trial','active','past_due') AND t.camera_limit > 0""")
-        for r in rows:
-            pct = int(await _param(conn, r["id"], "plan_limit", "percent", 90)) if r["used"] else 100
-            if r["used"] * 100 >= r["camera_limit"] * pct and await raise_alert(
-                    conn, r["id"], "plan_limit", title="Camera limit nearly reached", body=f"You are using {r['used']} of the {r['camera_limit']} cameras your plan allows.",
-                    camera_name="Your account", details={"used": r["used"], "limit": r["camera_limit"]}, dedupe_key=f"planlimit:{r['camera_limit']}", cooldown_minutes=60 * 24 * 30):
-                n += 1
-    return n
-
-
-async def message_allowance() -> int:
-    """The customer has used `percent` of this month's WhatsApp messages (80 unless they changed it). Only for a customer who has a monthly cap."""
-    n = 0
-    async with db.service_tx() as conn:
-        rows = await conn.fetch(
-            """SELECT t.id, t.msg_monthly_cap AS cap, t.timezone, (SELECT count(*) FROM app.notifications n WHERE n.tenant_id = t.id AND n.channel='whatsapp'
-                      AND n.status NOT IN ('suppressed','cancelled') AND n.created_at >= date_trunc('month', now() AT TIME ZONE t.timezone) AT TIME ZONE t.timezone)::int AS used
-               FROM app.tenants t WHERE t.msg_monthly_cap > 0 AND t.status::text IN ('trial','active','past_due')""")
-        for r in rows:
-            pct = int(await _param(conn, r["id"], "message_allowance", "percent", 80))
-            if r["used"] * 100 >= r["cap"] * pct:
-                month = datetime.now(ZoneInfo(r["timezone"])).strftime("%Y-%m")
-                if await raise_alert(conn, r["id"], "message_allowance", title="Message allowance nearly used", body=f"You have used {r['used']} of your {r['cap']} WhatsApp messages this month.",
-                                     camera_name="Your account", details={"used": r["used"], "limit": r["cap"]}, dedupe_key=f"msgcap:{month}", cooldown_minutes=60 * 24 * 31):
-                    n += 1
-    return n
-
-
-async def payment_due() -> int:
-    """An issued invoice that is due within `days` (3 unless changed), and again once it is overdue. Paid and void invoices are never reported."""
-    n = 0
-    async with db.service_tx() as conn:
-        rows = await conn.fetch(
-            """SELECT i.id, i.tenant_id, i.number, i.due_at, i.total_paise, t.timezone FROM app.invoices i JOIN app.tenants t ON t.id = i.tenant_id
-               WHERE i.status='issued' AND i.due_at IS NOT NULL AND i.due_at < now() + interval '14 days' AND t.status::text <> 'cancelled'""")
-        now = datetime.now(timezone.utc)
-        for r in rows:
-            days = int(await _param(conn, r["tenant_id"], "payment_due", "days", 3))
-            overdue = r["due_at"] <= now
-            if not overdue and r["due_at"] > now + timedelta(days=days):
-                continue
-            due = r["due_at"].astimezone(ZoneInfo(r["timezone"])).strftime("%d %b")
-            amount = f"₹{r['total_paise'] / 100:,.0f}"
-            title = "Payment overdue" if overdue else "Payment due soon"
-            body = f"Invoice {r['number']} of {amount} {'was due on' if overdue else 'is due on'} {due}."
-            if await raise_alert(conn, r["tenant_id"], "payment_due", title=title, body=body, camera_name="Your account", details={"invoice": r["number"], "due_date": due},
-                                 dedupe_key=f"invoice_{'overdue' if overdue else 'due'}:{r['id']}", cooldown_minutes=60 * 24 * 30):
-                n += 1
-    return n
-
-
 async def daily_summary() -> int:
     """One short message a day, at the hour the customer chose (8 unless changed), for a customer who has turned it on."""
     n = 0
@@ -205,7 +148,7 @@ async def daily_summary() -> int:
                           (SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type <> 'daily_summary' AND acknowledged_at IS NULL)::int AS unseen""", rule["tenant_id"])
             text = (f"{s['streaming']} of {s['cams']} cameras working, {s['online']} of {s['recs']} recorders online. "
                     f"{s['alerts']} alert{'' if s['alerts'] == 1 else 's'} in the last 24 hours, {s['unseen']} not yet seen.")
-            if await raise_alert(conn, rule["tenant_id"], "daily_summary", title="Daily health summary", body=text, camera_name="All cameras", details={"summary": text},
+            if await raise_alert(conn, rule["tenant_id"], "daily_summary", title="Daily system summary", body=text, camera_name="All cameras", details={"summary": text},
                                  dedupe_key=f"daily:{local.date()}", cooldown_minutes=20 * 60):
                 n += 1
     return n

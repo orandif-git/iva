@@ -12,7 +12,7 @@ from ..errors import ApiError
 from ..schemas import FrameStatusIn, HeartbeatIn
 from datetime import datetime, timezone
 
-from ..services import alert_catalog, billing, link_history
+from ..services import alert_catalog, billing, link_history, platform_fault
 from ..services.alerts import clips_wanted
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
@@ -94,6 +94,7 @@ async def worker_cameras(shard: int = Query(0, ge=0), of: int = Query(1, ge=1, l
     cameras added later are picked up by the next poll."""
     if shard >= of:
         raise ApiError(422, "invalid_shard", "shard must be smaller than of.")
+    await platform_fault.worker_polled(ctx.conn, shard, of)          # how we know our own analysis is alive (see services/platform_fault.py)
     rows = await ctx.conn.fetch(
         """SELECT c.id FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
            WHERE c.enabled AND (c.use_footfall OR c.use_anpr) AND t.status::text NOT IN ('suspended','cancelled')

@@ -190,7 +190,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Smart Alerts'));
     await t.pumpAndSettle();
-    await t.tap(find.text('Too many people'));
+    await t.tap(find.text('Occupancy limit exceeded'));
     await t.pump();
     await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
@@ -260,7 +260,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('System Alerts'));
     await t.pumpAndSettle();
-    await t.tap(find.text('Connection keeps dropping'));
+    await t.tap(find.text('Unstable connection'));
     await t.pump();
     await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
@@ -274,6 +274,87 @@ void main() {
     await t.tap(find.text('Save alert'));
     await t.pumpAndSettle();
     expect(find.text('Your alert is on'), findsOneWidget);
+  });
+
+  testWidgets('quiet hours are set where you choose who hears about it, in plain words, and are saved with the alert', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2400 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('New alert'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('System Alerts'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Unstable connection'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Who hears about it?'), findsOneWidget);
+    expect(find.text('Do not message me at night'), findsOneWidget);
+    expect(find.text('Off: messages come at any time'), findsOneWidget);
+    await t.tap(find.byType(Switch));
+    await t.pumpAndSettle();
+    expect(find.text('No messages from 10 pm to 7 am'), findsOneWidget, reason: 'ten at night to seven in the morning unless changed');
+    expect(find.textContaining('Nothing is lost'), findsOneWidget, reason: 'says plainly that the alert is still saved in the app');
+    await t.tap(find.byTooltip('Stop messages at: one hour later'));
+    await t.pumpAndSettle();
+    expect(find.text('No messages from 11 pm to 7 am'), findsOneWidget);
+    await t.ensureVisible(find.text('Save alert'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Save alert'));
+    await t.pumpAndSettle();
+    expect(repo.saved.last.quietStart, '23:00');
+    expect(repo.saved.last.quietEnd, '07:00');
+  });
+
+  testWidgets('an urgent alert has no quiet hours: it is always sent', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2400 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Recorder offline'));
+    await t.pumpAndSettle();
+    expect(find.text('Who hears about it?'), findsOneWidget);
+    expect(find.textContaining('always sent, day and night'), findsOneWidget);
+    expect(find.text('Do not message me at night'), findsNothing);
+    await t.tap(find.textContaining('Ravi').first);
+    await t.pumpAndSettle();
+    await t.ensureVisible(find.text('Save alert'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Save alert'));
+    await t.pumpAndSettle();
+    expect(repo.saved.last.quietStart, isNull);
+  });
+
+  testWidgets('Home shows a payment that is due with its date, and nothing when there is none', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Payment'), findsNothing);
+    repo.payment = const PaymentDue('INV-2026-0042', '₹8,994', '15 Nov 2026', false);
+    await t.tap(find.text('Cameras').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Home').last);
+    await t.pumpAndSettle();
+    expect(find.text('Payment due on 15 Nov 2026'), findsOneWidget);
+    expect(find.text('₹8,994 · Invoice INV-2026-0042'), findsOneWidget);
+    repo.payment = const PaymentDue('INV-2026-0042', '₹8,994', '15 Nov 2026', true);
+    await t.tap(find.text('Cameras').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Home').last);
+    await t.pumpAndSettle();
+    expect(find.text('Payment was due on 15 Nov 2026'), findsOneWidget);
   });
 
   testWidgets('the sign-in screen asks for email and password and shows the server\'s message', (t) async {
@@ -1103,7 +1184,7 @@ void profileTests() {
 
   test('repeats of the same alert in the same place fold into one row, newest first', () {
     final now = DateTime(2026, 11, 10, 18);
-    AlertItem a(String id, String rule, String where, int hoursAgo, {AlertState st = AlertState.open}) => AlertItem(id: id, title: 'Too many people', body: '', rule: rule, where: where, when: '', at: now.subtract(Duration(hours: hoursAgo)), state: st, smart: true);
+    AlertItem a(String id, String rule, String where, int hoursAgo, {AlertState st = AlertState.open}) => AlertItem(id: id, title: 'Occupancy limit exceeded', body: '', rule: rule, where: where, when: '', at: now.subtract(Duration(hours: hoursAgo)), state: st, smart: true);
     final groups = groupAlerts([a('1', 'people_in_area', 'Aisle 1', 5), a('2', 'people_in_area', 'Aisle 1', 1), a('3', 'people_in_area', 'Aisle 2', 3), a('4', 'camera_offline', 'Aisle 1', 2)]);
     expect(groups.length, 3);
     expect(groups.first.latest.id, '2');

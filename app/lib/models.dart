@@ -10,8 +10,9 @@ class Health {
   final List<Issue> issues;
   final int recordersOnline, recordersTotal, camerasWorking, camerasTotal, openAlerts, sent24h, failed24h;
   final int? dataSecondsAgo;
+  final PaymentDue? payment;      // an unpaid invoice, shown as a line on Home
   const Health({required this.ok, required this.issues, required this.recordersOnline, required this.recordersTotal, required this.camerasWorking,
-      required this.camerasTotal, required this.openAlerts, required this.sent24h, required this.failed24h, this.dataSecondsAgo});
+      required this.camerasTotal, required this.openAlerts, required this.sent24h, required this.failed24h, this.dataSecondsAgo, this.payment});
 
   factory Health.fromJson(Map<String, dynamic> j) => Health(
         ok: j['status'] == 'ok',
@@ -24,7 +25,15 @@ class Health {
         sent24h: j['messages']['sent_24h'],
         failed24h: j['messages']['failed_24h'],
         dataSecondsAgo: j['data']['newest_seconds_ago'],
+        payment: j['payment'] == null ? null : PaymentDue(j['payment']['invoice'] ?? '', j['payment']['amount'] ?? '', j['payment']['due_date'] ?? '', j['payment']['overdue'] == true),
       );
+}
+
+/// A payment the customer owes: which invoice, how much, and the day it is (or was) due.
+class PaymentDue {
+  final String invoice, amount, dueDate;
+  final bool overdue;
+  const PaymentDue(this.invoice, this.amount, this.dueDate, this.overdue);
 }
 
 enum AlertState { open, snoozed, done }
@@ -133,7 +142,9 @@ class AlertDef {
   bool enabled;
   Map<String, num> params;
   List<String> recipientIds;
-  AlertDef({required this.type, required this.title, required this.description, required this.smart, this.area = false, this.areaKind, this.settings = const [], this.enabled = false, this.params = const {}, this.recipientIds = const []});
+  final bool critical;            // an urgent alert: always sent, whatever the hour
+  String? quietStart, quietEnd;   // "22:00" and "07:00": no messages for this alert between them. Both null: no quiet hours.
+  AlertDef({required this.type, required this.title, required this.description, required this.smart, this.area = false, this.areaKind, this.settings = const [], this.critical = false, this.quietStart, this.quietEnd, this.enabled = false, this.params = const {}, this.recipientIds = const []});
 
   /// One plain sentence from the numbers: "Alert when more than 6 people waiting, for at least 5 minutes".
   String get summary => !enabled && params.isEmpty ? description : sentence(params);
@@ -223,7 +234,8 @@ class NewAlert {
   final String? cameraId, cameraName;
   final List<List<double>>? area;
   final String? areaId;          // set when an existing area is being changed, so it is updated and not added again
-  const NewAlert(this.def, this.params, this.recipientIds, {this.cameraId, this.cameraName, this.area, this.areaId});
+  final String? quietStart, quietEnd;      // quiet hours for this alert ("22:00" to "07:00"), or both null
+  const NewAlert(this.def, this.params, this.recipientIds, {this.cameraId, this.cameraName, this.area, this.areaId, this.quietStart, this.quietEnd});
 }
 
 /// "10:42 am" for today, "Yesterday" or "12 Nov" otherwise.

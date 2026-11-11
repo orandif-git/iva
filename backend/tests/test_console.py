@@ -136,7 +136,7 @@ async def test_the_owner_adds_staff_who_choose_their_own_password(client, make, 
     assert (await client.post("/admin/v1/staff", json=body, headers=hdr(support))).status_code == 403
     assert (await client.get("/admin/v1/staff", headers=hdr(support))).status_code == 403
     r = await client.post("/admin/v1/staff", json=body, headers=hdr(owner))
-    assert r.status_code == 201 and "/staff/set-password?token=" in r.json()["link"]
+    assert r.status_code == 201 and "/platform/set-password?token=" in r.json()["link"]
     token = r.json()["link"].split("token=")[1]
     assert (await client.post("/admin/v1/staff", json=body, headers=hdr(owner))).json()["error"]["code"] == "email_in_use"
     assert (await client.post("/admin/v1/auth/login", json={"email": body["email"], "password": "whatever long password"})).status_code == 401
@@ -165,7 +165,7 @@ async def test_staff_rules_protect_the_last_owner_and_yourself(client, make, su)
     assert (await client.get("/admin/v1/me", headers=hdr(s))).status_code in (401, 403)                      # a disabled person is locked out at once
     assert (await client.post(f"/admin/v1/staff/{s['id']}/enable", params={"reason": "Back again"}, headers=hdr(owner))).status_code == 204
     link = await client.post(f"/admin/v1/staff/{s['id']}/reset-link", params={"reason": "Forgot password"}, headers=hdr(owner))
-    assert link.status_code == 201 and "/staff/set-password?token=" in link.json()["link"]
+    assert link.status_code == 201 and "/platform/set-password?token=" in link.json()["link"]
     del others
 
 

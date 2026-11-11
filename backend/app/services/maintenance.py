@@ -20,6 +20,18 @@ async def ensure_partitions(months_ahead: int = 2) -> int:
     return n
 
 
+# The alerts that are found by looking at the data on a clock (every other alert is raised the moment its event arrives), and the check that finds each.
+# Each is checked every DEFAULT_CHECK_SECONDS unless Platform Admin sets another time for it (platform.alert_checks).
+TIMED = {"vehicle_overstay": "vehicle_overstay", "crowding": "crowding", "connection_unstable": "connection_unstable", "daily_summary": "daily_summary"}
+DEFAULT_CHECK_SECONDS, TICK_SECONDS = 60, 15
+_last_run: dict[str, float] = {}
+
+
+async def check_intervals() -> dict[str, int]:
+    async with db.service_tx() as conn:
+        return {r["alert_type"]: r["every_seconds"] for r in await conn.fetch("SELECT alert_type, every_seconds FROM platform.alert_checks")}
+
+
 async def run_forever() -> None:
     from . import detectors
     last_slow = 0.0
@@ -33,9 +45,17 @@ async def run_forever() -> None:
                     await job()
                 except Exception:
                     log.exception("maintenance job %s failed", job.__name__)
-        for job in (detectors.vehicle_overstay, detectors.crowding, detectors.connection_unstable, detectors.plan_limit, detectors.message_allowance, detectors.payment_due, detectors.daily_summary):
+        try:
+            every = await check_intervals()
+        except Exception:
+            log.exception("could not read the check intervals")
+            every = {}
+        for alert_type, job in TIMED.items():
+            if loop_time - _last_run.get(alert_type, -1e9) < every.get(alert_type, DEFAULT_CHECK_SECONDS):
+                continue
+            _last_run[alert_type] = loop_time
             try:
-                await job()
+                await getattr(detectors, job)()
             except Exception:
-                log.exception("detector %s failed", job.__name__)
-        await asyncio.sleep(300)
+                log.exception("detector %s failed", job)
+        await asyncio.sleep(TICK_SECONDS)

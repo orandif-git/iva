@@ -70,6 +70,18 @@ async function alerts(X) {
       { key: "status", label: "Status", sort: true, value: (a) => (!a.built ? "z" : a.enabled ? "a" : "b"), render: (a) => (!a.built ? pill("Not built yet", "") : a.enabled ? pill("Live", "ok") : pill("Switched off", "warn")) },
       { key: "customers_using", label: "Customers using", sort: true, align: "end", render: (a) => (a.built ? String(a.customers_using) : "—") },
       { key: "plans", label: "Given by plans", minor: true, value: (a) => a.plans.length, render: (a) => (a.plans.length ? a.plans.map((p) => p.name).join(", ") : "None") },
+      { key: "check_seconds", label: "Checked", minor: true, value: (a) => a.check_seconds ?? 0, render: (a) => {
+        if (!a.built) return h("span", { class: "muted" }, "—");
+        if (a.check_seconds == null) return h("span", { class: "muted" }, "As it happens");
+        const text = a.check_seconds % 60 ? `Every ${a.check_seconds} seconds` : (a.check_seconds === 60 ? "Every minute" : `Every ${a.check_seconds / 60} minutes`);
+        if (!X.isOwner) return text;
+        return h("button", { class: "link", type: "button", "aria-label": `${a.title}: ${text}. Change`, onclick: () => {
+          const secs = h("input", { type: "number", min: 30, max: 3600, step: 30, value: a.check_seconds, inputmode: "numeric" });
+          reasonSheet({ title: `How often to check “${a.title}”`, text: "This alert is found by looking at the data on a clock. A shorter time finds it sooner and makes the server work more. It applies to every customer.",
+            label: "Save", extra: field("Seconds between checks (30 to 3600)", secs),
+            run: async (reason) => { await X.api.put(`/admin/v1/alert-catalog/${a.type}/check`, { every_seconds: Number(secs.value), reason }); closeSheet(); toast("Saved. It applies within a few seconds."); X.refresh(); } });
+        } }, text);
+      } },
       { key: "switch", label: "On for customers", render: (a) => {
         if (!a.built) return h("span", { class: "muted" }, "—");
         const t = toggle(a.enabled, () => {}, `${a.title} for all customers`), input = t.querySelector("input");

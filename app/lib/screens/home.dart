@@ -68,6 +68,7 @@ class _HomePageState extends State<HomePage> {
         final recent = groups.where((g) => isRecent(g.latest)).toList();
         final earlier = groups.where((g) => !isRecent(g.latest)).toList();
 
+        final payment = h.payment == null ? null : _Payment(h.payment!);
         final attention = h.issues.isEmpty ? null : _Attention(issues: h.issues, onCameras: widget.onOpenCameras, onAlerts: widget.onOpenAlerts);
         final needs = _Needs(recent: recent, earlier: earlier, repo: widget.repo, reload: _reload);
         final today = _Today(foot: foot, open: h.openAlerts);
@@ -78,6 +79,7 @@ class _HomePageState extends State<HomePage> {
           child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 16, pad, navClear), children: [
             if (wide) _Banner(h: h, onReview: widget.onOpenAlerts) else _Hero(h: h, me: widget.me, onReview: widget.onOpenAlerts),
             const SizedBox(height: 14),
+            if (payment != null) ...[payment, const SizedBox(height: 14)],
             if (wide)
               IntrinsicHeight(
                 child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -133,6 +135,29 @@ class _Hero extends StatelessWidget {
       const SizedBox(height: 10),
       StatusPill(ok ? 'Everything is working' : (n == 1 ? '1 thing needs attention' : '$n things need attention'), ok ? Level.ok : Level.warn),
     ]);
+  }
+}
+
+/// A payment the customer owes, as one line: how much, for which invoice, and the day it is due. Amber before the day, red after it.
+class _Payment extends StatelessWidget {
+  const _Payment(this.p);
+  final PaymentDue p;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final (bg, fg) = p.overdue ? (t.critSoft, t.crit) : (t.warnSoft, t.warnInk);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.tile)),
+      child: Row(children: [
+        Icon(Icons.receipt_long_outlined, color: fg, size: 22),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(p.overdue ? 'Payment was due on ${p.dueDate}' : 'Payment due on ${p.dueDate}', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 15)),
+          Text([p.amount, if (p.invoice.isNotEmpty) 'Invoice ${p.invoice}'].join(' · '), style: TextStyle(color: fg, fontSize: 13)),
+        ])),
+      ]),
+    );
   }
 }
 

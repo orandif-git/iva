@@ -23,7 +23,7 @@ def _clean_cache():
 
 
 # ------------------------------------------------------------------------------------------ the pages
-@pytest.mark.parametrize("path", ["/staff/", "/staff/set-password"])
+@pytest.mark.parametrize("path", ["/platform/", "/platform/set-password"])
 async def test_pages_are_served_with_a_strict_content_policy(client, path):
     r = await client.get(path)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
@@ -47,7 +47,7 @@ async def test_the_customer_app_is_the_root_with_the_policy_it_needs_and_nothing
     assert (await client.get("/main.dart.js")).status_code == 200
     assert (await client.get("/canvaskit/canvaskit.wasm")).status_code == 200
     assert (await client.get("/push.js")).status_code == 200 and (await client.get("/firebase/firebase-app-compat.js")).status_code == 200
-    h = (await client.get("/staff/")).headers["content-security-policy"]                          # the staff console keeps the strict policy
+    h = (await client.get("/platform/")).headers["content-security-policy"]                          # the staff console keeps the strict policy
     assert "wasm-unsafe-eval" not in h and "'unsafe-inline'" not in h
     assert (await client.get("/v1/health-summary")).status_code == 401                            # the API is not hidden by the pages
 
@@ -318,7 +318,7 @@ async def test_the_picture_files_have_the_sizes_their_names_promise(client):
     assert sorted(ico[6 + 16 * i] for i in range(3)) == [16, 32, 48]
 
 
-@pytest.mark.parametrize("path", ["/staff/"])
+@pytest.mark.parametrize("path", ["/platform/"])
 async def test_pages_point_at_the_icons(client, path):
     html = (await client.get(path)).text
     manifest = "/img/staff.webmanifest"
@@ -360,8 +360,8 @@ async def test_the_manifest_makes_an_installable_app(client):
 
 async def test_the_staff_console_is_an_installable_app_of_its_own(client):
     m = (await client.get("/img/staff.webmanifest")).json()
-    assert m["start_url"] == "/staff/" and m["scope"] == "/staff/" and m["display"] == "standalone" and {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
-    r = await client.get("/staff/set-password")                                       # the link in a new staff member's invitation opens the console
+    assert m["start_url"] == "/platform/" and m["scope"] == "/platform/" and m["display"] == "standalone" and {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
+    r = await client.get("/platform/set-password")                                       # the link in a new staff member's invitation opens the console
     assert r.status_code == 200 and "/js/staff/main.js" in r.text
 
 
@@ -394,7 +394,7 @@ async def test_a_camera_picture_is_shared_for_the_configured_time_only(monkeypat
 
 
 async def test_the_app_manifest_may_be_loaded_so_the_app_can_be_installed(client):
-    for path in ("/", "/staff/"):
+    for path in ("/", "/platform/"):
         csp = (await client.get(path)).headers["content-security-policy"]
         assert "manifest-src 'self'" in csp
 
@@ -419,3 +419,14 @@ def test_every_staff_page_is_in_exactly_one_menu_group():
     keys = [k for k in re.findall(r'"(\w+)"', groups) if k in pages]
     assert sorted(keys) == sorted(pages), (keys, pages)
     assert len(keys) == len(set(keys))
+
+
+async def test_platform_admin_lives_at_platform_and_has_no_sign_in_page_of_its_own(client):
+    """One sign-in page for everyone, at "/". The panel used to be at /staff: old links and bookmarks still arrive."""
+    for old, new in (("/staff", "/platform/"), ("/staff/", "/platform/"), ("/staff/set-password?token=abc", "/platform/set-password?token=abc")):
+        r = await client.get(old, follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == new, old
+    page = (await client.get("/platform/")).text
+    assert "Platform Admin" in page and "Staff</title>" not in page
+    src = (_web() / "js/staff/main.js").read_text()
+    assert 'location.replace("/")' in src and "/admin/v1/auth/login" not in src, "with no sign-in the panel sends the person to the one sign-in page"

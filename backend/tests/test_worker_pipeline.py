@@ -147,7 +147,7 @@ async def test_a_blocked_vehicle_seen_by_the_worker_raises_an_alert(client, make
     run(make_video(tmp_path / "g.mp4", 6, vehicle_scene("GJ14AW1013")), gate_pipe(cam, sink, ["GJ14AW1013"]), now() - timedelta(minutes=10))
     await sink.close()
     rows = await su.fetch("SELECT title, severity FROM app.alerts WHERE tenant_id=$1", t)
-    assert [(r["title"], r["severity"]) for r in rows] == [("Blocked vehicle GJ14AW1013", "critical")]
+    assert [(r["title"], r["severity"]) for r in rows] == [("Blocked vehicle detected: GJ14AW1013", "critical")]
 
 
 async def test_a_camera_that_may_not_send_plates_stops_the_sink(client, make, tmp_path):

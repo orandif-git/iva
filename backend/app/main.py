@@ -99,10 +99,17 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     web = Path(s.web_dir) if s.web_dir else Path(__file__).resolve().parents[1] / "web"
     nxt = web.parent / "web_next"            # the customer app (Flutter, built from /app by scripts/build_app.sh)
+    # Platform Admin (the panel Jas iVision's own staff use) lives at /platform. It has no sign-in page of its own: everyone signs in at "/", and a staff
+    # account is handed on to it. It used to be at /staff, which still works.
     if (web / "staff" / "index.html").is_file():
-        @app.get("/staff/set-password", include_in_schema=False)
+        @app.get("/platform/set-password", include_in_schema=False)
         async def staff_set_password_page():
             return FileResponse(web / "staff" / "index.html")
+        @app.get("/staff", include_in_schema=False)
+        @app.get("/staff/{rest:path}", include_in_schema=False)
+        async def old_staff_address(request: Request, rest: str = ""):
+            q = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"/platform/{rest}{q}", status_code=301)
     if (nxt / "index.html").is_file():
         @app.get("/set-password", include_in_schema=False)
         async def set_password_page():
@@ -121,7 +128,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         async def favicon():
             return FileResponse(web / "favicon.ico", media_type="image/vnd.microsoft.icon")      # the staff console links it; the app has its own favicon.png
     if (web / "staff").is_dir():
-        app.mount("/staff", StaticFiles(directory=web / "staff", html=True), name="staff")
+        app.mount("/platform", StaticFiles(directory=web / "staff", html=True), name="platform")
         for d in ("js", "css", "img"):
             if (web / d).is_dir():
                 app.mount(f"/{d}", StaticFiles(directory=web / d), name=f"web_{d}")       # shared by the staff console

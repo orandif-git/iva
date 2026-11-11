@@ -38,11 +38,11 @@ String sampleMessage(AlertDef d, {String? where}) {
   return switch (d.type) {
     'camera_offline' => 'Camera offline\n$w · 4:10 pm\nNo picture for 15 minutes.',
     'recorder_offline' => 'Recorder offline\nStore recorder · 4:10 pm\nIt has not contacted us for 10 minutes.',
-    'connection_unstable' => 'Connection keeps dropping\nStore recorder · 4:10 pm\n6 drops in the last hour.',
-    'people_in_area' => 'Too many people\n$w · 4:10 pm\nMore than 10 people for 10 minutes.',
-    'queue_long' => 'Queue too long\n$w · 4:10 pm\n9 people have waited over 5 minutes.',
+    'connection_unstable' => 'Unstable connection\nStore recorder · 4:10 pm\n6 drops in the last hour.',
+    'people_in_area' => 'Area occupancy limit exceeded\n$w · 4:10 pm\nMore than 10 people for 10 minutes.',
+    'queue_long' => 'Long queue\n$w · 4:10 pm\n9 people have waited over 5 minutes.',
     'phone_use' => 'Possible phone use\n$w · 4:10 pm\nA phone may be in use in this area.',
-    'blocked_plate' => 'Blocked vehicle seen\nGate · 4:10 pm\nTN72 AB 1234',
+    'blocked_plate' => 'Blocked vehicle detected\nGate · 4:10 pm\nTN72 AB 1234',
     _ => '${d.title}\n$w · 4:10 pm',
   };
 }
@@ -68,6 +68,8 @@ class _AlertWizardState extends State<AlertWizard> {
   final values = <String, int>{};
   final who = <String, bool>{};
   bool told = false, saving = false, saved = false, forward = true;
+  bool quiet = false;           // quiet hours for this alert
+  int quietFrom = 22, quietTo = 7;      // hours of the day: 10 pm to 7 am unless changed
   String? error;
   List<AlertDef> defs = [];
   List<CameraItem> cams = [];
@@ -92,6 +94,12 @@ class _AlertWizardState extends State<AlertWizard> {
           _choose(defs.firstWhere((d) => d.type == widget.edit!.type, orElse: () => widget.edit!));
           for (final p in people) {
             who[p.id] = def!.recipientIds.contains(p.id);
+          }
+          final qs = int.tryParse((def!.quietStart ?? '').split(':').first), qe = int.tryParse((def!.quietEnd ?? '').split(':').first);
+          if (qs != null && qe != null) {
+            quiet = true;
+            quietFrom = qs;
+            quietTo = qe;
           }
           step = def!.area ? 3 : (def!.settings.isEmpty ? 5 : 4);
         }
@@ -171,7 +179,8 @@ class _AlertWizardState extends State<AlertWizard> {
     setState(() { saving = true; error = null; });
     try {
       await widget.repo.saveAlert(NewAlert(def!, {for (final e in values.entries) e.key: e.value}, [for (final e in who.entries) if (e.value) e.key],
-          cameraId: camera?.id, cameraName: camera?.name, area: def!.area ? [for (final p in area.points) p.toJson()] : null, areaId: widget.editArea?.id));
+          cameraId: camera?.id, cameraName: camera?.name, area: def!.area ? [for (final p in area.points) p.toJson()] : null, areaId: widget.editArea?.id,
+          quietStart: quiet && !def!.critical ? _hhmm(quietFrom) : null, quietEnd: quiet && !def!.critical ? _hhmm(quietTo) : null));
       if (mounted) setState(() { saving = false; saved = true; forward = true; step = 6; });
     } catch (e) {
       if (mounted) setState(() { saving = false; error = e.toString(); });
@@ -285,6 +294,51 @@ class _AlertWizardState extends State<AlertWizard> {
         const SizedBox(height: 16),
         if (people.isEmpty) Text('Add people in Settings first. Nobody gets an alert until you do.', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600)),
         for (final p in people) Padding(padding: const EdgeInsets.only(bottom: 10), child: _Pick2(on: who[p.id] ?? false, onTap: () => setState(() => who[p.id] = !(who[p.id] ?? false)), title: p.name, sub: p.phone, avatar: p.name)),
+        const GroupLabel('Quiet hours'),
+        if (def!.critical)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: t.critSoft, borderRadius: BorderRadius.circular(Radii.tile)),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.priority_high_rounded, color: t.crit, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text('This is an urgent alert, so it is always sent, day and night. It has no quiet hours.', style: TextStyle(color: t.crit, fontWeight: FontWeight.w600, fontSize: 14, height: 1.4))),
+            ]),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+                child: Row(children: [
+                  Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.bedtime_outlined, color: t.brand, size: 21)),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Do not message me at night', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                    Text(quiet ? 'No messages from ${_clockHour(quietFrom)} to ${_clockHour(quietTo)}' : 'Off: messages come at any time', style: TextStyle(color: t.fg2, fontSize: 12.5)),
+                  ])),
+                  Semantics(label: 'Quiet hours are ${quiet ? 'on' : 'off'}', child: Switch(value: quiet, onChanged: (v) => setState(() => quiet = v))),
+                ]),
+              ),
+              if (quiet) ...[
+                Divider(height: 1, color: t.line),
+                _HourRow(label: 'Stop messages at', hour: quietFrom, onChanged: (h) => setState(() => quietFrom = h)),
+                Divider(height: 1, color: t.line, indent: 16),
+                _HourRow(label: 'Start again at', hour: quietTo, onChanged: (h) => setState(() => quietTo = h)),
+              ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                child: Text(
+                    quiet
+                        ? (quietFrom == quietTo
+                            ? 'Choose two different times.'
+                            : 'Between ${_clockHour(quietFrom)} and ${_clockHour(quietTo)} this alert sends no WhatsApp message and no push alert. Nothing is lost: it is still saved in the app, and you see it when you open it.')
+                        : 'Turn this on if you do not want this alert to wake you. During quiet hours it is saved in the app but no message is sent.',
+                    style: TextStyle(color: quiet && quietFrom == quietTo ? t.crit : t.fg2, fontSize: 13, height: 1.4)),
+              ),
+            ]),
+          ),
         const GroupLabel('Check and save'),
         Section(
           title: def!.title,
@@ -296,6 +350,7 @@ class _AlertWizardState extends State<AlertWizard> {
             Wrap(spacing: 8, runSpacing: 8, children: [
               if (def!.area) Pill('${area.points.length} corners drawn', Level.ok, icon: Icons.crop_free_rounded),
               Pill('WhatsApp: ${people.where((p) => who[p.id] ?? false).map((p) => _first(p.name)).join(', ')}', Level.mute, icon: Icons.chat_outlined),
+              if (def!.critical) const Pill('Always sent', Level.bad, icon: Icons.priority_high_rounded) else if (quiet && quietFrom != quietTo) Pill('Quiet ${_clockHour(quietFrom)} to ${_clockHour(quietTo)}', Level.mute, icon: Icons.bedtime_outlined),
             ]),
           ]),
         ),
@@ -551,6 +606,29 @@ class _Pick2 extends StatelessWidget {
       ),
     );
   }
+}
+
+String _hhmm(int hour) => '${hour.toString().padLeft(2, '0')}:00';
+
+/// "10 pm", "7 am", "12 noon", "12 midnight": an hour the way people say it.
+String _clockHour(int h) => h == 0 ? '12 midnight' : (h == 12 ? '12 noon' : (h < 12 ? '$h am' : '${h - 12} pm'));
+
+/// One hour of the day, changed with minus and plus (it goes round the clock).
+class _HourRow extends StatelessWidget {
+  const _HourRow({required this.label, required this.hour, required this.onChanged});
+  final String label;
+  final int hour;
+  final ValueChanged<int> onChanged;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
+        child: Row(children: [
+          Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+          IconButton.outlined(onPressed: () => onChanged((hour + 23) % 24), icon: const Icon(Icons.remove), tooltip: '$label: one hour earlier'),
+          SizedBox(width: 108, child: Center(child: Text(_clockHour(hour), style: display(20)))),
+          IconButton.outlined(onPressed: () => onChanged((hour + 1) % 24), icon: const Icon(Icons.add), tooltip: '$label: one hour later'),
+        ]),
+      );
 }
 
 class _Stepper extends StatelessWidget {

@@ -1,4 +1,4 @@
-// Jas iVision staff console: shell, sign-in, routing, and the "open the customer's app" hand-off. Screens live in screens.js.
+// Jas iVision Platform Admin (the panel our own staff use): shell, sign-in, routing, and the "open the customer's app" hand-off. Screens live in screens.js.
 import { Api, busy, clear, errText, h, mount } from "../lib.js";
 import { theme } from "../app/theme.js";
 import { openPalette, searchShortcuts, sidebar, tabbar } from "../app/shell.js";
@@ -8,7 +8,7 @@ import { customerDetail, recorderDetail, SCREENS, TITLES } from "./screens.js";
 const host = document.getElementById("app");
 const state = { me: null };
 const mem = {};
-const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => { state.me = null; showSignIn("Please sign in again."); } });
+const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => { state.me = null; showSignIn(); } });
 
 // What each person can open. The server enforces the same rules; hiding is only for tidiness.
 const NAV = [
@@ -82,7 +82,7 @@ async function render(keep = false) {
   mount(ui.page, banners, nodes);
   ui.scroll.scrollTop = keep ? y : 0;
   const t = ui.page.querySelector("h1");
-  document.title = (t ? t.textContent + " · " : "") + "Jas iVision Staff";
+  document.title = (t ? t.textContent + " · " : "") + "Jas iVision Platform Admin";
   ui.cbar.textContent = t ? t.textContent : "";
   if (id && !keep && (key === "customers" || key === "fleet")) openDetail(key === "customers" ? "customer" : "recorder", id);
 }
@@ -98,7 +98,7 @@ function shell() {
   const tabbarEl = tabbar(go, [...TABS.map(item).filter(Boolean), { key: "more", label: "More", icon: "more" }]);
   const insp = h("aside", { class: "insp", hidden: true });
   const side = sidebar({ go, groups, storeKey: "gi_staff_rail",
-    head: [h("a", { href: "#/today", "aria-label": "Jas iVision staff home" }, logoPair("logo")), h("div", { class: "site" }, h("span", { class: "ico" }, ic("server")), h("span", {}, h("b", {}, "Production"), h("small", {}, location.host)))],
+    head: [h("a", { href: "#/today", "aria-label": "Jas iVision Platform Admin home" }, logoPair("logo")), h("div", { class: "site" }, h("span", { class: "ico" }, ic("server")), h("span", {}, h("b", {}, "Production"), h("small", {}, location.host)))],
     foot: [h("div", { class: "usage" }, `${state.me.name} \u00b7 ${state.me.role}`)] });
   const sb = side.el;
   const tb = h("header", { class: "tb" }, h("button", { class: "kbd", type: "button", onclick: () => search() }, ic("search"), h("span", { class: "kl" }, "Search customers, recorders, pages"), h("kbd", {}, "Ctrl K")), h("span", { class: "grow" }),
@@ -163,37 +163,23 @@ addEventListener("message", async (e) => {
 
 // ------------------------------------------------------------------------------------------------- sign-in
 function authPage(...body) {
-  mount(host, h("div", { class: "ax" }, h("div", { class: "authwrap" }, h("div", { class: "authbox" }, h("div", {}, lockupPair(), h("p", { class: "tag" }, "Staff console"), ...body)))));
+  mount(host, h("div", { class: "ax" }, h("div", { class: "authwrap" }, h("div", { class: "authbox" }, h("div", {}, lockupPair(), h("p", { class: "tag" }, "Platform Admin"), ...body)))));
   ui = null;
 }
 
-async function showSignIn(message) {
-  let mfa = false;
-  try { mfa = (await (await fetch("/admin/v1/auth/options")).json()).mfa_required; } catch { /* default to password only */ }
-  const email = h("input", { type: "email", autocomplete: "username", required: true, autofocus: true });
-  const pw = h("input", { type: "password", autocomplete: "current-password", required: true });
-  const code = h("input", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 8, placeholder: "6-digit code" });
-  const err = h("div"), btn = h("button", { class: "btn block", type: "submit" }, "Sign in");
-  const form = h("form", { class: "card", onsubmit: busy(btn, async (e) => {
-    e.preventDefault(); clear(err);
-    try {
-      api.setTokens(await api.call("POST", "/admin/v1/auth/login", { email: email.value, password: pw.value, ...(mfa ? { code: code.value } : {}) }));
-      pw.value = ""; code.value = "";
-      boot();
-    } catch (x) { err.append(note(x.message, "err")); }
-  }) }, message ? note(message, "ok") : null, field("Work email", email), field("Password", pw), mfa ? field("Authenticator code", code) : null, err, btn);
-  authPage(form, h("p", { class: "sub" }, "Staff sessions end when you close this window."));
-}
+// There is one sign-in page for everyone, at "/". A staff member who signs in there is handed on to this panel already signed in, so with no sign-in
+// (or one that has ended) the person is sent there.
+function showSignIn() { location.replace("/"); }
 
 function showSetPassword() {
   const tk = new URLSearchParams(location.search).get("token") || "";
-  history.replaceState(null, "", "/staff/set-password");
+  history.replaceState(null, "", "/platform/set-password");
   const a = h("input", { type: "password", autocomplete: "new-password", required: true, minlength: 10 }), b = h("input", { type: "password", autocomplete: "new-password", required: true });
   const err = h("div"), btn = h("button", { class: "btn block", type: "submit" }, "Save password");
   const form = h("form", { class: "card", onsubmit: busy(btn, async (e) => {
     e.preventDefault(); clear(err);
     if (a.value !== b.value) return err.append(note("The two passwords are not the same.", "err"));
-    try { await api.call("POST", "/admin/v1/auth/set-password", { token: tk, password: a.value }); history.replaceState(null, "", "/staff/"); showSignIn("Your password is saved. Sign in with it now."); }
+    try { await api.call("POST", "/admin/v1/auth/set-password", { token: tk, password: a.value }); showSignIn(); }
     catch (x) { err.append(note(x.message, "err")); }
   }) }, h("h3", {}, "Choose your password"), field("New password", a, "At least 10 characters. A few words together is easy to remember and hard to guess."), field("Type it again", b), err, btn);
   authPage(tk ? form : h("div", { class: "card" }, note("This link is not complete. Open the full link you were sent, or ask an owner for a new one.", "warn")));
@@ -220,5 +206,5 @@ addEventListener("hashchange", () => render());
 matchMedia("(min-width: 780px)").addEventListener?.("change", () => { closeDetail(); });
 
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => { /* the console works without it */ }));
-if (location.pathname === "/staff/set-password") showSetPassword(); else boot();
+if (location.pathname === "/platform/set-password") showSetPassword(); else boot();
 export { TITLES, toast };

@@ -257,4 +257,4 @@ async def test_what_the_worker_measures_reaches_the_backend_and_a_long_queue_bec
     assert await sink.close() == 0 and not sink.rejected
     assert await su.fetchval("SELECT count(*) FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(z["id"])) >= 13
     (alert,) = await su.fetch("SELECT title, body FROM app.alerts WHERE tenant_id=$1 AND rule_type='queue_long'", t)
-    assert alert["title"] == "Queue too long at Front queue" and "4 people" in alert["body"]
+    assert alert["title"] == "Long queue at Front queue" and "4 people" in alert["body"]

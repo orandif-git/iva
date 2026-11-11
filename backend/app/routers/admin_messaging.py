@@ -191,11 +191,11 @@ async def set_tenant_messaging(tenant_id: UUID, body: TenantMessaging, ctx: Admi
     cur = await ctx.conn.fetchrow("SELECT msg_whatsapp, msg_email, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", tenant_id)
     if not cur:
         raise ApiError(404, "tenant_not_found", "Tenant not found.")
-    await ctx.conn.execute("UPDATE app.tenants SET msg_whatsapp=$2, msg_email=$3, msg_clips=$5, msg_monthly_cap=$4 WHERE id=$1", tenant_id, body.whatsapp, body.email, body.monthly_cap, body.clips)
+    await ctx.conn.execute("UPDATE app.tenants SET msg_whatsapp=$2, msg_email=$3, msg_clips=$4, msg_monthly_cap=NULL WHERE id=$1", tenant_id, body.whatsapp, body.email, body.clips)       # no monthly limit for now: one that is sent is not kept
     await ctx.audit("messaging.tenant.update", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason,
                     before={"whatsapp": cur["msg_whatsapp"], "email": cur["msg_email"], "clips": cur["msg_clips"], "monthly_cap": cur["msg_monthly_cap"]},
-                    after={"whatsapp": body.whatsapp, "email": body.email, "clips": body.clips, "monthly_cap": body.monthly_cap})
-    return {"whatsapp": body.whatsapp, "email": body.email, "clips": body.clips, "monthly_cap": body.monthly_cap}
+                    after={"whatsapp": body.whatsapp, "email": body.email, "clips": body.clips})
+    return {"whatsapp": body.whatsapp, "email": body.email, "clips": body.clips, "monthly_cap": None}
 
 
 # ----------------------------------------------------------------------------- delivery log

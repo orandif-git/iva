@@ -99,7 +99,7 @@ async def test_info_alerts_and_quiet_hours_stay_silent(client, make, su, google)
     t = await make.tenant()
     u = await make.user(t)
     await register(client, u)
-    await fire(t, "new_sign_in")                    # an "info" alert: WhatsApp only
+    await fire(t, "back_to_normal")                    # an "info" alert: WhatsApp only
     assert google["messages"] == []
     await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, quiet_start, quiet_end) VALUES ($1,'camera_offline',true,'00:00','23:59')", t)
     await fire(t)

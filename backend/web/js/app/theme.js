@@ -2,7 +2,7 @@
 // The customer app starts in light, whatever the phone's own setting is, and goes dark only when the person chooses it.
 // The staff console follows the device by default.
 export const THEME_KEY = "gi_theme";
-const FALLBACK = location.pathname.startsWith("/staff") ? "auto" : "light";
+const FALLBACK = location.pathname.startsWith("/platform") ? "auto" : "light";
 export const theme = {
   fallback: FALLBACK,
   get() { try { const v = localStorage.getItem(THEME_KEY); return v === "light" || v === "dark" || v === "auto" ? v : FALLBACK; } catch { return FALLBACK; } },

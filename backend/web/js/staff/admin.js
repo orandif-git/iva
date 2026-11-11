@@ -1,6 +1,6 @@
 // Maintenance, Audit log, and Staff and roles.
 import { clear, errText, fmtNum, h, mount, qs } from "../lib.js";
-import { chips, empty, field, formSheet, ic, note, openSheet, closeSheet, pill, reasonSheet, seg, toast } from "../app/ui.js";
+import { chips, empty, field, formSheet, ic, note, openSheet, closeSheet, pill, reasonSheet, seg, toast, toggle } from "../app/ui.js";
 import { ago, back, cap, fmtDateTime, gh, group, initials, kv, row, title } from "./common.js";
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
@@ -8,16 +8,37 @@ const ACTIONS = { "alert.switch": "Switched an alert on or off", "tenant.alert_a
   "tenant.create": "Created a customer", "tenant.update": "Edited a customer", "tenant.suspend": "Suspended a customer", "tenant.reactivate": "Reactivated a customer", "plan.change": "Changed a customer's plan",
   "impersonate.start": "Opened a customer's app", "impersonate.end": "Closed a customer's app", "user.invite": "Invited a person", "user.reset_link": "Made a sign-in link", "user.disable": "Disabled a person", "user.enable": "Enabled a person",
   "user.update": "Edited a person", "user.delete": "Deleted a person", "plan.create": "Created a plan", "plan.update": "Changed a plan", "plan.delete": "Deleted a plan", "staff.create": "Added a staff member", "staff.update": "Changed a staff member",
-  "staff.disable": "Disabled a staff member", "staff.enable": "Enabled a staff member", "staff.reset_link": "Made a staff sign-in link", "maintenance.retention.run": "Ran data retention" };
+  "staff.disable": "Disabled a staff member", "staff.enable": "Enabled a staff member", "staff.reset_link": "Made a staff sign-in link", "maintenance.retention.run": "Ran data retention", "alert.check_interval": "Changed how often an alert is checked", "platform_fault.notify": "Changed who is told about a platform fault" };
 const human = (a) => ACTIONS[a] || cap(String(a).replace(/[._]/g, " "));
 
 // ------------------------------------------------------------------------------------------------ Maintenance
 async function maintenance(X) {
   if (!X.isOwner) return [title("Maintenance", ""), noaccess()];
-  const [pv, runs] = await Promise.all([X.api.get("/admin/v1/maintenance/retention/preview"), X.api.get("/admin/v1/maintenance/runs?limit=12")]);
+  const [pv, runs, pf] = await Promise.all([X.api.get("/admin/v1/maintenance/retention/preview"), X.api.get("/admin/v1/maintenance/runs?limit=12"), X.api.get("/admin/v1/platform-faults")]);
+  // Our own video analysis: is it running, and who is told when it stops. A customer's camera or recorder going offline is not this: they are told as usual.
+  const savePf = (next, text) => reasonSheet({ title: "Change who is told?", text, label: "Save", run: async (reason) => { await X.api.put("/admin/v1/platform-faults", { ...next, reason }); closeSheet(); toast("Saved"); X.refresh(); } });
+  const addPerson = () => {
+    const name = h("input", { type: "text", maxlength: 80, autocomplete: "name" }), phone = h("input", { type: "tel", placeholder: "+91 98765 43210", autocomplete: "tel" });
+    reasonSheet({ title: "Add a person to tell", text: "They get a WhatsApp message when our video analysis stops, and another when it is running again.", label: "Add", extra: h("div", {}, field("Name", name), field("Mobile number, with country code", phone)),
+      run: async (reason) => { await X.api.put("/admin/v1/platform-faults", { enabled: pf.enabled, people: [...pf.people, { name: name.value.trim(), phone: phone.value.trim() }], reason }); closeSheet(); toast("Added"); X.refresh(); } });
+  };
+  const pfOn = toggle(pf.enabled, () => {}, "Tell staff when our video analysis stops"), pfInput = pfOn.querySelector("input");
+  pfInput.onchange = () => { const want = pfInput.checked; pfInput.checked = pf.enabled; savePf({ enabled: want, people: pf.people }, want ? "Staff on the list are told when our own analysis stops." : "Nobody is told. The fault still shows here."); };
+  const lasted = (f) => (f.ended_at ? `${Math.max(1, Math.round((new Date(f.ended_at) - new Date(f.started_at)) / 60000))} min` : "still going");
+  const pfCard = [gh("Our video analysis"),
+    h("div", { class: "card" },
+      h("div", { class: "hero" }, h("span", { class: "ico " + (pf.open ? "crit" : "ok") }, ic(pf.open ? "x" : "check")), h("div", { class: "grow" }, h("div", { class: "t" }, pf.open ? "Analysis has stopped" : "Analysis is running"),
+        h("div", { class: "s" }, pf.open ? `${pf.open.cameras} cameras are not being analysed since ${fmtDateTime(pf.open.started_at)}. Customers are not being told their cameras are offline.` : "If it stops, customers are not told their cameras are offline. You are told instead."))),
+      h("p", { class: "sub" }, "This is only for a fault in our own platform. When a customer's camera or recorder really goes offline, the customer is told as usual."),
+      h("div", { class: "group" }, h("div", { class: "gi static" }, h("div", {}, h("b", {}, "Tell staff by WhatsApp"), h("small", {}, pf.webhook_ready ? "Sent through the “Video analysis stopped” webhook" : "Set up the “Video analysis stopped” webhook first, in Webhooks")), pfOn),
+        ...pf.people.map((p, i) => h("div", { class: "gi static" }, h("div", {}, h("b", {}, p.name), h("small", {}, p.phone)),
+          h("button", { class: "btn sm gray", type: "button", onclick: () => savePf({ enabled: pf.enabled, people: pf.people.filter((_, j) => j !== i) }, `${p.name} will no longer be told.`) }, "Remove")))),
+      h("div", { class: "acts" }, h("button", { class: "btn gray", type: "button", onclick: addPerson }, "Add a person"))),
+    pf.recent.length ? group(...pf.recent.slice(0, 5).map((f) => h("div", { class: "gi static" }, h("div", {}, h("b", {}, "Video analysis stopped"), h("small", {}, `${fmtDateTime(f.started_at)} · ${f.cameras} cameras · ${lasted(f)}`)), pill(f.ended_at ? "Over" : "Now", f.ended_at ? "" : "crit")))) : null];
   const run = () => reasonSheet({ title: "Run data retention now?", text: `Deletes ${fmtNum(pv.footfall_rows)} count rows, ${fmtNum(pv.plate_reads)} plate reads, ${fmtNum(pv.alerts)} alerts and ${fmtNum(pv.pictures_and_clips)} pictures and clips that are past their customers' retention periods. This cannot be undone.`,
     label: "Delete old data", danger: true, run: async () => { await X.api.post("/admin/v1/maintenance/retention/run"); closeSheet(); toast("Retention started"); X.refresh(); } });
-  return [back("More", "#/more"), title("Maintenance", "Keeping the database tidy"),
+  return [back("More", "#/more"), title("Maintenance", "The health of our own platform, and keeping the database tidy"),
+    ...pfCard,
     gh("Data retention"), h("div", { class: "card" }, h("p", { class: "sub" }, "Counts, plate reads and pictures are deleted after each customer's retention period. Preview first."),
       h("div", { class: "group" }, kv("Count rows", fmtNum(pv.footfall_rows)), kv("Plate reads", fmtNum(pv.plate_reads)), kv("Alerts", fmtNum(pv.alerts)), kv("Pictures and clips", fmtNum(pv.pictures_and_clips)),
         kv("Events kept for", `${pv.events_days.shortest} to ${pv.events_days.longest} days`), kv("Pictures kept for", `${pv.pictures_days.shortest} to ${pv.pictures_days.longest} days`)),

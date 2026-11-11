@@ -99,6 +99,40 @@ CREATE TABLE platform.alert_switches (
 -- The area alerts start switched off: the platform owner turns them on once they have been tried on real footage.
 INSERT INTO platform.alert_switches (alert_type, enabled) VALUES ('people_in_area', false), ('queue_long', false), ('phone_use', false);
 
+-- How often each timed alert is checked. No row means every 60 seconds. Set in Platform Admin.
+CREATE TABLE platform.alert_checks (
+  alert_type    text PRIMARY KEY,
+  every_seconds integer NOT NULL CHECK (every_seconds BETWEEN 30 AND 3600),
+  changed_by    uuid,
+  changed_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Our own video analysis: when each analysis worker last asked for its cameras, and the faults we have had.
+CREATE TABLE platform.worker_seen (
+  shard   integer NOT NULL,
+  of      integer NOT NULL,
+  seen_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (shard, of)
+);
+CREATE TABLE platform.faults (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind       text NOT NULL,                                  -- 'analysis_stopped'
+  detail     text NOT NULL DEFAULT '',
+  cameras    integer NOT NULL DEFAULT 0,                     -- how many cameras were not being analysed
+  started_at timestamptz NOT NULL DEFAULT now(),
+  ended_at   timestamptz,
+  told_at    timestamptz                                     -- when staff were told
+);
+CREATE UNIQUE INDEX faults_open_idx ON platform.faults (kind) WHERE ended_at IS NULL;
+-- Who is told about a platform fault. One row. `people` is a list of {"name": ..., "phone": ...}.
+CREATE TABLE platform.fault_notify (
+  id         boolean PRIMARY KEY DEFAULT true CHECK (id),
+  enabled    boolean NOT NULL DEFAULT true,
+  people     jsonb NOT NULL DEFAULT '[]',
+  changed_by uuid,
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Where evidence pictures, clips and reports are kept. One row, set in the owner console. With no row the GI_EVIDENCE_* settings apply.
 -- The R2 secret is encrypted like every other secret here.
 CREATE TABLE platform.storage_settings (
@@ -481,17 +515,6 @@ CREATE TABLE app.recorder_link_events (
 );
 CREATE INDEX recorder_link_events_idx ON app.recorder_link_events (recorder_id, at DESC);
 
--- The phones and computers a person has signed in from, so a sign-in from a new one can be reported. Only a short fingerprint of the browser's name is kept.
-CREATE TABLE app.user_devices (
-  tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  user_id     uuid NOT NULL REFERENCES app.tenant_users(id) ON DELETE CASCADE,
-  fingerprint text NOT NULL,
-  label       text NOT NULL,
-  first_seen  timestamptz NOT NULL DEFAULT now(),
-  last_seen   timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, fingerprint)
-);
-
 CREATE TABLE app.recipients (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id            uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
@@ -813,7 +836,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, pl
 GRANT SELECT ON platform.plans, platform.alert_switches TO app_user, service_worker;
 GRANT SELECT ON platform.messaging_providers, platform.storage_settings, platform.webhook_endpoints, platform.webhook_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
-GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints TO platform_admin;
+GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints, platform.alert_checks TO platform_admin;
+GRANT SELECT ON platform.alert_checks, platform.fault_notify TO service_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON platform.worker_seen TO service_worker;
+GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;
+GRANT SELECT ON platform.faults TO app_user;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;
 GRANT SELECT ON platform.audit_log TO platform_admin;
 GRANT INSERT ON platform.audit_log TO platform_admin, service_worker;
