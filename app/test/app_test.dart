@@ -17,6 +17,7 @@ import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/screens/activity.dart';
 import 'package:ivision_app/widgets/camera_picture.dart';
 import 'package:ivision_app/widgets/count_line_editor.dart';
 import 'package:ivision_app/screens/camera_setup.dart';
@@ -261,11 +262,12 @@ void profileTests() {
     expect(find.text('APPEARANCE'), findsNothing);
   });
 
-  testWidgets('Alerts is only the inbox; what you watch for is in AI Watch, split into System and Smart', (t) async {
+  testWidgets('Alerts is only the inbox (the bell); what you watch for is in AI Watch, split into System and Smart', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
-    await t.tap(find.text('Alerts').last);
+    expect(find.descendant(of: find.byType(AppTabBar), matching: find.text('Alerts')), findsNothing, reason: 'Alerts is not in the bar any more');
+    await t.tap(find.bySemanticsLabel(RegExp('^Alerts')));
     await t.pumpAndSettle();
     expect(find.text('My alerts'), findsNothing, reason: 'no tabs: viewing and setting up are not mixed');
     expect(find.text('Needs you'), findsOneWidget);
@@ -273,6 +275,8 @@ void profileTests() {
     expect(find.textContaining('Watching for'), findsNothing, reason: 'no duplicate Manage card: AI Watch is its own tab');
     expect(find.text('Manage'), findsNothing);
     expect(find.text('New alert'), findsNothing, reason: 'the inbox has no set-up button');
+    await t.pageBack();
+    await t.pumpAndSettle();
     await t.tap(find.text('AI Watch').last);
     await t.pumpAndSettle();
     expect(find.textContaining('System alerts ('), findsOneWidget);
@@ -302,13 +306,13 @@ void profileTests() {
     expect(find.text('Needs you'), findsOneWidget, reason: 'Home is still there, no reload spinner');
   });
 
-  testWidgets('five tabs: Home, Cameras, AI Watch, Alerts, More, and they fit without overlapping', (t) async {
+  testWidgets('five tabs: Home, Cameras, AI Watch, Activity, More, and they fit without overlapping', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
     final bar = find.byType(AppTabBar);
     var last = -1.0;
-    for (final x in ['Home', 'Cameras', 'AI Watch', 'Alerts', 'More']) {
+    for (final x in ['Home', 'Cameras', 'AI Watch', 'Activity', 'More']) {
       final r = t.getRect(find.descendant(of: bar, matching: find.text(x)));
       expect(r.left, greaterThanOrEqualTo(last - 0.5), reason: '$x must not overlap the one before');
       expect(r.height, lessThan(16), reason: '$x stays on one line');
@@ -683,7 +687,7 @@ void profileTests() {
     // drag the first end of the line
     await t.drag(find.bySemanticsLabel('Line end 1, drag to move'), const Offset(30, -20));
     await t.pump();
-    await t.tap(find.text('Save'));
+    await t.tap(find.widgetWithText(FilledButton, 'Save').first);
     await t.pumpAndSettle();
     final saved = repo.zonesSaved['c1']!;
     expect(saved.single.kind, 'count_line', reason: 'no plate area drawn yet, so only the line is saved');
@@ -692,6 +696,11 @@ void profileTests() {
     expect(saved.single.points[1], const Pt(0.85, 0.6));
     expect(saved.single.inDirection!.y, lessThan(0), reason: 'swapped: the arrow points up instead of down');
     expect(find.text('Saved. The camera uses it within a minute.'), findsOneWidget);
+    await t.enterText(find.widgetWithText(TextField, 'Front door'), 'Main gate');
+    await t.tap(find.widgetWithText(FilledButton, 'Save').last);
+    await t.pumpAndSettle();
+    expect(repo.renamedCameras['c1'], 'Main gate');
+    expect(find.text('Name saved.'), findsOneWidget);
     await t.tap(find.text('Full quality'));
     await t.pumpAndSettle();
     expect(repo.streamSet, 'main');
@@ -716,21 +725,53 @@ void profileTests() {
     expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], null), 1);
   });
 
-  testWidgets('Activity shows people counted today and over 7 days', (t) async {
+  testWidgets('Activity is a tab with a part for each thing the customer has set up, over Today, Yesterday, 7 and 30 days', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
-    await t.tap(find.text('More').last);
+    await t.tap(find.text('Activity').last);
     await t.pumpAndSettle();
-    await t.tap(find.text('Activity'));
-    await t.pumpAndSettle();
+    for (final x in ['People', 'Vehicles', 'Areas', 'Health']) {
+      expect(find.widgetWithText(SegmentedButton<Section>, x), findsOneWidget, reason: x);
+    }
+    for (final x in ['Today', 'Yesterday', '7 days', '30 days']) {
+      expect(find.text(x), findsOneWidget, reason: x);
+    }
     expect(find.text('People in'), findsOneWidget);
     expect(find.text('342'), findsOneWidget);
-    expect(find.text('5pm'), findsOneWidget, reason: 'the busiest hour');
+    await t.tap(find.text('Yesterday'));
+    await t.pumpAndSettle();
+    expect(find.text('410'), findsOneWidget, reason: 'yesterday\'s count');
     await t.tap(find.text('7 days'));
     await t.pumpAndSettle();
     expect(find.text('By day', skipOffstage: false), findsOneWidget);
-    expect(find.text('Vehicles'), findsNothing, reason: 'plates have their own page now');
+    await t.tap(find.text('Areas'));
+    await t.pumpAndSettle();
+    expect(find.text('Long queue'), findsOneWidget);
+    expect(find.text('Billing queue'), findsOneWidget);
+    expect(find.text('Too many people in an area'), findsNothing, reason: 'only the area alerts that are on');
+    await t.tap(find.text('Health'));
+    await t.pumpAndSettle();
+    expect(find.text('Cameras working'), findsOneWidget);
+    expect(find.textContaining('Went offline'.toUpperCase()), findsOneWidget);
+    expect(find.text('Stockroom'), findsOneWidget);
+  });
+
+  testWidgets('Activity shows only the parts the customer has set up', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: _SetupRepo(footfall: false, plates: false, smartOn: false)));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Activity').last);
+    await t.pumpAndSettle();
+    expect(find.byType(SegmentedButton<Section>), findsNothing, reason: 'only Health is left, so there is nothing to choose between');
+    expect(find.text('Cameras working'), findsOneWidget);
+    await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: _SetupRepo(footfall: true, plates: false, smartOn: true)));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Activity').last);
+    await t.pumpAndSettle();
+    expect(find.widgetWithText(SegmentedButton<Section>, 'People'), findsOneWidget);
+    expect(find.widgetWithText(SegmentedButton<Section>, 'Areas'), findsOneWidget);
+    expect(find.descendant(of: find.byType(SegmentedButton<Section>), matching: find.text('Vehicles')), findsNothing);
   });
 
   testWidgets('Vehicles lists every plate read, searches, and the owner can add one to the blocked list and manage that list', (t) async {
@@ -738,7 +779,7 @@ void profileTests() {
     final repo = MockRepository();
     await t.pumpWidget(IVisionApp(repo: repo));
     await t.pumpAndSettle();
-    await t.tap(find.text('More').last);
+    await t.tap(find.text('Activity').last);
     await t.pumpAndSettle();
     await t.tap(find.text('Vehicles'));
     await t.pumpAndSettle();
@@ -762,7 +803,7 @@ void profileTests() {
     expect(find.text('Remove from blocked list'), findsOneWidget);
     await t.pageBack();
     await t.pumpAndSettle();
-    await t.tap(find.text('Blocked list').last);
+    await t.tap(find.widgetWithText(TextButton, 'Blocked list'));
     await t.pumpAndSettle();
     expect(find.text('GJ14AB1234'), findsOneWidget);
     expect(find.textContaining('followed a customer'), findsOneWidget);
@@ -924,5 +965,21 @@ class _PictureRepo extends MockRepository {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     now--;
     return _png;
+  }
+}
+
+/// A customer who has set up only some things: which cameras count people or read plates, and whether the smart alerts are on.
+class _SetupRepo extends MockRepository {
+  _SetupRepo({required this.footfall, required bool plates, required this.smartOn}) : readsPlates = plates;
+  final bool footfall, readsPlates, smartOn;
+  @override
+  Future<List<CameraItem>> cameras() async => [CameraItem('c1', 'Front door', 'Store recorder', true, useFootfall: footfall, useAnpr: readsPlates)];
+  @override
+  Future<List<AlertDef>> alertDefs() async {
+    final all = await super.alertDefs();
+    for (final d in all) {
+      if (d.smart) d.enabled = smartOn;
+    }
+    return all;
   }
 }

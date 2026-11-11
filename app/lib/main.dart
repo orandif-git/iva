@@ -16,8 +16,10 @@ import 'widgets/profile_menu.dart';
 import 'screens/signin.dart';
 import 'screens/alerts.dart';
 import 'screens/cameras.dart';
+import 'screens/activity.dart';
 import 'screens/home.dart';
 import 'screens/set_password.dart';
+import 'screens/wizard.dart';
 import 'theme.dart';
 
 /// `--dart-define=DEMO=true` runs with demo data. Otherwise the app signs in against the server it was loaded from (or `API_BASE`). The phone apps have no
@@ -185,12 +187,10 @@ class _ShellState extends State<Shell> {
   int tab = 0;
   int openAlerts = 0;
   Me? me;
-  int wizardKey = 0;
-  CameraItem? alertFor;
 
-  static const _defs = [NavIcons.home, NavIcons.cameras, NavIcons.aiWatch, NavIcons.alerts, NavIcons.more];
-  static const _subtitles = ['How your business is doing right now', 'Every camera, and live view when you need it', 'What iVision watches for, and who hears about it', 'What happened, and what needs you', 'Reports and settings'];
-  static const _home = 0, _cams = 1, _watch = 2, _alerts = 3;
+  static const _defs = [NavIcons.home, NavIcons.cameras, NavIcons.aiWatch, NavIcons.activity, NavIcons.more];
+  static const _subtitles = ['How your business is doing right now', 'Every camera, and live view when you need it', 'What iVision watches for, and who hears about it', 'What your cameras have seen', 'Reports and settings'];
+  static const _home = 0, _cams = 1, _watch = 2, _activity = 3;
   final _visited = <int>{0};        // a place is built the first time you open it, then keeps where you were
   final _refresh = ValueNotifier<int>(0);
 
@@ -204,17 +204,61 @@ class _ShellState extends State<Shell> {
   void _badge() => widget.repo.health().then((h) { if (mounted) setState(() => openAlerts = h.openAlerts); }).catchError((_) {});
 
   Widget _page(int i) => switch (i) {
-        _home => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: () => _go(_alerts), onOpenCameras: () => _go(_cams)),
-        _cams => CamerasPage(repo: widget.repo, onAddAlert: (c) => setState(() { alertFor = c; wizardKey++; _visited.add(_alerts); tab = _alerts; })),
+        _home => HomePage(repo: widget.repo, me: me, refresh: _refresh, onOpenAlerts: _openAlerts, onOpenCameras: () => _go(_cams)),
+        _cams => CamerasPage(repo: widget.repo, onAddAlert: _addAlertFor),
         _watch => ManageAlertsPage(repo: widget.repo, embedded: true),
-        _alerts => AlertsPage(key: ValueKey('alerts$wizardKey'), repo: widget.repo, refresh: _refresh, startWizardFor: alertFor, onChanged: _badge),
+        _activity => ActivityPage(repo: widget.repo, refresh: _refresh),
         _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m), push: widget.push),
       };
 
   void _go(int i) {
-    setState(() { tab = i; _visited.add(i); if (i != _alerts) alertFor = null; });
-    if (i == _home || i == _alerts) _refresh.value++;        // Home and Alerts show fresh numbers each time you come back
+    setState(() { tab = i; _visited.add(i); });
+    if (i == _home || i == _activity) _refresh.value++;        // Home and Activity show fresh numbers each time you come back
     _badge();
+  }
+
+  /// What happened and what needs you: a screen of its own, from the bell at the top right.
+  Future<void> _openAlerts() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => AlertsScreen(repo: widget.repo, onChanged: _badge)));
+    _badge();
+    _refresh.value++;
+  }
+
+  /// "Add an alert for this camera" opens the new-alert steps with the camera already chosen, then shows AI Watch.
+  Future<void> _addAlertFor(CameraItem c) async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, preselected: c)));
+    if (saved == true && mounted) _go(_watch);
+  }
+
+  /// The bell: alerts that need you, with how many.
+  Widget _bell() {
+    final t = Tok.of(context);
+    return Semantics(
+      button: true,
+      label: openAlerts > 0 ? 'Alerts, $openAlerts need you' : 'Alerts',
+      child: InkResponse(
+        radius: 26,
+        onTap: _openAlerts,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+            Container(width: 40, height: 40, decoration: BoxDecoration(color: t.surface, shape: BoxShape.circle, border: Border.all(color: t.line)), child: Icon(Icons.notifications_none_rounded, size: 22, color: t.fg)),
+            if (openAlerts > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.bg, width: 1.5)),
+                  child: Text(openAlerts > 99 ? '99+' : '$openAlerts', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.2)),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
   }
 
   Widget _profile() => ProfileButton(me: me, choice: widget.choice, onChoice: widget.onChoice, repo: widget.repo, onSignOut: (m) => widget.onSignOut(m));
@@ -239,7 +283,7 @@ class _ShellState extends State<Shell> {
     // Switching places is instant and each keeps its scroll position and what it loaded, like WhatsApp and the iPhone's own apps.
     final content = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
     final body = widget.viewing == null ? content : Column(children: [_ViewBanner(name: widget.viewing!, onStop: () => widget.onSignOut()), Expanded(child: content)]);
-    final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, badge: i == _alerts ? openAlerts : 0, custom: _defs[i].custom)];
+    final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, custom: _defs[i].custom)];
     if (wide) {
       return Scaffold(
         body: Row(children: [
@@ -249,7 +293,7 @@ class _ShellState extends State<Shell> {
             child: SafeArea(
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 const Padding(padding: EdgeInsets.fromLTRB(22, 26, 22, 22), child: Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 52))),
-                for (var i = 0; i < _defs.length; i++) _NavItem(def: _defs[i], badge: i == _alerts ? openAlerts : 0, selected: tab == i, onTap: () => _go(i)),
+                for (var i = 0; i < _defs.length; i++) _NavItem(def: _defs[i], selected: tab == i, onTap: () => _go(i)),
                 const Spacer(),
                 Padding(padding: const EdgeInsets.fromLTRB(22, 4, 22, 20), child: Text(tagline, style: TextStyle(color: t.fg2.withValues(alpha: .85), fontSize: 11.5, fontStyle: FontStyle.italic))),
               ]),
@@ -265,6 +309,8 @@ class _ShellState extends State<Shell> {
                     Text(tab == 0 ? _greeting : _defs[tab].label, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.6)),
                     Text(tab == 0 ? _today : _subtitles[tab], style: TextStyle(color: t.fg2, fontSize: 14)),
                   ])),
+                  _bell(),
+                  const SizedBox(width: 12),
                   _profile(),
                 ]),
               ),
@@ -280,7 +326,7 @@ class _ShellState extends State<Shell> {
         toolbarHeight: 60,
         titleSpacing: 16,
         title: const Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 34)),
-        actions: [_profile(), const SizedBox(width: 16)],
+        actions: [_bell(), const SizedBox(width: 4), _profile(), const SizedBox(width: 16)],
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
       ),
       body: body,
@@ -290,10 +336,9 @@ class _ShellState extends State<Shell> {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.def, required this.selected, required this.onTap, this.badge = 0});
+  const _NavItem({required this.def, required this.selected, required this.onTap});
   final NavDef def;
   final bool selected;
-  final int badge;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
@@ -317,7 +362,6 @@ class _NavItem extends StatelessWidget {
               def.glyph(selected, selected ? t.brand : t.fg2, 24),
               const SizedBox(width: 14),
               Expanded(child: Text(def.label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15))),
-              if (badge > 0) Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1), decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(10)), child: Text(badge > 99 ? '99+' : '$badge', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700))),
             ]),
           ),
         ),

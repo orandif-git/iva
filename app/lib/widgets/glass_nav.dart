@@ -50,7 +50,7 @@ Widget _aiEye(bool on, Color c, double s) => AiEyeIcon(on: on, color: c, size: s
 /// The five places, with their own icons: a line icon when idle, a solid one when chosen.
 class NavIcons {
   static const home = NavDef(Remix.home_5_line, Remix.home_5_fill, 'Home');
-  static const alerts = NavDef(Remix.notification_3_line, Remix.notification_3_fill, 'Alerts');
+  static const activity = NavDef(Remix.bar_chart_2_line, Remix.bar_chart_2_fill, 'Activity');       // what the cameras have seen: people, vehicles, areas, health
   static const cameras = NavDef(Remix.webcam_line, Remix.webcam_fill, 'Cameras', custom: _cctv);       // a dome CCTV camera
   static const aiWatch = NavDef(Remix.eye_line, Remix.eye_fill, 'AI Watch', custom: _aiEye);        // an eye with the AI sparkle
   static const more = NavDef(Remix.apps_2_line, Remix.apps_2_fill, 'More');                  // Reports and Settings

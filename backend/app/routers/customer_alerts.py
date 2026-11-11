@@ -213,6 +213,20 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depend
 STATE_SQL = "CASE WHEN a.acknowledged_at IS NOT NULL THEN 'done' WHEN a.snoozed_until > now() THEN 'snoozed' ELSE 'open' END"
 
 
+@router.get("/alerts/summary")
+async def alert_summary(from_: datetime = Query(..., alias="from"), to: datetime = Query(...), ctx: CustomerCtx = Depends(customer_ctx())):
+    """How many alerts of each kind happened, and where, in a period: the numbers behind the Activity screens. Test messages are not counted.
+    A place is the area's name for area alerts, otherwise the camera's (or the recorder's) name."""
+    if to <= from_ or (to - from_).days > 62:
+        raise ApiError(422, "bad_period", "Ask for a period of at most 62 days, with the end after the start.")
+    rows = await ctx.conn.fetch(
+        """SELECT a.rule_type, coalesce(nullif(a.details->>'area', ''), c.name, nullif(a.details->>'recorder', ''), '') AS place, count(*)::int AS count, max(a.created_at) AS last_at
+           FROM app.alerts a LEFT JOIN app.cameras c ON c.id = a.camera_id
+           WHERE a.created_at >= $1 AND a.created_at < $2 AND NOT coalesce((a.details->>'test')::boolean, false)
+           GROUP BY 1, 2 ORDER BY 3 DESC""", from_, to)
+    return [dict(r) for r in rows]
+
+
 @router.get("/alerts")
 async def list_alerts(limit: int = Query(50, ge=1, le=200), before: datetime | None = None, unacknowledged: bool = False,
                       state: Literal["open", "snoozed", "done"] | None = None, ctx: CustomerCtx = Depends(customer_ctx())):

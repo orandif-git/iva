@@ -52,7 +52,29 @@ class CameraItem {
   final String id, name, recorder;
   final bool working;
   final int? seenAgo; // seconds since its last picture, when known
-  const CameraItem(this.id, this.name, this.recorder, this.working, {this.seenAgo});
+  final bool useFootfall, useAnpr;      // what the camera is set up for: counting people, reading number plates
+  const CameraItem(this.id, this.name, this.recorder, this.working, {this.seenAgo, this.useFootfall = false, this.useAnpr = false});
+}
+
+/// The time range on Activity. Days are cut at midnight in India (where the shops are); the end is exclusive.
+enum Period {
+  today('Today', 0, 1),
+  yesterday('Yesterday', -1, 0),
+  week('7 days', -6, 1),
+  month('30 days', -29, 1);
+
+  const Period(this.label, this.fromDay, this.toDay);
+  final String label;
+  final int fromDay, toDay;           // days from today
+  bool get hourly => this == today || this == yesterday;       // a short period is shown by the hour, a long one by the day
+}
+
+/// How many alerts of one kind happened in a place in a period.
+class AlertCount {
+  final String rule, place;
+  final int count;
+  final DateTime? last;
+  const AlertCount(this.rule, this.place, this.count, this.last);
 }
 
 class RecorderItem {

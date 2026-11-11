@@ -17,28 +17,11 @@ String _when(DateTime? d) {
   return '${d.day} ${m[d.month - 1]}, $h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'am' : 'pm'}';
 }
 
-/// Vehicles: every number plate the cameras read, with its picture, newest first; search a plate; add one to the blocked list. Opened from More.
-class VehiclesPage extends StatelessWidget {
-  const VehiclesPage({super.key, required this.repo});
-  final Repository repo;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Tok.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Vehicles'),
-        actions: [Padding(padding: const EdgeInsets.only(right: 8), child: TextButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BlockedListPage(repo: repo))), icon: const Icon(Icons.block_rounded, size: 18), label: const Text('Blocked list')))],
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
-      ),
-      body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: VehiclesTab(repo: repo))),
-    );
-  }
-}
-
+/// Vehicles, in Activity: every number plate the cameras read in the period, newest first, with the picture taken at the time; search a plate; add one to the blocked list.
 class VehiclesTab extends StatefulWidget {
-  const VehiclesTab({super.key, required this.repo});
+  const VehiclesTab({super.key, required this.repo, this.period = Period.week});
   final Repository repo;
+  final Period period;
   @override
   State<VehiclesTab> createState() => _VehiclesTabState();
 }
@@ -68,7 +51,7 @@ class _VehiclesTabState extends State<VehiclesTab> {
   Future<void> _load({required bool reset}) async {
     setState(() { if (reset) { loading = true; items.clear(); next = null; } else { loadingMore = true; } error = null; });
     try {
-      final p = await widget.repo.plates(q: q.text, cursor: reset ? null : next);
+      final p = await widget.repo.plates(q: q.text, cursor: reset ? null : next, period: widget.period);
       if (!mounted) return;
       setState(() { items.addAll(p.items); next = p.next; });
     } on ApiError catch (e) {
@@ -87,7 +70,8 @@ class _VehiclesTabState extends State<VehiclesTab> {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 40), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, navClear), children: [
+      Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BlockedListPage(repo: widget.repo))), icon: const Icon(Icons.block_rounded, size: 18), label: const Text('Blocked list'))),
       TextField(
         controller: q,
         maxLength: 20,
@@ -104,7 +88,7 @@ class _VehiclesTabState extends State<VehiclesTab> {
       else if (loading)
         const Padding(padding: EdgeInsets.all(40), child: Loading())
       else if (items.isEmpty)
-        EmptyState(icon: Icons.directions_car_outlined, title: q.text.isEmpty ? 'No vehicles read yet' : 'No plates match', text: q.text.isEmpty ? 'Plates read in the last 7 days appear here, with the picture taken at the time. Turn on plate reading when you add a camera at a gate.' : 'Try fewer letters, for example just GJ14.')
+        EmptyState(icon: Icons.directions_car_outlined, title: q.text.isEmpty ? 'No vehicles read' : 'No plates match', text: q.text.isEmpty ? 'No plates were read in this period. Plates appear here with the picture taken at the time. Turn on plate reading when you add a camera at a gate.' : 'Try fewer letters, for example just GJ14.')
       else ...[
         Group(children: [
           for (final p in items)
