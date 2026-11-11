@@ -58,7 +58,7 @@ def test_the_three_area_alerts_are_smart_alerts_that_are_built():
         assert cat.CATALOG[k]["family"] == "smart" and cat.CATALOG[k]["built"] and cat.AREA_ALERTS[kind] == k
     assert "image_url" in cat.shortcodes_for("phone_use") and {"area", "people", "limit", "minutes"} <= set(cat.shortcodes_for("people_in_area"))
     assert {"area", "length", "wait_minutes"} <= set(cat.shortcodes_for("queue_long")) and "image_url" in cat.shortcodes_for("queue_long") and "image_url" in cat.shortcodes_for("people_in_area")
-    assert len(cat.LISTED) == 23 and len(cat.BUILT) == 16
+    assert len(cat.LISTED) == 20 and len(cat.BUILT) == 12
 
 
 def test_a_new_database_starts_with_the_area_alerts_switched_off():
@@ -218,7 +218,7 @@ async def test_people_in_an_area_raise_an_alert_only_when_the_count_holds_at_the
     await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
     await report(client, make, cam, a["id"], steady(7))                                           # at or above five for the whole two minutes
     (alert,) = await alerts_of(su, t, "people_in_area")
-    assert alert["title"] == "Too many people in Billing counter" and "Your limit is 5" in alert["body"]
+    assert alert["title"] == "Occupancy limit exceeded in Billing counter" and "Your limit is 5" in alert["body"]
     d = json.loads(alert["details"])
     assert d["area"] == "Billing counter" and d["people"] == 7 and d["limit"] == 5 and d["minutes"] == 2
     await report(client, make, cam, a["id"], [(0, 9, None, None, None)])
@@ -233,7 +233,7 @@ async def test_an_alert_needs_the_customer_to_have_turned_it_on_and_each_area_ha
     await turn_on(client, u, "people_in_area")
     await report(client, make, cam, small["id"], [(0, 5, None, None, None)]); await report(client, make, cam, big["id"], [(0, 5, None, None, None)])
     titles = [r["title"] for r in await alerts_of(su, t, "people_in_area")]
-    assert titles == ["Too many people in Counter"]                                                # five people is too many at the counter, not in the hall
+    assert titles == ["Occupancy limit exceeded in Counter"]                                                # five people is too many at the counter, not in the hall
 
 
 async def test_a_queue_alerts_on_its_length_held_for_the_time_or_on_how_long_someone_waited(client, make, su):
@@ -243,9 +243,9 @@ async def test_a_queue_alerts_on_its_length_held_for_the_time_or_on_how_long_som
                                    area("queue_area", "Lab queue", length=50, minutes=2, wait_minutes=0))
     await report(client, make, cam, qlen["id"], steady(5))
     (a,) = await alerts_of(su, t, "queue_long")
-    assert a["title"] == "Queue too long at Front queue" and json.loads(a["details"])["length"] == 5
+    assert a["title"] == "Long queue at Front queue" and json.loads(a["details"])["length"] == 5
     await report(client, make, cam, qwait["id"], [(5, 2, 200.0, None, None), (0, 2, 330.0, None, None)])           # 5.5 minutes
-    assert [r["title"] for r in await alerts_of(su, t, "queue_long")][-1] == "Queue too long at Pharmacy queue"
+    assert [r["title"] for r in await alerts_of(su, t, "queue_long")][-1] == "Long queue at Pharmacy queue"
     assert "waited 5 minutes" in (await alerts_of(su, t, "queue_long"))[-1]["body"]
     await report(client, make, cam, qoff["id"], [(5, 2, 9000.0, None, None), (0, 2, 9000.0, None, None)])          # waiting time is off for this one
     assert len(await alerts_of(su, t, "queue_long")) == 2

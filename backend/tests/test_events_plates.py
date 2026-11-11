@@ -79,15 +79,31 @@ async def test_a_doubtful_exit_is_not_paired_automatically(client, make):
 async def test_a_blocked_plate_raises_one_alert_and_a_doubtful_read_raises_none(client, make, su):
     t, u, _, (cam,) = await setup_cameras(client, make)
     assert (await client.post("/v1/vehicle-lists", json={"plate_text": "MH04ZZ9090", "list_type": "blocked", "note": "Stolen"}, headers=u["headers"])).status_code == 201
-    await post(client, make, [pe(cam, "MH04ZZ9090", ago=timedelta(minutes=30), conf=40)])               # unsure: no alert
-    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 0
+    await post(client, make, [pe(cam, "KA01AB1234", ago=timedelta(minutes=40), conf=40)])               # unsure, and nothing like a blocked plate: only "needs review"
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type='blocked_plate'", t) == 0
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
     await post(client, make, [pe(cam, "MH04ZZ9090", ago=timedelta(minutes=5), track="A")])
     await post(client, make, [pe(cam, "MH04ZZ9090", ago=timedelta(minutes=1), track="B")])              # again within 10 minutes
     rows = await su.fetch("SELECT title, severity, evidence_key, camera_id FROM app.alerts WHERE tenant_id=$1", t)
-    assert len(rows) == 1 and rows[0]["title"] == "Blocked vehicle MH04ZZ9090" and rows[0]["severity"] == "critical" and rows[0]["evidence_key"] == "s/1.jpg"
+    assert len(rows) == 1 and rows[0]["title"] == "Blocked vehicle detected: MH04ZZ9090" and rows[0]["severity"] == "critical" and rows[0]["evidence_key"] == "s/1.jpg"
     await post(client, make, [pe(cam, "MH12AB1234", ago=timedelta(minutes=2))])
     assert {i["plate_text"] for i in (await plates(client, u, blocked=True))["items"]} == {"MH04ZZ9090"}
-    assert {i["plate_text"] for i in (await plates(client, u, blocked=False))["items"]} == {"MH12AB1234"}
+    assert {i["plate_text"] for i in (await plates(client, u, blocked=False))["items"]} == {"MH12AB1234", "KA01AB1234"}
+
+
+async def test_an_unclear_read_that_looks_like_a_blocked_plate_is_reported_as_possible(client, make, su):
+    t, u, _, (cam,) = await setup_cameras(client, make)
+    assert (await client.post("/v1/vehicle-lists", json={"plate_text": "MH04ZZ9090", "list_type": "blocked", "note": "Stolen"}, headers=u["headers"])).status_code == 201
+    await post(client, make, [pe(cam, "MH04ZZ9090", ago=timedelta(minutes=30), conf=40)])               # the right plate, but the camera was not sure
+    a = await su.fetchrow("SELECT title, body, severity, rule_type FROM app.alerts WHERE tenant_id=$1", t)
+    assert a["rule_type"] == "blocked_plate" and a["title"] == "Possible blocked vehicle MH04ZZ9090" and a["severity"] == "critical" and "check the picture" in a["body"]
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    await post(client, make, [pe(cam, "MH04ZZ9099", ago=timedelta(minutes=20), conf=45, track="n1")])   # one character away, and unsure: still worth a look
+    assert await su.fetchval("SELECT title FROM app.alerts WHERE tenant_id=$1 AND rule_type='blocked_plate'", t) == "Possible blocked vehicle MH04ZZ9090"
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    await post(client, make, [pe(cam, "MH04ZZ9099", ago=timedelta(minutes=10), track="n2")])            # one character away but read clearly: a different vehicle
+    await post(client, make, [pe(cam, "MH04AB1299", ago=timedelta(minutes=5), conf=40, track="n3")])    # unsure and nothing like it
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type='blocked_plate'", t) == 0
 
 
 async def test_rejections_name_the_reason(client, make, su):

@@ -94,3 +94,12 @@ class Factory:
 @pytest_asyncio.fixture(scope="session")
 async def make(su):
     return Factory(su)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _platform_state(su):
+    """What is known about our own platform (which analysis workers are alive, open faults, who is told, check intervals) starts empty for every test,
+    so a test that ran minutes earlier cannot make this one think a worker has gone silent."""
+    await su.execute("TRUNCATE platform.worker_seen, platform.faults, platform.fault_notify, platform.alert_checks")
+    from app.services import maintenance
+    maintenance._last_run.clear()

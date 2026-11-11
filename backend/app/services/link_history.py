@@ -17,5 +17,5 @@ async def recovered(conn, tenant_id: UUID, *, offline_rule: str, entity_id: UUID
                                tenant_id, f"{offline_rule}:{entity_id}")
     if not told:
         return None
-    return await raise_alert(conn, tenant_id, "back_to_normal", title=f"{name} is back", body=f"{name} is working again.", camera_id=camera_id, camera_name=name,
+    return await raise_alert(conn, tenant_id, "back_to_normal", title=f"Service restored: {name}", body=f"{name} is working again.", camera_id=camera_id, camera_name=name,
                              details={"what_recovered": name}, dedupe_key=f"back:{told}", cooldown_minutes=24 * 60)

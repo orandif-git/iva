@@ -20,7 +20,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from app.messaging import delivery, evidence, webhook
+from app.db import db
 from app.services import alert_catalog as cat_mod, detectors, retention, sweeper
+from app.services.alerts import raise_alert
 from tests.helpers import now, setup_cameras
 from tests.test_events_plates import pe, post
 from tests.tls_server import TlsServer
@@ -332,7 +334,7 @@ async def test_blocked_vehicle_reaches_the_webhook_with_picture_links_and_a_sign
 
         # the person opens the link: a page, and the picture, straight from the private bucket
         page = await client.get(f"/e/{token}")
-        assert page.status_code == 200 and "Blocked vehicle TN72AB1234" in page.text and page.headers["cache-control"] == "private, no-store"
+        assert page.status_code == 200 and "Blocked vehicle detected: TN72AB1234" in page.text and page.headers["cache-control"] == "private, no-store"
         img = await client.get(f"/e/{token}/image.jpg")
         assert img.status_code == 200 and img.content == JPEG and img.headers["content-type"] == "image/jpeg"
         assert (await client.head(f"/e/{token}/image.jpg")).status_code == 200
@@ -340,7 +342,7 @@ async def test_blocked_vehicle_reaches_the_webhook_with_picture_links_and_a_sign
         log = (await client.get("/v1/notifications", headers=u["headers"])).json()
         assert log[0]["status"] == "sent" and log[0]["recipient"].endswith("3210") and "98765" not in log[0]["recipient"]
         al = (await client.get("/v1/alerts", headers=u["headers"])).json()
-        assert al[0]["title"] == "Blocked vehicle TN72AB1234" and al[0]["has_evidence"] and al[0]["messages_sent"] == 1
+        assert al[0]["title"] == "Blocked vehicle detected: TN72AB1234" and al[0]["has_evidence"] and al[0]["messages_sent"] == 1
     evidence.set_store(None)
 
 
@@ -523,10 +525,15 @@ async def test_the_same_alert_inside_the_cool_down_is_raised_once(client, make, 
 
 async def test_quiet_hours_record_the_alert_but_send_nothing(client, make, su, world):
     t, u, cam, rid = await customer(client, make, world, quiet={"quiet_start": "00:00", "quiet_end": "23:59"})
-    await block_and_see(client, make, u, cam)
+    await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, recipients, quiet_start, quiet_end) VALUES ($1,'camera_offline',true,$2,'00:00','23:59')", t, [rid])
+    async with db.service_tx() as conn:
+        assert await raise_alert(conn, t, "camera_offline", body="No video is being received.", camera_name="Gate", dedupe_key="q1")
     n = await su.fetchrow("SELECT status::text, error FROM app.notifications WHERE tenant_id=$1", t)
     assert n["status"] == "suppressed" and "Quiet" in n["error"] and await delivery.run_once() == 0 and world["hook"].calls == []
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 1
+    # a critical alert is never held back by quiet hours: a blocked vehicle at night is exactly when it matters
+    await block_and_see(client, make, u, cam)
+    assert await su.fetchval("SELECT status::text FROM app.notifications n JOIN app.alerts a ON a.id = n.alert_id WHERE a.tenant_id=$1 AND a.rule_type='blocked_plate'", t) == "queued"
     from app.services.alerts import in_quiet_hours
     from datetime import time
     assert in_quiet_hours(time(23, 0), time(22, 0), time(6, 0)) and in_quiet_hours(time(3, 0), time(22, 0), time(6, 0)) and not in_quiet_hours(time(12, 0), time(22, 0), time(6, 0))
@@ -541,9 +548,9 @@ async def test_the_owner_can_cap_or_switch_off_a_tenants_messages(client, make, 
     for i in range(3):
         await block_and_see(client, make, u, cam, plate=f"TN72AB{2000 + i}", track=f"c{i}")
     rows = await su.fetch("SELECT status::text AS st, error FROM app.notifications WHERE tenant_id=$1 ORDER BY created_at", t)
-    assert [r["st"] for r in rows] == ["queued", "queued", "suppressed"] and "limit" in rows[2]["error"]
+    assert [r["st"] for r in rows] == ["queued", "queued", "queued"], "there is no monthly limit on messages: a limit that was sent is not kept and nothing is held back"
     info = (await client.get(f"/admin/v1/messaging/tenants/{t}", headers=h)).json()
-    assert info == {"whatsapp": True, "email": False, "clips": True, "monthly_cap": 2, "whatsapp_this_month": 2}
+    assert info == {"whatsapp": True, "email": False, "clips": True, "monthly_cap": None, "whatsapp_this_month": 3}
     off = await client.put(f"/admin/v1/messaging/tenants/{t}", json={"whatsapp": False, "email": True, "monthly_cap": None, "reason": "unpaid"}, headers=h)
     assert off.status_code == 200
     await block_and_see(client, make, u, cam, plate="TN72AB2999", track="c9")
@@ -555,10 +562,15 @@ async def test_the_owner_can_cap_or_switch_off_a_tenants_messages(client, make, 
 
 async def test_a_person_cannot_be_flooded(client, make, su, world):
     t, u, cam, rid = await customer(client, make, world)
-    for i in range(25):
-        await block_and_see(client, make, u, cam, plate=f"TN72AB{3000 + i}", track=f"f{i}")
+    await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, recipients) VALUES ($1,'camera_offline',true,$2)", t, [rid])
+    async with db.service_tx() as conn:
+        for i in range(25):
+            assert await raise_alert(conn, t, "camera_offline", body="No video is being received.", camera_name=f"Cam {i}", dedupe_key=f"flood{i}")
     states = [r["status"] for r in await su.fetch("SELECT status::text FROM app.notifications WHERE tenant_id=$1", t)]
     assert states.count("queued") == 20 and states.count("suppressed") == 5
+    # the flood guard never holds a critical alert back
+    await block_and_see(client, make, u, cam, plate="TN72AB3999", track="crit")
+    assert await su.fetchval("SELECT status::text FROM app.notifications n JOIN app.alerts a ON a.id = n.alert_id WHERE a.tenant_id=$1 AND a.rule_type='blocked_plate'", t) == "queued"
 
 
 async def test_removing_a_person_stops_their_messages(client, make, su, world):
@@ -616,7 +628,7 @@ async def test_overstay_detector(client, make, su, world):
                               pev(cam, "KA05MN1111", ago=timedelta(hours=4), direction="out"), pev(cam, "KA05MN2222", ago=timedelta(hours=1), direction="in")])
     assert await detectors.vehicle_overstay() >= 1
     titles = [r["title"] for r in await su.fetch("SELECT title FROM app.alerts WHERE tenant_id=$1", t)]
-    assert titles == ["Vehicle KA05MN4321 has stayed too long"]                                                # left in time / not long enough: none
+    assert titles == ["Vehicle overstay: KA05MN4321"]                                                # left in time / not long enough: none
     await detectors.vehicle_overstay()
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 1                      # one alert per visit
 
@@ -627,7 +639,7 @@ async def test_overstay_can_be_set_in_minutes_and_older_hour_settings_still_work
     await post(client, make, [pev(cam, "KA05MN4321", ago=timedelta(minutes=45), direction="in"), pev(cam, "KA05MN2222", ago=timedelta(minutes=10), direction="in")])
     await detectors.vehicle_overstay()
     rows = await su.fetch("SELECT title, body, details FROM app.alerts WHERE tenant_id=$1", t)
-    assert [r["title"] for r in rows] == ["Vehicle KA05MN4321 has stayed too long"]           # 45 minutes is over 30; 10 is not
+    assert [r["title"] for r in rows] == ["Vehicle overstay: KA05MN4321"]           # 45 minutes is over 30; 10 is not
     import json
     d = json.loads(rows[0]["details"]) if isinstance(rows[0]["details"], str) else rows[0]["details"]
     assert "30 minutes" in rows[0]["body"] and d["minutes"] == "30" and d["stay"] == "30 minutes"

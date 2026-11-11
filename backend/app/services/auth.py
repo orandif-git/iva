@@ -72,30 +72,6 @@ async def _record_failure(conn, table: str, ids: list) -> None:
 
 
 # ------------------------------------------------------------------------------------------- customers
-def device_label(user_agent: str | None) -> str:
-    """"Chrome on Windows". Only the kind of browser and system, so it is easy to recognise and says little about the person."""
-    ua = user_agent or ""
-    browser = "Edge" if "Edg/" in ua else "Firefox" if "Firefox/" in ua else "Chrome" if "Chrome/" in ua or "CriOS/" in ua else "Safari" if "Safari/" in ua else None
-    system = ("Android" if "Android" in ua else "iPhone" if "iPhone" in ua else "iPad" if "iPad" in ua else "Windows" if "Windows" in ua
-              else "Mac" if "Macintosh" in ua else "Linux" if "Linux" in ua else None)
-    return f"{browser or 'A browser'} on {system}" if system else (browser or "a new device")
-
-
-async def note_device(conn, tenant_id, user_id, name: str, user_agent: str | None) -> None:
-    """Remembers where this person signs in from. A sign-in from somewhere new, after the first, raises the "new sign-in" alert."""
-    from .alerts import raise_alert
-    import hashlib
-    fp = hashlib.sha256((user_agent or "").encode()).hexdigest()[:32]
-    label = device_label(user_agent)
-    had = await conn.fetchval("SELECT count(*) FROM app.user_devices WHERE user_id=$1", user_id)
-    new = await conn.fetchval(
-        """INSERT INTO app.user_devices (tenant_id, user_id, fingerprint, label) VALUES ($1,$2,$3,$4)
-           ON CONFLICT (user_id, fingerprint) DO UPDATE SET last_seen=now() RETURNING (xmax = 0)""", tenant_id, user_id, fp, label)
-    if new and had:
-        await raise_alert(conn, tenant_id, "new_sign_in", title="New sign-in on your account", body=f"{name} signed in from {label}. If this was not them, ask an administrator to reset the password.",
-                          camera_name="Your account", details={"device": label}, dedupe_key=f"signin:{user_id}:{fp}", cooldown_minutes=60 * 24 * 30)
-
-
 async def customer_login(conn, email: str, password: str, tenant_slug: str | None, ip: str | None, user_agent: str | None = None) -> dict | ApiError:
     s = get_settings()
     email = email.strip().lower()
@@ -124,7 +100,6 @@ async def customer_login(conn, email: str, password: str, tenant_slug: str | Non
         raise ApiError(403, "tenant_suspended", "This account is suspended. Contact support.")
     guard.succeeded(email)
     await conn.execute("UPDATE app.tenant_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", u["id"])
-    await note_device(conn, u["tenant_id"], u["id"], u["name"], user_agent)
     out = await _tokens(conn, "customer", u["id"], tenant_id=str(u["tenant_id"]))
     out["user"] = {"id": u["id"], "name": u["name"], "tenant": u["tenant_name"]}
     return out

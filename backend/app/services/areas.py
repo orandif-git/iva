@@ -86,7 +86,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
         if limit < 1 or not await _held(conn, z["id"], minutes, limit):
             return 0
         now = await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
-        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Too many people in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
+        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Occupancy limit exceeded in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
                                      details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
     if z["kind"] == "queue_area":
         length, minutes, wait = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0))
@@ -96,7 +96,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
         if not (long_queue or waited):
             return 0
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."
-        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Queue too long at {area}", body=why,
+        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Long queue at {area}", body=why,
                                      details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
     seconds = int(p.get("seconds", 20))
     r = await conn.fetchrow("SELECT max(phone_seconds) AS held, (array_agg(evidence_id ORDER BY at DESC) FILTER (WHERE evidence_id IS NOT NULL))[1] AS evidence "

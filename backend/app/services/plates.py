@@ -73,6 +73,11 @@ def clean_plate(raw: str) -> PlateResult:
     return PlateResult(text, True, fixes)
 
 
+def near(a: str, b: str) -> bool:
+    """The same length and at most one character different: how an unclear read can still be recognised as a listed plate."""
+    return bool(a) and len(a) == len(b) and sum(x != y for x, y in zip(a, b)) <= 1
+
+
 def strict(raw: str) -> str | None:
     """A plate a human typed or confirmed: it must already be valid, with no guessing."""
     s = normalize(raw)

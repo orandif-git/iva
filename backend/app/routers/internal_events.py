@@ -10,7 +10,7 @@ from ..deps import ServiceCtx, service_ctx
 from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PlateBatch, Rejected, ZoneBatch
 from ..services import areas as area_rules
 from ..services.alerts import raise_alert
-from ..services.plate_events import alert_if_blocked, find_entry
+from ..services.plate_events import alert_if_blocked, alert_if_possibly_blocked, find_entry
 from ..services.plates import clean_plate
 
 router = APIRouter(prefix="/internal/v1/events", tags=["internal: events"])
@@ -123,6 +123,8 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
                 alert_id = await alert_if_blocked(conn, tenant, res.text, e.camera_id, cam["name"], e.direction, e.snapshot_key, e.evidence_id, expect_clip=True)
                 if alert_id and await conn.fetchval("SELECT clip_wait_until IS NOT NULL FROM app.alerts WHERE id=$1", alert_id):
                     clips.append(ClipRequest(index=i, alert_id=alert_id, seconds_before=CLIP_BEFORE, seconds_after=CLIP_AFTER))
+            elif await alert_if_possibly_blocked(conn, tenant, res.text, e.plate_raw, e.confidence, e.camera_id, cam["name"], e.direction, e.snapshot_key, e.evidence_id):
+                pass                                    # an unclear read that looks like a blocked plate: the blocked-vehicle alert says so
             else:
                 await raise_alert(conn, tenant, "low_confidence_plate", body=f"Read as {e.plate_raw} ({e.confidence}% sure) at {cam['name']}.", camera_id=e.camera_id,
                                   camera_name=cam["name"], details={"plate": e.plate_raw, "confidence": str(e.confidence)}, dedupe_key=f"lowconf:{e.camera_id}", cooldown_minutes=15, evidence_id=e.evidence_id, evidence_key=e.snapshot_key)

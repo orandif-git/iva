@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from . import alert_catalog, push
 from .alert_catalog import ALERT_TYPES
 
-PER_RECIPIENT_PER_HOUR = 20
+PER_RECIPIENT_PER_HOUR = 20           # a flood guard for ordinary alerts; a critical alert is never held back by it
 # A rule the customer has never touched. Every System Alert that exists is on from the start, and so are blocked vehicles; they appear in the app until recipients are added.
 # The daily summary is a message every day, so it is something a customer asks for.
 DEFAULT_ENABLED = {k for k in alert_catalog.BUILT if ALERT_TYPES[k]["family"] == alert_catalog.SYSTEM and k != "daily_summary"} | {"blocked_plate"}
@@ -53,7 +53,7 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
         if await conn.fetchval("SELECT 1 FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - make_interval(mins => $3)",
                                tenant_id, dedupe_key, cooldown_minutes):
             return None
-    tenant = await conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips, msg_monthly_cap FROM app.tenants WHERE id=$1", tenant_id)
+    tenant = await conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips FROM app.tenants WHERE id=$1", tenant_id)
     tz = ZoneInfo(tenant["timezone"])
     now = datetime.now(timezone.utc)
     title = title or meta["title"]
@@ -65,29 +65,29 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     wait_until = None
     if expect_clip and clips_wanted(tenant, rule):
         wait_until = now + timedelta(seconds=get_settings().clip_wait_seconds)
+    level = severity or meta["severity"]
+    critical = level == "critical"                     # must never be missed: quiet hours and the flood guard do not hold it
     alert_id = await conn.fetchval(
         """INSERT INTO app.alerts (tenant_id, rule_id, rule_type, camera_id, severity, title, body, details, dedupe_key, evidence_key, evidence_id, clip_wait_until)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
-        tenant_id, rule["id"] if rule else None, rule_type, camera_id, severity or meta["severity"], title, body, {**(details or {}), **payload},
+        tenant_id, rule["id"] if rule else None, rule_type, camera_id, level, title, body, {**(details or {}), **payload},
         dedupe_key, evidence_key, evidence_id, wait_until)
     hold = None
     ep = await conn.fetchrow("SELECT active, payload_template FROM platform.webhook_endpoints WHERE alert_type=$1", rule_type)
     if wait_until and ep and ep["active"] and "{clip_url}" in ep["payload_template"]:
         hold = wait_until            # only worth holding the event back when its payload carries the clip
-    quiet = bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
+    quiet = (not critical) and bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
     if rule and rule["recipients"]:
-        await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold)
-    await push.notify_alert(conn, tenant_id, alert_id, title, body or payload["location"], severity or meta["severity"], quiet)
+        await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold, critical=critical)
+    await push.notify_alert(conn, tenant_id, alert_id, title, body or payload["location"], level, quiet)
     return alert_id
 
 
-async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None) -> int:
+async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None, critical: bool = False) -> int:
     """One queued event per person with a mobile number. Alerts go out by WhatsApp only, as a webhook event (see messaging/webhook.py).
-    A message that must not be sent (switched off, quiet hours, over a limit, no webhook set up) is still recorded, as suppressed, with the reason."""
+    A message that must not be sent (switched off, quiet hours, too many in an hour, no webhook set up) is still recorded, as suppressed, with the reason.
+    There is no monthly limit. A critical alert ignores quiet hours and the hourly flood guard."""
     people = await conn.fetch("SELECT id, name, phone FROM app.recipients WHERE tenant_id=$1 AND active AND id = ANY($2::uuid[])", tenant_id, recipient_ids)
-    used = await conn.fetchval(
-        """SELECT count(*) FROM app.notifications WHERE tenant_id=$1 AND channel='whatsapp' AND status NOT IN ('suppressed','cancelled')
-           AND created_at >= date_trunc('month', now() AT TIME ZONE $2) AT TIME ZONE $2""", tenant_id, tenant["timezone"])
     endpoint = await conn.fetchval("SELECT active FROM platform.webhook_endpoints WHERE alert_type=$1", alert_type)
     n = 0
     for p in people:
@@ -100,9 +100,7 @@ async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_
             why = "No webhook is set up for this alert yet."
         elif quiet:
             why = "Quiet hours."
-        elif tenant["msg_monthly_cap"] is not None and used >= tenant["msg_monthly_cap"]:
-            why = "The monthly WhatsApp message limit has been reached."
-        elif await conn.fetchval("SELECT count(*) FROM app.notifications WHERE recipient_id=$1 AND channel='whatsapp' AND created_at > now() - interval '1 hour' "
+        elif not critical and await conn.fetchval("SELECT count(*) FROM app.notifications WHERE recipient_id=$1 AND channel='whatsapp' AND created_at > now() - interval '1 hour' "
                                  "AND status <> 'suppressed'", p["id"]) >= PER_RECIPIENT_PER_HOUR:
             why = "Too many messages to this person in the last hour."
         row = await conn.fetchval(
@@ -111,6 +109,4 @@ async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_
             tenant_id, alert_id, p["id"], p["phone"], payload, "suppressed" if why else "queued", why, hold_until, alert_catalog.event_name(alert_type))
         if row:
             n += 1
-            if not why:
-                used += 1
     return n
