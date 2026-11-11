@@ -23,6 +23,8 @@ abstract class Repository {
   Future<FootfallRange> footfallRange({required Period period, String? cameraId});
   Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week});
   Future<List<AlertCount>> alertCounts(Period period);
+  Future<Uint8List?> alertImage(String alertId);
+  Future<EvidenceLink> evidenceLink(String alertId);
   Future<void> renameCamera(String cameraId, String name);
   Future<Uint8List?> plateImage(String id);
   Future<List<BlockedPlate>> blockedPlates();
@@ -138,6 +140,18 @@ class ApiRepository implements Repository {
             vehicle: j['vehicle_type'] as String?, direction: j['direction'] as String?, blocked: j['blocked'] == true, needsReview: j['review_status'] == 'needs_review',
             hasPicture: j['has_snapshot'] == true, confidence: (j['confidence'] as num?)?.toInt(), dwellMinutes: j['dwell_seconds'] == null ? null : ((j['dwell_seconds'] as num) / 60).round())
     ], r['next_cursor'] as String?);
+  }
+
+  @override
+  Future<Uint8List?> alertImage(String alertId) async {
+    final r = await api.raw('GET', '/v1/alerts/$alertId/image');
+    return r.statusCode == 200 ? r.bodyBytes : null;
+  }
+
+  @override
+  Future<EvidenceLink> evidenceLink(String alertId) async {
+    final j = await api.call('POST', '/v1/alerts/$alertId/evidence-link') as Map;
+    return EvidenceLink(j['url'] as String, hasImage: j['has_image'] == true, hasClip: j['has_clip'] == true);
   }
 
   @override
@@ -443,8 +457,8 @@ class MockRepository implements Repository {
     final all = [
       if (problems) AlertItem(id: 'p1', title: 'Stockroom camera is offline', body: 'No picture for 14 minutes. Check the power and the network cable.', rule: 'camera_offline', where: 'Stockroom', when: '14 min ago'),
       if (problems) AlertItem(id: 'p2', title: 'Godown recorder keeps dropping', body: 'The link went up and down 6 times. This is usually the internet at the godown.', rule: 'connection_unstable', where: 'Godown', when: '1 hour'),
-      AlertItem(id: 'a1', title: '9 people waiting for 6 minutes', body: 'More than 6 people have waited over 5 minutes. A second counter may help.', rule: 'queue_long', where: 'Billing queue', when: '10:42 am', smart: true),
-      AlertItem(id: 'a2', title: 'Possible phone use at the counter', body: 'A phone may have been in use in the marked area for over 30 seconds.', rule: 'phone_use', where: 'Cash counter', when: '9:15 am', smart: true),
+      AlertItem(id: 'a1', title: '9 people waiting for 6 minutes', body: 'More than 6 people have waited over 5 minutes. A second counter may help.', rule: 'queue_long', where: 'Billing queue', when: '10:42 am', smart: true, hasEvidence: true, hasClip: true),
+      AlertItem(id: 'a2', title: 'Possible phone use at the counter', body: 'A phone may have been in use in the marked area for over 30 seconds.', rule: 'phone_use', where: 'Cash counter', when: '9:15 am', smart: true, hasEvidence: true),
     ];
     for (final a in all) {
       a.state = _state[a.id] ?? AlertState.open;
@@ -462,6 +476,15 @@ class MockRepository implements Repository {
   Future<FootfallRange> footfallRange({required Period period, String? cameraId}) async => period.hourly
       ? FootfallRange(period == Period.yesterday ? 410 : 342, period == Period.yesterday ? 402 : 324, '5pm', [for (var h = 9; h <= 20; h++) FootfallBar('${h % 12 == 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}', 10 + h * 2, 8 + h * 2)])
       : FootfallRange(period == Period.week ? 2310 : 9800, period == Period.week ? 2200 : 9500, '6pm', [for (var d = 0; d < (period == Period.week ? 7 : 10); d++) FootfallBar('${d + 1} Nov', 300 + d * 10, 290 + d * 9)]);
+  final linksOpened = <String>[];
+  @override
+  Future<Uint8List?> alertImage(String alertId) async => alertId == 'a1' ? _tinyPicture : null;
+  @override
+  Future<EvidenceLink> evidenceLink(String alertId) async {
+    if (alertId == 'gone') throw ApiError(404, 'There is nothing stored for this alert. It may have been deleted after the retention period.');
+    linksOpened.add(alertId);
+    return EvidenceLink('https://example.test/e/token-$alertId', hasImage: true, hasClip: alertId == 'a1');
+  }
   final Map<String, List<AlertCount>> alertCountsByPeriod = {};
   @override
   Future<List<AlertCount>> alertCounts(Period period) async => alertCountsByPeriod[period.name] ?? [
@@ -620,3 +643,10 @@ class MockRepository implements Repository {
   @override
   Future<void> changePassword(String current, String next, {bool signOutOthers = true}) async => lastSignOutOthers = signOutOthers;
 }
+
+/// A one-pixel picture, so the demo and the tests have something to show where a camera would give a real one.
+final _tinyPicture = Uint8List.fromList(const [
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+  0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x60, 0x60, 0xF8, 0xFF, 0x1F, 0x00, 0x03, 0x01, 0x01, 0x00, 0x35, 0x7B, 0x1F, 0xD6, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+  0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+]);

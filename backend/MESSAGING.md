@@ -153,6 +153,22 @@ backend attaches it and releases the held event at once  ->  sent with clip_url 
 * **Format.** H.264 main profile, yuv420p, no audio, `moov` first, at most 960 wide, 5 frames a second, under 15 MB.
 * **Retention.** Clips expire with the customer's pictures (`retention_snapshots_days`).
 
+## Evidence on alerts
+
+| Alert | Evidence kept |
+|---|---|
+| Blocked vehicle seen | picture and, if clips are on, a short video |
+| Plate needs checking | the picture of the read |
+| Vehicle has stayed too long | the picture taken as the vehicle came in |
+| Possible phone use | a picture with the area, the people and the phone marked |
+| Too many people in an area, Queue too long | a picture with the area and people marked: the worker takes one when the limit is first reached and another every `minutes` while it stays, and the alert shows the newest |
+| Too many people (count), camera and recorder alerts, account alerts | none: a count has no single moment to show and an offline camera has no picture |
+
+* **Nothing identifies a person.** The pictures mark places and people-shaped boxes, never names.
+* **How long.** Pictures and clips are deleted after the customer's `retention_snapshots_days`, which only Jas iVision staff change (per customer, 7 days by default). There is no "keep" for customers.
+* **In the app.** An alert with a picture shows it when opened (`GET /v1/alerts/{id}/image`, signed-in people of that customer only). The video opens through a link made for that moment
+  (`POST /v1/alerts/{id}/evidence-link`, 60 minutes, logged). WhatsApp links are separate and last as long as the webhook setting says (never more than 4 hours).
+
 ## Behaviour you can rely on (all covered by tests)
 
 * An alert and its events are written together or not at all; a disabled alert raises nothing; the same alert inside its cool-down (blocked

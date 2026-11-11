@@ -63,6 +63,13 @@ async def _held(conn, zone_id: UUID, minutes: int, minimum: int) -> bool:
     return bool(r["n"] >= 2 and r["lowest"] >= minimum and r["span"] >= minutes * 60 - 20)
 
 
+async def _picture(conn, zone_id: UUID, minutes: int):
+    """The newest picture the worker took of this area while it was over its limit (it takes one when it gets there and another every `minutes`)."""
+    return await conn.fetchval(
+        """SELECT evidence_id FROM app.zone_samples WHERE zone_id=$1 AND evidence_id IS NOT NULL AND at > now() - make_interval(mins => $2) ORDER BY at DESC LIMIT 1""",
+        zone_id, minutes + 2)
+
+
 async def evaluate(conn, zone_id: UUID) -> int:
     """Raises the alert for one area if its condition holds right now. Returns how many alerts were raised (0 or 1)."""
     z = await conn.fetchrow(
@@ -79,7 +86,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
             return 0
         now = await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Too many people in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
-                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, **common) is not None)
+                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes), **common) is not None)
     if z["kind"] == "queue_area":
         length, minutes, wait = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0))
         now = await conn.fetchrow("SELECT people, wait_seconds FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
@@ -89,7 +96,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
             return 0
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Queue too long at {area}", body=why,
-                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, **common) is not None)
+                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes), **common) is not None)
     seconds = int(p.get("seconds", 20))
     r = await conn.fetchrow("SELECT max(phone_seconds) AS held, (array_agg(evidence_id ORDER BY at DESC) FILTER (WHERE evidence_id IS NOT NULL))[1] AS evidence "
                             "FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '30 seconds'", z["id"])

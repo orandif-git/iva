@@ -32,7 +32,7 @@ async def vehicle_overstay() -> int:
         for rule in rules:
             minutes = overstay_minutes(rule["params"])
             rows = await conn.fetch(
-                """SELECT i.id, i.plate_text, i.seen_at, i.camera_id, c.name AS camera FROM app.plate_events i JOIN app.cameras c ON c.id=i.camera_id
+                """SELECT i.id, i.plate_text, i.seen_at, i.camera_id, i.evidence_id, c.name AS camera FROM app.plate_events i JOIN app.cameras c ON c.id=i.camera_id
                    WHERE i.tenant_id=$1 AND i.direction='in' AND i.plate_text IS NOT NULL AND i.review_status <> 'needs_review'
                      AND i.seen_at < now() - make_interval(mins => $2) AND i.seen_at > now() - interval '7 days'
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events o WHERE o.entry_event_id = i.id)
@@ -41,7 +41,7 @@ async def vehicle_overstay() -> int:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle {r['plate_text']} has stayed too long",
                                      body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
                                      details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes)},
-                                     dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7):
+                                     dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7, evidence_id=r["evidence_id"]):
                     n += 1
     return n
 

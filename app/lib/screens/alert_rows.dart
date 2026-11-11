@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
+import '../widgets/alert_evidence.dart';
 import 'common.dart';
 
 /// Marks every open alert in a group as done, or snoozes them, with one tap.
@@ -67,7 +68,10 @@ class _AlertRowState extends State<AlertRow> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(a.title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5, color: open ? t.fg : t.fg2)),
             const SizedBox(height: 2),
-            Text(repeatsLine(g), style: TextStyle(color: t.fg2, fontSize: 13)),
+            Row(children: [
+              Flexible(child: Text(repeatsLine(g), style: TextStyle(color: t.fg2, fontSize: 13))),
+              if (a.hasEvidence || a.hasClip) Padding(padding: const EdgeInsets.only(left: 8), child: Semantics(label: a.hasClip ? 'Has a picture and a video' : 'Has a picture', child: Icon(a.hasClip ? Icons.videocam_outlined : Icons.photo_camera_outlined, size: 16, color: t.fg2))),
+            ]),
           ])),
           const SizedBox(width: 10),
           if (open) Padding(padding: const EdgeInsets.only(top: 6), child: Semantics(label: 'Open', child: Container(width: 10, height: 10, decoration: BoxDecoration(color: t.crit, shape: BoxShape.circle)))) else Pill(_stateWord(g), Level.mute),
@@ -81,6 +85,7 @@ class _AlertRowState extends State<AlertRow> {
             padding: EdgeInsets.fromLTRB(sidePad + 56, 0, sidePad, 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (!widget.alwaysOpen && a.body.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(a.body, style: const TextStyle(height: 1.4))),
+              if (!widget.alwaysOpen && (a.hasEvidence || a.hasClip)) AlertEvidence(repo: widget.repo, alert: a),
               if (!widget.alwaysOpen && g.count > 1) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('Also at ${g.items.skip(1).take(5).map((x) => x.when).join(' · ')}${g.count > 6 ? ' · and ${g.count - 6} more' : ''}', style: TextStyle(color: t.fg2, fontSize: 12.5))),
               if (open)
                 Wrap(spacing: 8, runSpacing: 8, children: [

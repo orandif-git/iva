@@ -1846,7 +1846,11 @@ shared_preferences
 shared_preferences_android
 shared_preferences_foundation
 shared_preferences_platform_interface
+url_launcher
+url_launcher_android
+url_launcher_ios
 url_launcher_linux
+url_launcher_macos
 url_launcher_web
 url_launcher_windows
 vector_graphics

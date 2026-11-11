@@ -107,6 +107,27 @@ def test_a_picture_is_asked_for_once_when_the_phone_has_been_in_use_for_the_time
     assert shots == 1                                                                                  # a new episode, a new picture
 
 
+def test_a_queue_or_a_crowd_at_its_limit_gets_a_picture_when_it_gets_there_and_another_every_few_minutes_while_it_stays():
+    for kind, params in (("queue_area", {"length": 3, "minutes": 2}), ("area_count", {"limit": 3, "minutes": 2})):
+        m = AreaMonitor([cfg(kind, **params)], every=1.0)
+        crowd = [person(i, 100 + i * 5, 60) for i in range(1, 5)]                                    # four people inside: over the limit of three
+        shots = []
+        for i in range(0, 600):                                                                       # five minutes, a report every second
+            for r in m.update(100.0 + i * 0.5, W, H, crowd, []):
+                if r["take_picture"]:
+                    shots.append(i * 0.5)
+        assert shots[0] == 0.0 and len(shots) == 3 and all(b - a >= 120 for a, b in zip(shots, shots[1:])), (kind, shots)      # at once, then every 2 minutes
+        for i in range(0, 4):                                                                         # the crowd goes: under the limit
+            m.update(400.0 + i, W, H, crowd[:1], [])
+        assert [r["take_picture"] for r in m.update(405.0, W, H, crowd, [])] == [True], "a new episode starts again with a picture"
+
+
+def test_a_queue_or_crowd_under_its_limit_takes_no_pictures():
+    m = AreaMonitor([cfg("queue_area", length=5, minutes=2)], every=1.0)
+    crowd = [person(i, 100 + i * 5, 60) for i in range(1, 4)]
+    assert not any(r["take_picture"] for i in range(0, 100) for r in m.update(100.0 + i, W, H, crowd, []))
+
+
 def test_a_short_break_does_not_end_the_time():
     m = AreaMonitor([cfg("staff_area", seconds=20)], every=1.0)
     p = person(1, *INSIDE)
