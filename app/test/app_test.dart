@@ -17,6 +17,7 @@ import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/widgets/alert_evidence.dart';
 import 'package:ivision_app/screens/activity.dart';
 import 'package:ivision_app/widgets/camera_picture.dart';
 import 'package:ivision_app/widgets/count_line_editor.dart';
@@ -723,6 +724,43 @@ void profileTests() {
     expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], const Pt(0, -1)), -1);
     expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], const Pt(0, 1)), 1);
     expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], null), 1);
+  });
+
+  testWidgets('an alert with evidence shows what the camera saw, and the video opens through a short-lived link', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    final opened = <Uri>[];
+    linkOpener = (u) async { opened.add(u); return true; };
+    addTearDown(() => linkOpener = (u) async => false);
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp('^Alerts')));
+    await t.pumpAndSettle();
+    expect(find.byIcon(Icons.videocam_outlined, skipOffstage: false), findsWidgets, reason: 'the queue alert has a picture and a video');
+    expect(find.byIcon(Icons.photo_camera_outlined, skipOffstage: false), findsWidgets, reason: 'the phone-use alert has a picture only');
+    await t.tap(find.text('9 people waiting for 6 minutes'));
+    await t.pumpAndSettle();
+    expect(find.byType(Image), findsWidgets, reason: 'the picture is shown');
+    expect(find.text('Open full size'), findsNothing);
+    await t.ensureVisible(find.text('Watch the video'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Watch the video'));
+    await t.pumpAndSettle();
+    expect(repo.linksOpened, ['a1']);
+    expect(opened.single.toString(), 'https://example.test/e/token-a1');
+    await t.tap(find.text('Possible phone use at the counter'));
+    await t.pumpAndSettle();
+    expect(find.text('Open full size'), findsOneWidget, reason: 'no video for this one, but the full picture opens');
+  });
+
+  testWidgets('evidence that has been deleted says so plainly', (t) async {
+    final repo = MockRepository();
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: AlertEvidence(repo: repo, alert: AlertItem(id: 'gone', title: 'x', body: '', rule: 'queue_long', where: 'q', when: 'now', hasEvidence: true)))));
+    await t.pumpAndSettle();
+    expect(find.text('The picture is no longer stored.'), findsOneWidget);
+    await t.tap(find.text('Open full size'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('may have been deleted after the retention period'), findsOneWidget);
   });
 
   testWidgets('Activity is a tab with a part for each thing the customer has set up, over Today, Yesterday, 7 and 30 days', (t) async {

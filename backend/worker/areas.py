@@ -46,6 +46,8 @@ class _State:
     phone_last: float = 0.0
     sent_at: float = -1e9                             # when this area last reported
     shot_for: float | None = None                     # the phone episode a picture was already taken for
+    over_since: float | None = None                   # since when the queue or the crowd has been at or above its limit
+    shot_at: float | None = None                      # when a picture was last taken during that
 
 
 class AreaMonitor:
@@ -101,6 +103,16 @@ class AreaMonitor:
             picture = bool(a.kind == "staff_area" and phone and phone >= float(a.param("seconds", 20)) and st.shot_for != st.phone_since)
             if picture:
                 st.shot_for = st.phone_since
+            # A queue or a crowd at its limit: a picture when it first gets there, and another every `minutes` while it stays, so the alert (which waits for
+            # `minutes`) always has a recent one to show.
+            limit = int(a.param("length", 5)) if a.kind == "queue_area" else (int(a.param("limit", 0)) if a.kind == "area_count" else 0)
+            if limit >= 1 and n >= limit:
+                if st.over_since is None:
+                    st.over_since = ts
+                if st.shot_at is None or ts - st.shot_at >= max(60.0, float(a.param("minutes", 3)) * 60):
+                    picture, st.shot_at = True, ts
+            elif limit >= 1:
+                st.over_since = st.shot_at = None                       # back under the limit: the next time starts again
             out.append({"area": a, "people": n, "wait_seconds": wait, "phone_seconds": phone, "take_picture": picture, "inside": inside})
         return out
 

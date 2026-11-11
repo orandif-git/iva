@@ -4,12 +4,14 @@ from datetime import datetime, time, timezone
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field, field_validator
 
+from ..config import get_settings
 from ..db import db
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
+from ..messaging import evidence
 from ..services import alert_catalog
 from ..services.alert_catalog import ALERT_TYPES
 from ..schemas import Strict
@@ -225,6 +227,43 @@ async def alert_summary(from_: datetime = Query(..., alias="from"), to: datetime
            WHERE a.created_at >= $1 AND a.created_at < $2 AND NOT coalesce((a.details->>'test')::boolean, false)
            GROUP BY 1, 2 ORDER BY 3 DESC""", from_, to)
     return [dict(r) for r in rows]
+
+
+EVIDENCE_LINK_MINUTES = 60          # a link made from inside the app is short-lived, unlike the ones sent on WhatsApp
+
+
+async def _evidence(ctx: CustomerCtx, alert_id: UUID):
+    row = await ctx.conn.fetchrow(
+        """SELECT a.id, a.evidence_id, a.clip_id, e.storage_key, e.content_type, (e.expires_at > now()) AS image_live, (c.expires_at > now()) AS clip_live
+           FROM app.alerts a LEFT JOIN app.evidence e ON e.id = a.evidence_id LEFT JOIN app.evidence c ON c.id = a.clip_id WHERE a.id=$1""", alert_id)
+    if not row:
+        raise ApiError(404, "alert_not_found", "Alert not found.")
+    return row
+
+
+@router.get("/alerts/{alert_id}/image")
+async def alert_image(alert_id: UUID, ctx: CustomerCtx = Depends(customer_ctx())):
+    """The picture kept with an alert (what the camera saw), for people signed in to this customer. It is deleted after the retention period the Jas iVision team sets."""
+    row = await _evidence(ctx, alert_id)
+    gone = ApiError(404, "picture_not_found", "There is no picture for this alert. It may have been deleted after the retention period.")
+    if not row["evidence_id"] or not row["image_live"]:
+        raise gone
+    data = await evidence.store().get(row["storage_key"])
+    if data is None:
+        raise gone
+    return Response(data, media_type=row["content_type"], headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
+
+
+@router.post("/alerts/{alert_id}/evidence-link")
+async def alert_evidence_link(alert_id: UUID, ctx: CustomerCtx = Depends(customer_ctx())):
+    """A link to the page that shows the alert's picture and video, good for an hour. Made for the person who is signed in; every one is logged."""
+    row = await _evidence(ctx, alert_id)
+    live = (row["evidence_id"] if row["image_live"] else None) or (row["clip_id"] if row["clip_live"] else None)
+    if not live:
+        raise ApiError(404, "picture_not_found", "There is nothing stored for this alert. It may have been deleted after the retention period.")
+    token = evidence.make_token(live, EVIDENCE_LINK_MINUTES * 60)
+    await ctx.audit("alert.evidence_link", "alert", alert_id)
+    return {"url": f"{get_settings().public_base_url.rstrip('/')}/e/{token}", "expires_in_minutes": EVIDENCE_LINK_MINUTES, "has_image": bool(row["image_live"] and row["evidence_id"]), "has_clip": bool(row["clip_live"] and row["clip_id"])}
 
 
 @router.get("/alerts")

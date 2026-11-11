@@ -34,7 +34,8 @@ class AlertItem {
   final DateTime? at;
   bool smart;
   AlertState state;
-  AlertItem({required this.id, required this.title, required this.body, required this.rule, required this.where, required this.when, this.at, this.smart = false, this.state = AlertState.open});
+  final bool hasEvidence, hasClip;       // a picture was kept with it; a short video was kept with it
+  AlertItem({required this.id, required this.title, required this.body, required this.rule, required this.where, required this.when, this.at, this.smart = false, this.state = AlertState.open, this.hasEvidence = false, this.hasClip = false});
 
   factory AlertItem.fromJson(Map<String, dynamic> j) => AlertItem(
         id: j['id'],
@@ -45,6 +46,8 @@ class AlertItem {
         when: friendlyWhen((j['created_at'] ?? '') as String),
         at: DateTime.tryParse((j['created_at'] ?? '') as String)?.toLocal(),
         state: AlertState.values.firstWhere((s) => s.name == j['state'], orElse: () => AlertState.open),
+        hasEvidence: j['has_evidence'] == true,
+        hasClip: j['has_clip'] == true,
       );
 }
 
@@ -289,6 +292,13 @@ class PlateRead {
   final bool blocked, needsReview, hasPicture;
   final int? confidence, dwellMinutes;
   const PlateRead(this.id, this.cameraId, this.plate, this.seen, {this.vehicle, this.direction, this.blocked = false, this.needsReview = false, this.hasPicture = false, this.confidence, this.dwellMinutes});
+}
+
+/// A short-lived link to the page that shows an alert's picture and video.
+class EvidenceLink {
+  final String url;
+  final bool hasImage, hasClip;
+  const EvidenceLink(this.url, {this.hasImage = false, this.hasClip = false});
 }
 
 /// A plate on the blocked list: when it is seen, the customer is told.
