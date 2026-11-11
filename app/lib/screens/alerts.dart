@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
-import '../widgets/brand.dart';
 import 'alert_rows.dart';
 import 'common.dart';
 import 'wizard.dart';
@@ -121,6 +120,7 @@ class ManageAlertsPage extends StatefulWidget {
 
 class _ManageAlertsPageState extends State<ManageAlertsPage> {
   late Future<(List<AlertDef>, List<AreaInfo>)> mine = _load();
+  final _open = <String>{};   // alerts whose areas are showing; all folded away to begin with
   bool smartTab = false;      // System alerts (recorders and cameras) or Smart alerts (what the AI sees)
 
   Future<(List<AlertDef>, List<AreaInfo>)> _load() async {
@@ -175,7 +175,7 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
               // The marked areas an alert is watching, one line each: tap one to change it (its shape and numbers are loaded).
               Widget areaLines(AlertDef m) {
                 final mine = areas.where((a) => a.kind == m.areaKind).toList();
-                if (!m.area || mine.isEmpty) return const SizedBox.shrink();
+                if (!m.area || mine.isEmpty || !_open.contains(m.type)) return const SizedBox.shrink();
                 return Column(children: [
                   for (final a in mine)
                     InkWell(
@@ -196,22 +196,25 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
                   Padding(padding: EdgeInsets.fromLTRB(cardPad(context) + 46, 0, 12, 8), child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: () => _wizard(edit: m), icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add another area')))),
                 ]);
               }
+              int nAreas(AlertDef m) => m.area ? areas.where((a) => a.kind == m.areaKind).length : 0;
               Widget rowHead(AlertDef m) => InkWell(
-                    onTap: () => m.area && areas.any((a) => a.kind == m.areaKind) ? null : _wizard(edit: m),
+                    // an alert with marked areas opens and closes to show them; any other opens its settings
+                    onTap: () => nAreas(m) > 0 ? setState(() { _open.contains(m.type) ? _open.remove(m.type) : _open.add(m.type); }) : _wizard(edit: m),
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(cardPad(context), 10, 10, 10),
                       child: Row(children: [
                         Badge2(iconFor(m), m.smart ? Level.ai : Level.ok, ai: m.smart, size: 42),
                         const SizedBox(width: 14),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [Text(m.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)), if (m.smart) const SmartTag()]),
+                          Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [Text(m.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)), if (nAreas(m) > 0) Pill('${nAreas(m)} ${nAreas(m) == 1 ? 'area' : 'areas'}', Level.mute)]),
                           Text(m.summary, style: TextStyle(color: t.fg2, fontSize: 13)),
                         ])),
+                        if (nAreas(m) > 0) Semantics(label: _open.contains(m.type) ? 'Hide the areas' : 'Show the areas', child: AnimatedRotation(turns: _open.contains(m.type) ? .5 : 0, duration: reduceMotion(context) ? Duration.zero : Motion.quick, child: Icon(Icons.expand_more_rounded, color: t.fg2))),
                         Semantics(label: '${m.title} is ${m.enabled ? 'on' : 'off'}', child: Switch(value: m.enabled, onChanged: (v) async { await widget.repo.setEnabled(m, v); if (mounted) setState(() { mine = Future.value(snap.data!); }); })),
                       ]),
                     ),
                   );
-              Widget row(AlertDef m) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [rowHead(m), areaLines(m)]);
+              Widget row(AlertDef m) => AnimatedSize(duration: reduceMotion(context) ? Duration.zero : Motion.quick, curve: Motion.ease, alignment: Alignment.topCenter, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [rowHead(m), areaLines(m)]));
               return ListView(padding: EdgeInsets.fromLTRB(16, 6, 16, widget.embedded ? navClear : 40), children: [
                 SizedBox(
                   width: double.infinity,
