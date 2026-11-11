@@ -216,6 +216,7 @@ const settingWords = {
   'seconds': ('Alert after', 'seconds'),
   'people': ('Alert when more than', 'people inside'),
   'max_hours': ('Alert when a vehicle stays more than', 'hours'),
+  'max_minutes': ('Alert when a vehicle stays more than', 'minutes'),
   'percent': ('Alert at', '% used'),
   'days': ('Remind me', 'days before it is due'),
   'hour': ('Send it at', "o'clock"),
@@ -266,6 +267,14 @@ class PlateRead {
   final bool blocked, needsReview, hasPicture;
   final int? confidence, dwellMinutes;
   const PlateRead(this.id, this.cameraId, this.plate, this.seen, {this.vehicle, this.direction, this.blocked = false, this.needsReview = false, this.hasPicture = false, this.confidence, this.dwellMinutes});
+}
+
+/// A plate on the blocked list: when it is seen, the customer is told.
+class BlockedPlate {
+  final String id, plate;
+  final String? note;
+  final DateTime? added;
+  const BlockedPlate(this.id, this.plate, {this.note, this.added});
 }
 
 class PlatePage {

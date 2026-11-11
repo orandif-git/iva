@@ -610,7 +610,7 @@ async def test_offline_camera_and_recorder_alerts(client, make, su, world):
 
 
 async def test_overstay_detector(client, make, su, world):
-    t, u, cam, rid = await customer(client, make, world, rule="vehicle_overstay", params={"max_hours": 3})
+    t, u, cam, rid = await customer(client, make, world, rule="vehicle_overstay", params={"max_minutes": 180})
     from tests.test_events_plates import pe as pev
     await post(client, make, [pev(cam, "KA05MN4321", ago=timedelta(hours=5), direction="in"), pev(cam, "KA05MN1111", ago=timedelta(hours=5), direction="in"),
                               pev(cam, "KA05MN1111", ago=timedelta(hours=4), direction="out"), pev(cam, "KA05MN2222", ago=timedelta(hours=1), direction="in")])
@@ -619,6 +619,21 @@ async def test_overstay_detector(client, make, su, world):
     assert titles == ["Vehicle KA05MN4321 has stayed too long"]                                                # left in time / not long enough: none
     await detectors.vehicle_overstay()
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 1                      # one alert per visit
+
+
+async def test_overstay_can_be_set_in_minutes_and_older_hour_settings_still_work(client, make, su, world):
+    t, u, cam, rid = await customer(client, make, world, rule="vehicle_overstay", params={"max_minutes": 30})
+    from tests.test_events_plates import pe as pev
+    await post(client, make, [pev(cam, "KA05MN4321", ago=timedelta(minutes=45), direction="in"), pev(cam, "KA05MN2222", ago=timedelta(minutes=10), direction="in")])
+    await detectors.vehicle_overstay()
+    rows = await su.fetch("SELECT title, body, details FROM app.alerts WHERE tenant_id=$1", t)
+    assert [r["title"] for r in rows] == ["Vehicle KA05MN4321 has stayed too long"]           # 45 minutes is over 30; 10 is not
+    import json
+    d = json.loads(rows[0]["details"]) if isinstance(rows[0]["details"], str) else rows[0]["details"]
+    assert "30 minutes" in rows[0]["body"] and d["minutes"] == "30" and d["stay"] == "30 minutes"
+    assert detectors.overstay_minutes({"max_hours": 3}) == 180 and detectors.overstay_minutes({"max_hours": 1.5}) == 90 and detectors.overstay_minutes({}) == 480
+    assert detectors.overstay_minutes({"max_minutes": 45, "max_hours": 9}) == 45                # the new setting wins
+    assert detectors.stay_text(1) == "1 minute" and detectors.stay_text(45) == "45 minutes" and detectors.stay_text(180) == "3 hours" and detectors.stay_text(150) == "2.5 hours"
 
 
 async def test_crowding_detector(client, make, su, world):

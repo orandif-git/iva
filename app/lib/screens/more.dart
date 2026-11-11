@@ -11,6 +11,7 @@ import '../widgets/profile_menu.dart';
 import 'common.dart';
 import '../push.dart';
 import 'activity.dart';
+import 'vehicles.dart';
 import 'recorders.dart';
 
 /// More: the two things you open now and then. Reports and Settings sit here so the bar stays at five.
@@ -64,7 +65,8 @@ class _MorePageState extends State<MorePage> {
         constraints: const BoxConstraints(maxWidth: 760),
         child: ListView(padding: EdgeInsets.fromLTRB(16, 14, 16, navClear), children: [
           Group(children: [
-            row(Icons.show_chart_rounded, 'Activity', 'People counted and number plates read', () => _open(ActivityPage(repo: widget.repo))),
+            row(Icons.show_chart_rounded, 'Activity', 'People counted, by hour and by day', () => _open(ActivityPage(repo: widget.repo))),
+            row(Icons.directions_car_outlined, 'Vehicles', 'Number plates read, with pictures, and the blocked list', () => _open(VehiclesPage(repo: widget.repo))),
             row(Icons.bar_chart_rounded, 'Reports', reportsSub, () => _open(_ReportsScreen(widget.repo))),
             row(Icons.tune_rounded, 'Settings', 'Your plan, people and recorders', () => _open(SettingsPage(repo: widget.repo, onSignOut: widget.onSignOut, push: widget.push))),
           ]),

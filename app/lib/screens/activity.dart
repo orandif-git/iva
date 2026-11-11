@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -10,42 +8,17 @@ import '../theme.dart';
 import '../widgets/brand.dart';
 import 'common.dart';
 
-/// Activity: people counted over time, and the number plates read. Opened from More.
-class ActivityPage extends StatefulWidget {
+/// Activity: people counted over time. Opened from More. (Number plates have their own page: Vehicles.)
+class ActivityPage extends StatelessWidget {
   const ActivityPage({super.key, required this.repo});
   final Repository repo;
-  @override
-  State<ActivityPage> createState() => _ActivityPageState();
-}
-
-class _ActivityPageState extends State<ActivityPage> {
-  bool vehicles = false;
 
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Activity'), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  segments: const [ButtonSegment(value: false, label: Text('People'), icon: Icon(Icons.groups_outlined)), ButtonSegment(value: true, label: Text('Vehicles'), icon: Icon(Icons.directions_car_outlined))],
-                  selected: {vehicles},
-                  onSelectionChanged: (v) => setState(() => vehicles = v.first),
-                ),
-              ),
-            ),
-            Expanded(child: vehicles ? VehiclesTab(repo: widget.repo) : PeopleTab(repo: widget.repo)),
-          ]),
-        ),
-      ),
+      body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: PeopleTab(repo: repo))),
     );
   }
 }
@@ -173,160 +146,4 @@ class _BarsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BarsPainter o) => o.bars != bars;
-}
-
-// --------------------------------------------------------------------------------------------------------------------------- vehicles
-class VehiclesTab extends StatefulWidget {
-  const VehiclesTab({super.key, required this.repo});
-  final Repository repo;
-  @override
-  State<VehiclesTab> createState() => _VehiclesTabState();
-}
-
-class _VehiclesTabState extends State<VehiclesTab> {
-  final q = TextEditingController();
-  final items = <PlateRead>[];
-  String? next;
-  bool loading = true, loadingMore = false;
-  String? error;
-  Timer? _debounce;
-  List<CameraItem> cams = [];
-
-  @override
-  void initState() {
-    super.initState();
-    widget.repo.cameras().then((c) { if (mounted) setState(() => cams = c); }).catchError((_) {});
-    _load(reset: true);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _load({required bool reset}) async {
-    setState(() { if (reset) { loading = true; items.clear(); next = null; } else { loadingMore = true; } error = null; });
-    try {
-      final p = await widget.repo.plates(q: q.text, cursor: reset ? null : next);
-      if (!mounted) return;
-      setState(() { items.addAll(p.items); next = p.next; });
-    } on ApiError catch (e) {
-      if (mounted) setState(() => error = e.message);
-    } catch (_) {
-      if (mounted) setState(() => error = 'We could not load the plates.');
-    }
-    if (mounted) setState(() { loading = false; loadingMore = false; });
-  }
-
-  String _when(DateTime? d) {
-    if (d == null) return '';
-    final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
-    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${d.day} ${m[d.month - 1]}, $h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'am' : 'pm'}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Tok.of(context);
-    return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
-      TextField(
-        controller: q,
-        maxLength: 20,
-        textCapitalization: TextCapitalization.characters,
-        decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Search a plate, for example GJ14', counterText: ''),
-        onChanged: (_) {
-          _debounce?.cancel();
-          _debounce = Timer(const Duration(milliseconds: 350), () => _load(reset: true));
-        },
-      ),
-      const SizedBox(height: 12),
-      if (error != null)
-        EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the plates', text: error!, action: OutlinedButton(onPressed: () => _load(reset: true), child: const Text('Try again')))
-      else if (loading)
-        const Padding(padding: EdgeInsets.all(40), child: Loading())
-      else if (items.isEmpty)
-        Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(q.text.isEmpty ? 'No plates read in the last 7 days.' : 'No plates match.', style: TextStyle(color: t.fg2))))
-      else ...[
-        Group(children: [
-          for (final p in items)
-            InkWell(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlateDetail(repo: widget.repo, read: p, cameraName: cams.where((c) => c.id == p.cameraId).firstOrNull?.name))),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(cardPad(context), 12, 12, 12),
-                child: Row(children: [
-                  Badge2(Icons.directions_car_outlined, p.blocked ? Level.bad : Level.mute, size: 40),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(p.plate ?? 'unreadable', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 1, color: p.blocked ? t.crit : t.fg)),
-                      Text([_when(p.seen), if (p.direction != null) (p.direction == 'in' ? 'In' : 'Out'), if (p.vehicle != null) p.vehicle!].where((x) => x.isNotEmpty).join(' · '), style: TextStyle(color: t.fg2, fontSize: 13)),
-                    ]),
-                  ),
-                  if (p.blocked) const Pill('Blocked list', Level.bad) else if (p.needsReview) const Pill('Needs a check', Level.warn),
-                  Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6)),
-                ]),
-              ),
-            ),
-        ]),
-        if (next != null) Padding(padding: const EdgeInsets.only(top: 12), child: Center(child: OutlinedButton(onPressed: loadingMore ? null : () => _load(reset: false), child: Text(loadingMore ? 'Loading…' : 'Show more')))),
-      ],
-    ]);
-  }
-}
-
-/// One plate read: the picture taken at the time and what is known about it.
-class PlateDetail extends StatefulWidget {
-  const PlateDetail({super.key, required this.repo, required this.read, this.cameraName});
-  final Repository repo;
-  final PlateRead read;
-  final String? cameraName;
-  @override
-  State<PlateDetail> createState() => _PlateDetailState();
-}
-
-class _PlateDetailState extends State<PlateDetail> {
-  late final Future<Uint8List?> picture = widget.read.hasPicture ? widget.repo.plateImage(widget.read.id) : Future.value(null);
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Tok.of(context);
-    final p = widget.read;
-    Widget row(String k, String v) => Padding(padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12), child: Row(children: [SizedBox(width: 110, child: Text(k, style: TextStyle(color: t.fg2))), Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w600)))]));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Number plate'), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 700),
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: FutureBuilder<Uint8List?>(
-                  future: picture,
-                  builder: (context, s) => s.data != null
-                      ? Image.memory(s.data!, fit: BoxFit.cover)
-                      : Container(color: t.surface2, alignment: Alignment.center, child: Text(!p.hasPicture ? 'No picture was saved for this read.' : (s.connectionState == ConnectionState.waiting ? 'Getting the picture…' : 'The picture is no longer stored.'), style: TextStyle(color: t.fg2))),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Center(child: Text(p.plate ?? 'unreadable', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: 2, color: p.blocked ? t.crit : t.fg))),
-            if (p.blocked) const Padding(padding: EdgeInsets.only(top: 8), child: Center(child: Pill('Blocked list', Level.bad))),
-            if (p.needsReview) Padding(padding: const EdgeInsets.only(top: 12), child: Text('The reader was not sure about this plate.', textAlign: TextAlign.center, style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600))),
-            const SizedBox(height: 14),
-            Group(children: [
-              row('Seen', p.seen == null ? '—' : '${p.seen!.day}/${p.seen!.month}/${p.seen!.year} ${p.seen!.hour.toString().padLeft(2, '0')}:${p.seen!.minute.toString().padLeft(2, '0')}'),
-              row('Camera', widget.cameraName ?? '—'),
-              row('Direction', p.direction == null ? '—' : (p.direction == 'in' ? 'In' : 'Out')),
-              row('Vehicle', p.vehicle ?? '—'),
-              row('Confidence', p.confidence == null ? '—' : '${p.confidence}%'),
-              if (p.dwellMinutes != null) row('Time inside', '${p.dwellMinutes} min'),
-            ]),
-          ]),
-        ),
-      ),
-    );
-  }
 }

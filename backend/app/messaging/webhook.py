@@ -43,7 +43,7 @@ SAMPLE = {
     "to_name": "Anita", "to_phone": "919876543210", "event_type": "system.camera_offline", "alert_id": "0b6f2c1e-3a77-4d3e-9c1a-5a1f9e000001",
     "recorder": "Warehouse", "drops": "5", "minutes_out": "7", "what_recovered": "Entrance camera", "percent_full": "91", "days_left": "2", "disk": "Disk 2",
     "used": "42", "limit": "50", "invoice": "INV-2026-0042", "due_date": "15 Nov", "device": "iPhone", "place": "Surat", "summary": "7 cameras working, 1 needs a look",
-    "plate": "GJ05AB1234", "direction": "in", "hours": "8", "confidence": "62", "people": "54", "area": "Billing counter", "length": "8", "minutes": "3", "wait_minutes": "6", "seconds": "25",
+    "plate": "GJ05AB1234", "direction": "in", "hours": "8", "stay": "45 minutes", "confidence": "62", "people": "54", "area": "Billing counter", "length": "8", "minutes": "3", "wait_minutes": "6", "seconds": "25",
     "image_url": "https://ivision.example/e/Xk3q/image.jpg", "clip_url": "https://ivision.example/e/Xk3q/clip.mp4",
     "report": "Footfall summary", "period": "3 Nov to 9 Nov", "document_url": "https://ivision.example/e/Xk3q/report.xlsx",
 }

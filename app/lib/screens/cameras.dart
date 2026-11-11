@@ -5,6 +5,7 @@ import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/camera_picture.dart';
 import 'camera_setup.dart';
 import 'common.dart';
 
@@ -64,7 +65,7 @@ class _CamerasPageState extends State<CamerasPage> {
               GroupLabel(e.key, trailing: Text('${e.value.length} ${e.value.length == 1 ? 'camera' : 'cameras'}${e.value.any((c) => !c.working) ? ' · ${e.value.where((c) => !c.working).length} offline' : ''}', style: TextStyle(color: t.fg2, fontSize: 12.5, fontWeight: FontWeight.w600))),
               LayoutBuilder(builder: (context, box) {
                 final cols = box.maxWidth > 900 ? 4 : box.maxWidth > 600 ? 3 : 2;
-                return GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: cols, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.12, children: [for (final c in e.value) _CamCard(c, () => _open(c))]);
+                return GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: cols, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.12, children: [for (final c in e.value) _CamCard(widget.repo, c, () => _open(c))]);
               }),
             ],
           ]),
@@ -98,12 +99,21 @@ class _Summary extends StatelessWidget {
   }
 }
 
-class _CamCard extends StatelessWidget {
-  const _CamCard(this.c, this.onTap);
+class _CamCard extends StatefulWidget {
+  const _CamCard(this.repo, this.c, this.onTap);
+  final Repository repo;
   final CameraItem c;
   final VoidCallback onTap;
   @override
+  State<_CamCard> createState() => _CamCardState();
+}
+
+class _CamCardState extends State<_CamCard> {
+  bool hasPicture = false;
+
+  @override
   Widget build(BuildContext context) {
+    final c = widget.c, onTap = widget.onTap;
     final t = Tok.of(context);
     return Semantics(
       button: true,
@@ -118,8 +128,10 @@ class _CamCard extends StatelessWidget {
             Expanded(
               child: Stack(children: [
                 Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: c.working ? const LinearGradient(colors: [Color(0xFF16304F), Color(0xFF2E5A8A)], begin: Alignment.topLeft, end: Alignment.bottomRight) : LinearGradient(colors: [t.surface2, t.line])))),
-                Positioned.fill(child: CustomPaint(painter: FramePainter(color: (c.working ? Colors.white : t.fg2).withValues(alpha: .22), inset: 10, arm: 16, width: 2))),
-                Center(child: Container(width: 44, height: 44, decoration: BoxDecoration(color: (c.working ? Colors.white : t.fg2).withValues(alpha: .18), shape: BoxShape.circle), child: Icon(c.working ? Icons.play_arrow_rounded : Icons.videocam_off_rounded, color: (c.working ? Colors.white : t.fg2).withValues(alpha: .9), size: 26))),
+                // the camera's latest picture, fetched again every 5 seconds while the tile is on the screen
+                Positioned.fill(child: CameraPicture(repo: widget.repo, cameraId: c.id, active: c.working, onPicture: (_) => setState(() => hasPicture = true))),
+                Positioned.fill(child: CustomPaint(painter: FramePainter(color: (c.working ? Colors.white : t.fg2).withValues(alpha: hasPicture ? .5 : .22), inset: 10, arm: 16, width: 2))),
+                if (!hasPicture) Center(child: Container(width: 44, height: 44, decoration: BoxDecoration(color: (c.working ? Colors.white : t.fg2).withValues(alpha: .18), shape: BoxShape.circle), child: Icon(c.working ? Icons.play_arrow_rounded : Icons.videocam_off_rounded, color: (c.working ? Colors.white : t.fg2).withValues(alpha: .9), size: 26))),
                 Positioned(left: 10, top: 10, child: Pill(c.working ? 'Working' : 'Offline', c.working ? Level.ok : Level.bad, dot: true)),
               ]),
             ),

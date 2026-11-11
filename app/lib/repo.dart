@@ -23,6 +23,9 @@ abstract class Repository {
   Future<FootfallRange> footfallRange({required int days, String? cameraId});
   Future<PlatePage> plates({String q = '', String? cursor});
   Future<Uint8List?> plateImage(String id);
+  Future<List<BlockedPlate>> blockedPlates();
+  Future<void> blockPlate(String plate, {String? note});
+  Future<void> unblockPlate(String id);
   Future<CameraSettings> cameraSettings(String id);
   Future<void> saveZones(String cameraId, List<CameraZone> zones);
   Future<void> setStream(String cameraId, String stream);
@@ -134,6 +137,19 @@ class ApiRepository implements Repository {
             hasPicture: j['has_snapshot'] == true, confidence: (j['confidence'] as num?)?.toInt(), dwellMinutes: j['dwell_seconds'] == null ? null : ((j['dwell_seconds'] as num) / 60).round())
     ], r['next_cursor'] as String?);
   }
+
+  @override
+  Future<List<BlockedPlate>> blockedPlates() async => [
+        for (final j in await api.call('GET', '/v1/vehicle-lists', query: {'list_type': 'blocked'}) as List)
+          BlockedPlate('${j['id']}', j['plate_text'] as String, note: j['note'] as String?, added: DateTime.tryParse('${j['created_at']}')?.toLocal())
+      ];
+
+  @override
+  Future<void> blockPlate(String plate, {String? note}) =>
+      api.call('POST', '/v1/vehicle-lists', body: {'plate_text': plate.trim(), 'list_type': 'blocked', if (note != null && note.trim().isNotEmpty) 'note': note.trim()});
+
+  @override
+  Future<void> unblockPlate(String id) => api.call('DELETE', '/v1/vehicle-lists/$id');
 
   @override
   Future<Uint8List?> plateImage(String id) async {
@@ -436,11 +452,25 @@ class MockRepository implements Repository {
   Future<PlatePage> plates({String q = '', String? cursor}) async {
     final all = [
       PlateRead('p1', 'c1', 'GJ14AB1234', DateTime(2026, 11, 10, 9, 30), vehicle: 'car', direction: 'in', hasPicture: true, confidence: 97),
-      PlateRead('p2', 'c1', 'GJ05CD9876', DateTime(2026, 11, 10, 9, 12), vehicle: 'truck', direction: 'out', blocked: true, dwellMinutes: 42),
+      PlateRead('p2', 'c1', 'GJ05CD9876', DateTime(2026, 11, 10, 9, 12), vehicle: 'truck', direction: 'out', dwellMinutes: 42),
       PlateRead('p3', 'c1', null, DateTime(2026, 11, 10, 8, 55), vehicle: 'bike', needsReview: true),
     ];
-    return PlatePage(q.isEmpty ? all : all.where((p) => (p.plate ?? '').contains(q.toUpperCase())).toList(), null);
+    PlateRead mark(PlateRead p) => PlateRead(p.id, p.cameraId, p.plate, p.seen, vehicle: p.vehicle, direction: p.direction, blocked: blocked.any((b) => b.plate == p.plate), needsReview: p.needsReview, hasPicture: p.hasPicture, confidence: p.confidence, dwellMinutes: p.dwellMinutes);
+    final shown = [for (final p in all) mark(p)];
+    return PlatePage(q.isEmpty ? shown : shown.where((p) => (p.plate ?? '').contains(q.toUpperCase())).toList(), null);
   }
+  final blocked = <BlockedPlate>[BlockedPlate('b1', 'GJ05CD9876', note: 'Blocked the gate twice', added: DateTime(2026, 11, 5))];
+  @override
+  Future<List<BlockedPlate>> blockedPlates() async => List.of(blocked);
+  @override
+  Future<void> blockPlate(String plate, {String? note}) async {
+    final p = plate.replaceAll(' ', '').toUpperCase();
+    if (p.length < 8) throw ApiError(422, 'That is not a valid Indian plate, for example GJ14AW1013.', code: 'invalid_plate');
+    if (blocked.any((b) => b.plate == p)) throw ApiError(409, 'This plate is already on that list.', code: 'already_listed');
+    blocked.insert(0, BlockedPlate('b${blocked.length + 1}', p, note: note, added: DateTime(2026, 11, 11)));
+  }
+  @override
+  Future<void> unblockPlate(String id) async => blocked.removeWhere((b) => b.id == id);
   @override
   Future<Uint8List?> plateImage(String id) async => null;
   @override

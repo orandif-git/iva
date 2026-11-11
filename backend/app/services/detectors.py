@@ -9,23 +9,39 @@ from .alerts import raise_alert
 log = logging.getLogger("gateinsight.detectors")
 
 
+def stay_text(minutes: int) -> str:
+    """"45 minutes", "3 hours", "1.5 hours": how long, in the words a person would use."""
+    if minutes < 120:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    return f"{minutes / 60:g} hours"
+
+
+def overstay_minutes(params: dict | None) -> int:
+    """The limit in minutes. Older settings were saved in hours (`max_hours`); they still work."""
+    p = params or {}
+    if p.get("max_minutes") is not None:
+        return max(1, int(float(p["max_minutes"])))
+    return max(1, round(float(p.get("max_hours", 8)) * 60))
+
+
 async def vehicle_overstay() -> int:
-    """A vehicle that entered more than `max_hours` ago and has no matching exit. One alert per visit."""
+    """A vehicle that entered more than the set time ago and has no matching exit. One alert per visit."""
     n = 0
     async with db.service_tx() as conn:
         rules = await conn.fetch("SELECT tenant_id, params FROM app.alert_rules WHERE rule_type='vehicle_overstay' AND enabled")
         for rule in rules:
-            hours = float((rule["params"] or {}).get("max_hours", 8))
+            minutes = overstay_minutes(rule["params"])
             rows = await conn.fetch(
                 """SELECT i.id, i.plate_text, i.seen_at, i.camera_id, c.name AS camera FROM app.plate_events i JOIN app.cameras c ON c.id=i.camera_id
                    WHERE i.tenant_id=$1 AND i.direction='in' AND i.plate_text IS NOT NULL AND i.review_status <> 'needs_review'
-                     AND i.seen_at < now() - make_interval(hours => $2) AND i.seen_at > now() - interval '7 days'
+                     AND i.seen_at < now() - make_interval(mins => $2) AND i.seen_at > now() - interval '7 days'
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events o WHERE o.entry_event_id = i.id)
-                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], hours)
+                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes)
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle {r['plate_text']} has stayed too long",
-                                     body=f"Entered at {r['camera']} and has not left after {hours:g} hours.", camera_id=r["camera_id"], camera_name=r["camera"],
-                                     details={"plate": r["plate_text"], "hours": f"{hours:g}"}, dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7):
+                                     body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
+                                     details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes)},
+                                     dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7):
                     n += 1
     return n
 
