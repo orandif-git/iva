@@ -1,5 +1,5 @@
 """What the redesigned customer app needs from the server: drawn areas, the alert inbox (done / snooze), the health summary and the test message."""
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -148,3 +148,28 @@ async def test_a_test_message_needs_a_real_person_with_a_number(client, make, su
     assert (await client.post("/v1/alert-types/not_an_alert/test", json={"recipient_id": rid}, headers=h)).status_code == 404
     other = (await client.post("/v1/recipients", json={"name": "Email only", "email": "a@x.test", "consent_confirmed": True}, headers=h)).json()["id"]
     assert (await client.post("/v1/alert-types/queue_long/test", json={"recipient_id": other}, headers=h)).status_code == 422
+
+
+# ----------------------------------------------------------------------------------------------- the numbers behind Activity
+async def test_alert_counts_by_kind_and_place_for_a_period(client, make, su):
+    from app.services.alerts import raise_alert
+    from app.db import db
+    import uuid
+    t, u, cam = await shop(client, make, su)
+    async with db.service_tx() as c:
+        for i in range(3):
+            await raise_alert(c, t, "recorder_offline", title="Recorder offline", body="x", camera_id=cam, camera_name="Gate", details={"area": "Aisle 1"}, dedupe_key=f"a{uuid.uuid4()}")
+        await raise_alert(c, t, "camera_offline", body="x", camera_id=cam, camera_name="Gate", dedupe_key=f"b{uuid.uuid4()}")
+    old = await su.fetchval("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, created_at) VALUES ($1,'camera_offline','warning','old','x', now() - interval '40 days') RETURNING id", t)
+    assert old
+    now = datetime.now(timezone.utc)
+    r = await client.get("/v1/alerts/summary", params={"from": (now - timedelta(days=1)).isoformat(), "to": (now + timedelta(hours=1)).isoformat()}, headers=u["headers"])
+    assert r.status_code == 200, r.text
+    got = {(x["rule_type"], x["place"]): x["count"] for x in r.json()}
+    assert got == {("recorder_offline", "Aisle 1"): 3, ("camera_offline", "Cam 1"): 1}, "the 40-day-old one is outside the period"
+    r = await client.get("/v1/alerts/summary", params={"from": (now - timedelta(days=60)).isoformat(), "to": (now + timedelta(hours=1)).isoformat()}, headers=u["headers"])
+    assert sum(x["count"] for x in r.json() if x["rule_type"] == "camera_offline") == 2
+    assert (await client.get("/v1/alerts/summary", params={"from": (now - timedelta(days=90)).isoformat(), "to": now.isoformat()}, headers=u["headers"])).status_code == 422
+    assert (await client.get("/v1/alerts/summary", params={"from": now.isoformat(), "to": now.isoformat()}, headers=u["headers"])).status_code == 422
+    other = await make.user(await make.tenant())                                       # another customer sees none of it
+    assert (await client.get("/v1/alerts/summary", params={"from": (now - timedelta(days=1)).isoformat(), "to": (now + timedelta(hours=1)).isoformat()}, headers=other["headers"])).json() == []

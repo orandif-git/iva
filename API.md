@@ -88,6 +88,7 @@ Roles: `A` = tenant admin, `R` = regular user (both unless noted).
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | GET | `/v1/alerts` | A R | Recent alerts |
+| GET | `/v1/alerts/summary` | A R | `?from&to` (at most 62 days): how many alerts of each kind happened, and where (`rule_type`, `place`, `count`, `last_at`). The numbers behind the Activity screens. |
 | POST | `/v1/alerts/{id}/ack` | A R | Acknowledge |
 | GET, POST, PATCH, DELETE | `/v1/alert-rules`, `/v1/alert-rules/{id}` | A | Rules, channels and recipients |
 | GET | `/v1/notifications` | A | Delivery log (sent, delivered, failed) |

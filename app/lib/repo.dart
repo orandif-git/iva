@@ -20,8 +20,10 @@ abstract class Repository {
   Future<Me> me();
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
-  Future<FootfallRange> footfallRange({required int days, String? cameraId});
-  Future<PlatePage> plates({String q = '', String? cursor});
+  Future<FootfallRange> footfallRange({required Period period, String? cameraId});
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week});
+  Future<List<AlertCount>> alertCounts(Period period);
+  Future<void> renameCamera(String cameraId, String name);
   Future<Uint8List?> plateImage(String id);
   Future<List<BlockedPlate>> blockedPlates();
   Future<void> blockPlate(String plate, {String? note});
@@ -111,8 +113,8 @@ class ApiRepository implements Repository {
   }
 
   @override
-  Future<FootfallRange> footfallRange({required int days, String? cameraId}) async {
-    final from = _istDay(1 - days), to = _istDay(1), hourly = days == 1;
+  Future<FootfallRange> footfallRange({required Period period, String? cameraId}) async {
+    final from = _istDay(period.fromDay), to = _istDay(period.toDay), hourly = period.hourly;
     final q = {'from': from, 'to': to, 'tz': 'Asia/Kolkata', if (cameraId != null) 'camera_id': cameraId};
     final r = await Future.wait([api.call('GET', '/v1/footfall', query: {...q, 'interval': hourly ? 'hour' : 'day'}), api.call('GET', '/v1/footfall/summary', query: q)]);
     final f = r[0] as Map, sum = r[1] as Map;
@@ -128,14 +130,26 @@ class ApiRepository implements Repository {
   }
 
   @override
-  Future<PlatePage> plates({String q = '', String? cursor}) async {
-    final r = await api.call('GET', '/v1/plates', query: {'limit': '30', 'from': _istDay(-6), 'to': _istDay(1), if (q.trim().isNotEmpty) 'q': q.trim(), if (cursor != null) 'cursor': cursor}) as Map;
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week}) async {
+    final r = await api.call('GET', '/v1/plates', query: {'limit': '30', 'from': _istDay(period.fromDay), 'to': _istDay(period.toDay), if (q.trim().isNotEmpty) 'q': q.trim(), if (cursor != null) 'cursor': cursor}) as Map;
     return PlatePage([
       for (final j in r['items'] as List)
         PlateRead('${j['id']}', '${j['camera_id']}', j['plate_text'] as String?, DateTime.tryParse('${j['seen_at']}')?.toLocal(),
             vehicle: j['vehicle_type'] as String?, direction: j['direction'] as String?, blocked: j['blocked'] == true, needsReview: j['review_status'] == 'needs_review',
             hasPicture: j['has_snapshot'] == true, confidence: (j['confidence'] as num?)?.toInt(), dwellMinutes: j['dwell_seconds'] == null ? null : ((j['dwell_seconds'] as num) / 60).round())
     ], r['next_cursor'] as String?);
+  }
+
+  @override
+  Future<List<AlertCount>> alertCounts(Period period) async => [
+        for (final j in await api.call('GET', '/v1/alerts/summary', query: {'from': _istDay(period.fromDay), 'to': _istDay(period.toDay)}) as List)
+          AlertCount(j['rule_type'] as String, (j['place'] ?? '') as String, (j['count'] as num).toInt(), DateTime.tryParse('${j['last_at']}')?.toLocal())
+      ];
+
+  @override
+  Future<void> renameCamera(String cameraId, String name) async {
+    await api.call('PATCH', '/v1/cameras/$cameraId', body: {'name': name.trim()});
+    _recorders = null;
   }
 
   @override
@@ -209,7 +223,7 @@ class ApiRepository implements Repository {
       final d = iso == null ? null : DateTime.tryParse(iso);
       return d == null ? null : DateTime.now().toUtc().difference(d.toUtc()).inSeconds.clamp(0, 1 << 30);
     }
-    return [for (final j in list) if (j['enabled'] == true) CameraItem(j['id'], j['name'], _recorders![j['recorder_id']] ?? '', j['stream_state'] == 'streaming', seenAgo: ago(j['last_frame_at'] as String?))];
+    return [for (final j in list) if (j['enabled'] == true) CameraItem(j['id'], j['name'], _recorders![j['recorder_id']] ?? '', j['stream_state'] == 'streaming', seenAgo: ago(j['last_frame_at'] as String?), useFootfall: j['use_footfall'] == true, useAnpr: j['use_anpr'] == true)];
   }
 
   @override
@@ -445,11 +459,22 @@ class MockRepository implements Repository {
   bool? cameraEnabled;
   bool cameraRemoved = false;
   @override
-  Future<FootfallRange> footfallRange({required int days, String? cameraId}) async => days == 1
-      ? FootfallRange(342, 324, '5pm', [for (var h = 9; h <= 20; h++) FootfallBar('${h % 12 == 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}', 10 + h * 2, 8 + h * 2)])
-      : FootfallRange(2310 * days ~/ 7, 2200 * days ~/ 7, '6pm', [for (var d = 0; d < days.clamp(1, 7); d++) FootfallBar('${d + 1} Nov', 300 + d * 10, 290 + d * 9)]);
+  Future<FootfallRange> footfallRange({required Period period, String? cameraId}) async => period.hourly
+      ? FootfallRange(period == Period.yesterday ? 410 : 342, period == Period.yesterday ? 402 : 324, '5pm', [for (var h = 9; h <= 20; h++) FootfallBar('${h % 12 == 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}', 10 + h * 2, 8 + h * 2)])
+      : FootfallRange(period == Period.week ? 2310 : 9800, period == Period.week ? 2200 : 9500, '6pm', [for (var d = 0; d < (period == Period.week ? 7 : 10); d++) FootfallBar('${d + 1} Nov', 300 + d * 10, 290 + d * 9)]);
+  final Map<String, List<AlertCount>> alertCountsByPeriod = {};
   @override
-  Future<PlatePage> plates({String q = '', String? cursor}) async {
+  Future<List<AlertCount>> alertCounts(Period period) async => alertCountsByPeriod[period.name] ?? [
+        AlertCount('queue_long', 'Billing queue', period == Period.today ? 2 : 9, DateTime(2026, 11, 11, 10, 40)),
+        AlertCount('people_in_area', 'Aisle 1', period == Period.today ? 5 : 23, DateTime(2026, 11, 11, 1, 31)),
+        AlertCount('camera_offline', 'Stockroom', 1, DateTime(2026, 11, 11, 8, 5)),
+        AlertCount('recorder_offline', 'Godown recorder', 2, DateTime(2026, 11, 10, 22, 15)),
+      ];
+  final renamedCameras = <String, String>{};
+  @override
+  Future<void> renameCamera(String cameraId, String name) async => renamedCameras[cameraId] = name.trim();
+  @override
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week}) async {
     final all = [
       PlateRead('p1', 'c1', 'GJ14AB1234', DateTime(2026, 11, 10, 9, 30), vehicle: 'car', direction: 'in', hasPicture: true, confidence: 97),
       PlateRead('p2', 'c1', 'GJ05CD9876', DateTime(2026, 11, 10, 9, 12), vehicle: 'truck', direction: 'out', dwellMinutes: 42),
@@ -491,12 +516,12 @@ class MockRepository implements Repository {
 
   @override
   Future<List<CameraItem>> cameras() async => [
-        const CameraItem('c1', 'Front door', 'Store recorder', true),
+        const CameraItem('c1', 'Front door', 'Store recorder', true, useFootfall: true),
         const CameraItem('c2', 'Cash counter', 'Store recorder', true),
         const CameraItem('c3', 'Aisle 1', 'Store recorder', true),
         const CameraItem('c4', 'Aisle 2', 'Store recorder', true),
         const CameraItem('c5', 'Back door', 'Store recorder', true),
-        const CameraItem('c6', 'Parking', 'Store recorder', true),
+        const CameraItem('c6', 'Parking', 'Store recorder', true, useAnpr: true),
         CameraItem('c7', 'Stockroom', 'Godown recorder', !problems),
         const CameraItem('c8', 'Billing queue', 'Godown recorder', true),
       ];

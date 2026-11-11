@@ -8,6 +8,21 @@ import 'alert_rows.dart';
 import 'common.dart';
 import 'wizard.dart';
 
+/// The alert inbox as a screen of its own (opened from the bell at the top right of every screen).
+class AlertsScreen extends StatelessWidget {
+  const AlertsScreen({super.key, required this.repo, this.onChanged});
+  final Repository repo;
+  final VoidCallback? onChanged;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Alerts'), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
+      body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: AlertsPage(repo: repo, onChanged: onChanged))),
+    );
+  }
+}
+
 /// Alerts is for what HAPPENED: the inbox. Deciding what to watch for lives in the AI Watch tab.
 class AlertsPage extends StatefulWidget {
   const AlertsPage({super.key, required this.repo, this.startWizardFor, this.onChanged, this.refresh});

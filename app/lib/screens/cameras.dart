@@ -26,8 +26,8 @@ class _CamerasPageState extends State<CamerasPage> {
   void _reload() => setState(() { data = widget.repo.cameras(); });
 
   Future<void> _open(CameraItem c) async {
-    final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => CameraDetail(repo: widget.repo, camera: c, onAddAlert: widget.onAddAlert)));
-    if (changed == true && mounted) _reload();         // a camera was removed
+    await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => CameraDetail(repo: widget.repo, camera: c, onAddAlert: widget.onAddAlert)));
+    if (mounted) _reload();         // the camera may have been renamed or removed
   }
 
   @override
@@ -168,18 +168,25 @@ class _InfoRow extends StatelessWidget {
 }
 
 /// A camera, full screen on a phone. Live view and AI view start here and nowhere else.
-class CameraDetail extends StatelessWidget {
+class CameraDetail extends StatefulWidget {
   const CameraDetail({super.key, required this.repo, required this.camera, required this.onAddAlert});
   final Repository repo;
   final CameraItem camera;
   final void Function(CameraItem) onAddAlert;
+  @override
+  State<CameraDetail> createState() => _CameraDetailState();
+}
+
+class _CameraDetailState extends State<CameraDetail> {
+  late String name = widget.camera.name;
 
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
+    final repo = widget.repo, camera = widget.camera, onAddAlert = widget.onAddAlert;
     final narrow = MediaQuery.sizeOf(context).width < 700;
     return Scaffold(
-      appBar: AppBar(title: Text(camera.name), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
+      appBar: AppBar(title: Text(name), bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line))),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -198,7 +205,7 @@ class CameraDetail extends StatelessWidget {
               // Setting the camera up (counting line, plate area, quality, pause, remove) is for the owner.
               FutureBuilder<Me>(
                 future: repo.me(),
-                builder: (context, me) => me.data?.role == 'admin' ? CameraSetup(repo: repo, camera: camera, onRemoved: () => Navigator.of(context).pop(true)) : const SizedBox.shrink(),
+                builder: (context, me) => me.data?.role == 'admin' ? CameraSetup(repo: repo, camera: camera, onRemoved: () => Navigator.of(context).pop(true), onRenamed: (n) => setState(() => name = n)) : const SizedBox.shrink(),
               ),
             ]),
           ),

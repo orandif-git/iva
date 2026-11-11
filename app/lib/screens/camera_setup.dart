@@ -13,10 +13,11 @@ import 'common.dart';
 
 /// Setting a camera up, for the owner: the counting line across the doorway, the plate area, the picture quality, pause and remove.
 class CameraSetup extends StatefulWidget {
-  const CameraSetup({super.key, required this.repo, required this.camera, required this.onRemoved});
+  const CameraSetup({super.key, required this.repo, required this.camera, required this.onRemoved, this.onRenamed});
   final Repository repo;
   final CameraItem camera;
   final VoidCallback onRemoved;
+  final ValueChanged<String>? onRenamed;     // the camera's new name, so the screen's title follows
   @override
   State<CameraSetup> createState() => _CameraSetupState();
 }
@@ -25,6 +26,7 @@ class _CameraSetupState extends State<CameraSetup> {
   late Future<CameraSettings> data = widget.repo.cameraSettings(widget.camera.id);
   Uint8List? picture;
   bool loadingPicture = false;
+  late final TextEditingController name = TextEditingController(text: widget.camera.name);
   CountLineController? line;
   AreaController? plate;
   bool saving = false;
@@ -122,6 +124,27 @@ class _CameraSetupState extends State<CameraSetup> {
           ],
           const GroupLabel('Settings'),
           Group(padding: EdgeInsets.all(cardPad(context)), children: [
+            const Text('Camera name', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: TextField(controller: name, maxLength: 120, decoration: const InputDecoration(isDense: true, counterText: '', hintText: 'For example Main gate'))),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: () async {
+                  final n = name.text.trim();
+                  if (n.isEmpty) return _say('Give the camera a name.', bad: true);
+                  try {
+                    await widget.repo.renameCamera(s.id, n);
+                    widget.onRenamed?.call(n);
+                    _say('Name saved.');
+                  } on ApiError catch (e) {
+                    _say(e.message, bad: true);
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ]),
+            const SizedBox(height: 16),
             const Text('Picture quality', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             SizedBox(
