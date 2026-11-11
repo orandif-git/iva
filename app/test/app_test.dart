@@ -129,6 +129,58 @@ void main() {
     expect(tester(t, 'Continue').onPressed, isNull, reason: 'cannot continue until an area is drawn');
   });
 
+  testWidgets('a queue alert asks how often to take an evidence picture, as part of the setup, and saves the choice', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2400 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('New alert'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Smart Alerts'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Long queue'));
+    await t.pump();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Billing queue'), 200, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Billing queue'), warnIfMissed: false);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    final box = t.getRect(find.byType(AspectRatio).first);
+    for (final p in const [Offset(.2, .2), Offset(.7, .2), Offset(.7, .7), Offset(.2, .7)]) {
+      await t.tapAt(box.topLeft + Offset(p.dx * box.width, p.dy * box.height));
+      await t.pump();
+    }
+    await t.tap(find.text('Close the shape'));
+    await t.pump();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Set it up'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Picture as evidence'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('another every 2 minutes'), findsOneWidget, reason: 'the default, explained in words');
+    await t.tap(find.text('5 min'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('another every 5 minutes'), findsOneWidget);
+    await t.tap(find.text('Off'));
+    await t.pumpAndSettle();
+    expect(find.text('No pictures will be taken for this alert.'), findsOneWidget);
+    await t.tap(find.text('10 min'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    await t.ensureVisible(find.text('Save alert'));
+    await t.pump();
+    await t.tap(find.text('Save alert'));
+    await t.pumpAndSettle();
+    final saved = (await repo.alertDefs()).firstWhere((d) => d.type == 'queue_long');
+    expect(saved.params['picture_minutes'], 10, reason: 'the choice is saved with the alert');
+  });
+
   testWidgets('a system alert skips the camera step and saves through the repository', (t) async {
     await phone(t);
     final repo = MockRepository();

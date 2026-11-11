@@ -41,7 +41,7 @@ class Fake {
           {'type': 'queue_long', 'title': 'Long queue', 'description': 'Queue.', 'ai': true, 'enabled': false, 'params': {}, 'settings': {}, 'recipient_ids': []},
         ]);
       case 'GET /v1/area-kinds':
-        return ok([{'alert': 'queue_long', 'kind': 'queue_area', 'settings': {'length': {'default': 5, 'min': 1, 'max': 1000}, 'minutes': {'default': 3, 'min': 1, 'max': 60}, 'repeat_minutes': {'default': 15, 'min': 5, 'max': 1440}}}]);
+        return ok([{'alert': 'queue_long', 'kind': 'queue_area', 'settings': {'length': {'default': 5, 'min': 1, 'max': 1000}, 'minutes': {'default': 3, 'min': 1, 'max': 60}, 'picture_minutes': {'default': 2, 'min': 0, 'max': 60}, 'repeat_minutes': {'default': 15, 'min': 5, 'max': 1440}}}]);
       case 'GET /v1/alerts':
         return ok([{'id': 'x1', 'rule_type': 'queue_long', 'title': '9 waiting', 'body': 'b', 'created_at': '2026-11-10T10:42:00+05:30', 'camera_name': 'Billing queue', 'state': 'open'}]);
       case 'GET /v1/footfall/summary':
@@ -134,19 +134,21 @@ void main() {
     final q = defs.firstWhere((d) => d.type == 'queue_long');
     expect(q.area, isTrue);
     expect(q.smart, isTrue);
-    expect(q.settings.map((s) => s.key), ['length', 'minutes']);
+    expect(q.settings.map((s) => s.key), ['length', 'minutes', 'picture_minutes']);
+    final pic = q.settings.last;
+    expect((pic.min, pic.max, pic.def), (0, 60, 2), reason: 'the picture interval: 0 for none, 2 minutes unless chosen');
     expect(defs.first.settings, isEmpty);
   });
 
   test('saving an area alert keeps the camera\'s other areas and turns the alert on', () async {
     final (repo, _, f) = await signedIn();
     final q = (await repo.alertDefs()).firstWhere((d) => d.type == 'queue_long');
-    await repo.saveAlert(NewAlert(q, {'length': 8, 'minutes': 4}, ['p1'], cameraId: 'c1', cameraName: 'Front door', area: [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6]]));
+    await repo.saveAlert(NewAlert(q, {'length': 8, 'minutes': 4, 'picture_minutes': 5}, ['p1'], cameraId: 'c1', cameraName: 'Front door', area: [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6]]));
     final areas = f.bodies['PUT /v1/cameras/c1/areas']['areas'] as List;
     expect(areas.length, 2);
     expect(areas.first['id'], 'z1');
     expect(areas.last['kind'], 'queue_area');
-    expect(areas.last['params'], {'length': 8, 'minutes': 4});
+    expect(areas.last['params'], {'length': 8, 'minutes': 4, 'picture_minutes': 5});
     expect(areas.last['points'].length, 3);
     final rule = f.bodies['PUT /v1/alert-types/queue_long'];
     expect(rule['enabled'], isTrue);
