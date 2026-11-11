@@ -199,13 +199,26 @@ class _Needs extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     final total = recent.length + earlier.length;
+    if (total == 0) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
+        child: Row(children: [
+          Container(width: 44, height: 44, decoration: BoxDecoration(color: t.okSoft, shape: BoxShape.circle), child: Icon(Icons.check_rounded, color: t.okInk, size: 24)),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Nothing needs you', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            Text('We will message you on WhatsApp if something happens.', style: TextStyle(color: t.fg2, fontSize: 13.5)),
+          ])),
+        ]),
+      );
+    }
     return Section(
       icon: Icons.flag_outlined,
       title: 'Needs you',
       subtitle: 'Only things that are waiting for you.',
       trailing: total == 0 ? null : Pill('$total open', Level.bad),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (total == 0) const EmptyState(icon: Icons.check_circle_outline_rounded, title: 'You are all caught up', text: 'We will message you on WhatsApp if something changes.'),
         if (recent.isNotEmpty) _Featured(key: ValueKey('top${recent.first.key}${recent.first.latest.id}'), group: recent.first, repo: repo, reload: reload),
         if (recent.length > 1) ...[
           Divider(height: 25, thickness: 1, color: t.line),

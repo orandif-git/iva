@@ -458,8 +458,19 @@ void profileTests() {
     await t.tap(find.text('Cameras').last);
     await t.pumpAndSettle();
     expect(find.text('All 8 cameras are working'), findsOneWidget);
-    expect(find.text('Store recorder'.toUpperCase()), findsOneWidget);
-    expect(find.text('Godown recorder'.toUpperCase()), findsOneWidget);
+    // one grid of every camera, with a pill for each recorder to narrow it
+    expect(find.text('All 8'), findsOneWidget);
+    expect(find.text('Front door'), findsOneWidget);
+    await t.ensureVisible(find.text('Godown recorder').first);      // the pills scroll sideways on a narrow phone
+    await t.pumpAndSettle();
+    await t.tap(find.text('Godown recorder').first);
+    await t.pumpAndSettle();
+    expect(find.text('Front door'), findsNothing, reason: 'the Store recorder\'s cameras are filtered out');
+    await t.ensureVisible(find.text('All 8'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('All 8'));
+    await t.pumpAndSettle();
+    expect(find.text('Front door'), findsOneWidget);
     expect(find.textContaining('Needs attention'), findsNothing, reason: 'nothing to filter when all work');
   });
 

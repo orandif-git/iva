@@ -23,6 +23,7 @@ class _CamerasPageState extends State<CamerasPage> {
   late Future<List<CameraItem>> data = widget.repo.cameras();
   bool onlyProblems = false;
   String query = '';
+  String? recorder;       // show one recorder's cameras; null shows all
 
   void _reload() => setState(() { data = widget.repo.cameras(); });
 
@@ -44,10 +45,28 @@ class _CamerasPageState extends State<CamerasPage> {
         final cams = snap.data!;
         if (cams.isEmpty) return const EmptyState(icon: Icons.videocam_off_outlined, title: 'No cameras yet', text: 'When your recorder is connected, its cameras appear here. Recorders are set up in the current app for now.');
         final bad = cams.where((c) => !c.working).length;
-        final shown = cams.where((c) => (!onlyProblems || !c.working) && (query.isEmpty || c.name.toLowerCase().contains(query.toLowerCase()))).toList();
-        final byRecorder = <String, List<CameraItem>>{};
-        for (final c in shown) {
-          (byRecorder[c.recorder.isEmpty ? 'Cameras' : c.recorder] ??= []).add(c);
+        final recorders = <String>{for (final c in cams) if (c.recorder.isNotEmpty) c.recorder}.toList();
+        final only = recorders.contains(recorder) ? recorder : null;
+        final shown = cams.where((c) => (only == null || c.recorder == only) && (!onlyProblems || !c.working) && (query.isEmpty || c.name.toLowerCase().contains(query.toLowerCase()))).toList();
+        Widget chip(String label, String? value) {
+          final on = only == value;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Pressable(
+              label: label,
+              selected: on,
+              onTap: () => setState(() => recorder = value),
+              child: ExcludeSemantics(
+                child: Container(
+                  height: 44,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: on ? t.fg : t.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: on ? t.fg : t.line)),
+                  child: Text(label, style: TextStyle(color: on ? t.bg : t.fg, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                ),
+              ),
+            ),
+          );
         }
         return RefreshIndicator(
           onRefresh: () async => _reload(),
@@ -62,12 +81,16 @@ class _CamerasPageState extends State<CamerasPage> {
                 if (cams.length > 8) Expanded(child: TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(hintText: 'Find a camera', prefixIcon: Icon(Icons.search_rounded), isDense: true))),
               ]),
             ],
+            if (recorders.length > 1) ...[
+              const SizedBox(height: 14),
+              SingleChildScrollView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, child: Row(children: [chip('All ${cams.length}', null), for (final r in recorders) chip(r, r)])),
+            ],
             if (shown.isEmpty) const EmptyState(icon: Icons.search_off_rounded, title: 'No cameras match', text: 'Try another name, or show all cameras.'),
-            for (final e in byRecorder.entries) ...[
-              GroupLabel(e.key, trailing: Text('${e.value.length} ${e.value.length == 1 ? 'camera' : 'cameras'}${e.value.any((c) => !c.working) ? ' · ${e.value.where((c) => !c.working).length} offline' : ''}', style: TextStyle(color: t.fg2, fontSize: 12.5, fontWeight: FontWeight.w600))),
+            if (shown.isNotEmpty) ...[
+              const SizedBox(height: 14),
               LayoutBuilder(builder: (context, box) {
                 final cols = box.maxWidth > 900 ? 4 : box.maxWidth > 600 ? 3 : 2;
-                return GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: cols, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.12, children: [for (final c in e.value) _CamCard(widget.repo, c, () => _open(c))]);
+                return GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: cols, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.12, children: [for (final c in shown) _CamCard(widget.repo, c, () => _open(c))]);
               }),
             ],
           ]),
@@ -128,7 +151,7 @@ class _CamCardState extends State<_CamCard> {
             ),
             Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5), maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(c.working ? (c.seenAgo == null ? 'Live view available' : 'Seen ${shortAgo(c.seenAgo)}') : 'Not sending pictures', style: TextStyle(color: c.working ? t.fg2 : t.crit, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(c.working ? (c.recorder.isEmpty ? 'Live view available' : c.recorder) : 'Not sending pictures', style: TextStyle(color: c.working ? t.fg2 : t.crit, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
             ])),
           ]),
         ),

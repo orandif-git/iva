@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -283,7 +281,7 @@ class _StatsCard extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [Icon(icon, size: 15, color: t.fg2), const SizedBox(width: 6), Flexible(child: Text(label, style: TextStyle(color: t.fg2, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis))]),
               const SizedBox(height: 6),
-              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -.6, fontFeatures: [FontFeature.tabularFigures()]))),
+              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: display(28))),
             ]),
           ),
         );
