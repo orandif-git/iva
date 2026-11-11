@@ -122,6 +122,16 @@ def test_a_queue_or_a_crowd_at_its_limit_gets_a_picture_when_it_gets_there_and_a
         assert [r["take_picture"] for r in m.update(405.0, W, H, crowd, [])] == [True], "a new episode starts again with a picture"
 
 
+def test_the_customer_sets_how_often_another_picture_is_taken_and_zero_means_none():
+    crowd = [person(i, 100 + i * 5, 60) for i in range(1, 5)]
+    def shots(**params):
+        m = AreaMonitor([cfg("queue_area", length=3, minutes=2, **params)], every=1.0)
+        return [i * 0.5 for i in range(0, 600) for r in m.update(100.0 + i * 0.5, W, H, crowd, []) if r["take_picture"]]
+    assert len(shots(picture_minutes=1)) == 5, "every minute for five minutes: at 0, 60, 120, 180, 240 seconds"
+    assert len(shots(picture_minutes=5)) == 1, "once, then not again within five minutes"
+    assert shots(picture_minutes=0) == [], "the customer turned pictures off"
+
+
 def test_a_queue_or_crowd_under_its_limit_takes_no_pictures():
     m = AreaMonitor([cfg("queue_area", length=5, minutes=2)], every=1.0)
     crowd = [person(i, 100 + i * 5, 60) for i in range(1, 4)]

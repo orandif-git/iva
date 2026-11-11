@@ -19,9 +19,10 @@ String _when(DateTime? d) {
 
 /// Vehicles, in Activity: every number plate the cameras read in the period, newest first, with the picture taken at the time; search a plate; add one to the blocked list.
 class VehiclesTab extends StatefulWidget {
-  const VehiclesTab({super.key, required this.repo, this.period = Period.week});
+  const VehiclesTab({super.key, required this.repo, this.period = Period.week, this.cameraId});
   final Repository repo;
   final Period period;
+  final String? cameraId;
   @override
   State<VehiclesTab> createState() => _VehiclesTabState();
 }
@@ -51,7 +52,7 @@ class _VehiclesTabState extends State<VehiclesTab> {
   Future<void> _load({required bool reset}) async {
     setState(() { if (reset) { loading = true; items.clear(); next = null; } else { loadingMore = true; } error = null; });
     try {
-      final p = await widget.repo.plates(q: q.text, cursor: reset ? null : next, period: widget.period);
+      final p = await widget.repo.plates(q: q.text, cursor: reset ? null : next, period: widget.period, cameraId: widget.cameraId);
       if (!mounted) return;
       setState(() { items.addAll(p.items); next = p.next; });
     } on ApiError catch (e) {
@@ -71,17 +72,28 @@ class _VehiclesTabState extends State<VehiclesTab> {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, navClear), children: [
-      Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BlockedListPage(repo: widget.repo))), icon: const Icon(Icons.block_rounded, size: 18), label: const Text('Blocked list'))),
-      TextField(
-        controller: q,
-        maxLength: 20,
-        textCapitalization: TextCapitalization.characters,
-        decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Search a plate, for example GJ14', counterText: ''),
-        onChanged: (_) {
-          _debounce?.cancel();
-          _debounce = Timer(const Duration(milliseconds: 350), () => _load(reset: true));
-        },
-      ),
+      // search and the blocked list on one line
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(
+          child: TextField(
+            controller: q,
+            maxLength: 20,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Search a plate, for example GJ14', counterText: ''),
+            onChanged: (_) {
+              _debounce?.cancel();
+              _debounce = Timer(const Duration(milliseconds: 350), () => _load(reset: true));
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(
+          tooltip: 'Blocked list',
+          style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+          icon: const Icon(Icons.block_rounded),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BlockedListPage(repo: widget.repo))),
+        ),
+      ]),
       const SizedBox(height: 12),
       if (error != null)
         EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the plates', text: error!, action: OutlinedButton(onPressed: () => _load(reset: true), child: const Text('Try again')))

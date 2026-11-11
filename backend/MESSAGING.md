@@ -161,7 +161,7 @@ backend attaches it and releases the held event at once  ->  sent with clip_url 
 | Plate needs checking | the picture of the read |
 | Vehicle has stayed too long | the picture taken as the vehicle came in |
 | Possible phone use | a picture with the area, the people and the phone marked |
-| Too many people in an area, Queue too long | a picture with the area and people marked: the worker takes one when the limit is first reached and another every `minutes` while it stays, and the alert shows the newest |
+| Too many people in an area, Queue too long | a picture with the area and people marked: the worker takes one when the limit is first reached and another every `picture_minutes` while it stays (the customer sets it on the area, default 2, `0` for no pictures), and the alert shows the newest |
 | Too many people (count), camera and recorder alerts, account alerts | none: a count has no single moment to show and an offline camera has no picture |
 
 * **Nothing identifies a person.** The pictures mark places and people-shaped boxes, never names.

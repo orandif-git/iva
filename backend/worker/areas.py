@@ -103,13 +103,14 @@ class AreaMonitor:
             picture = bool(a.kind == "staff_area" and phone and phone >= float(a.param("seconds", 20)) and st.shot_for != st.phone_since)
             if picture:
                 st.shot_for = st.phone_since
-            # A queue or a crowd at its limit: a picture when it first gets there, and another every `minutes` while it stays, so the alert (which waits for
-            # `minutes`) always has a recent one to show.
+            # A queue or a crowd at its limit: a picture when it first gets there, and another every `picture_minutes` (the customer sets it) while it stays,
+            # so the alert always has a recent one to show.
             limit = int(a.param("length", 5)) if a.kind == "queue_area" else (int(a.param("limit", 0)) if a.kind == "area_count" else 0)
+            every_min = int(a.param("picture_minutes", 2))                  # the customer's choice: how often to take another; 0 means no pictures at all
             if limit >= 1 and n >= limit:
                 if st.over_since is None:
                     st.over_since = ts
-                if st.shot_at is None or ts - st.shot_at >= max(60.0, float(a.param("minutes", 3)) * 60):
+                if every_min > 0 and (st.shot_at is None or ts - st.shot_at >= every_min * 60):
                     picture, st.shot_at = True, ts
             elif limit >= 1:
                 st.over_since = st.shot_at = None                       # back under the limit: the next time starts again

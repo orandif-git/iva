@@ -21,7 +21,7 @@ abstract class Repository {
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
   Future<FootfallRange> footfallRange({required Period period, String? cameraId});
-  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week});
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week, String? cameraId});
   Future<List<AlertCount>> alertCounts(Period period);
   Future<Uint8List?> alertImage(String alertId);
   Future<EvidenceLink> evidenceLink(String alertId);
@@ -132,8 +132,8 @@ class ApiRepository implements Repository {
   }
 
   @override
-  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week}) async {
-    final r = await api.call('GET', '/v1/plates', query: {'limit': '30', 'from': _istDay(period.fromDay), 'to': _istDay(period.toDay), if (q.trim().isNotEmpty) 'q': q.trim(), if (cursor != null) 'cursor': cursor}) as Map;
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week, String? cameraId}) async {
+    final r = await api.call('GET', '/v1/plates', query: {if (cameraId != null) 'camera_id': cameraId, 'limit': '30', 'from': _istDay(period.fromDay), 'to': _istDay(period.toDay), if (q.trim().isNotEmpty) 'q': q.trim(), if (cursor != null) 'cursor': cursor}) as Map;
     return PlatePage([
       for (final j in r['items'] as List)
         PlateRead('${j['id']}', '${j['camera_id']}', j['plate_text'] as String?, DateTime.tryParse('${j['seen_at']}')?.toLocal(),
@@ -497,7 +497,7 @@ class MockRepository implements Repository {
   @override
   Future<void> renameCamera(String cameraId, String name) async => renamedCameras[cameraId] = name.trim();
   @override
-  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week}) async {
+  Future<PlatePage> plates({String q = '', String? cursor, Period period = Period.week, String? cameraId}) async {
     final all = [
       PlateRead('p1', 'c1', 'GJ14AB1234', DateTime(2026, 11, 10, 9, 30), vehicle: 'car', direction: 'in', hasPicture: true, confidence: 97),
       PlateRead('p2', 'c1', 'GJ05CD9876', DateTime(2026, 11, 10, 9, 12), vehicle: 'truck', direction: 'out', dwellMinutes: 42),
@@ -540,7 +540,7 @@ class MockRepository implements Repository {
   @override
   Future<List<CameraItem>> cameras() async => [
         const CameraItem('c1', 'Front door', 'Store recorder', true, useFootfall: true),
-        const CameraItem('c2', 'Cash counter', 'Store recorder', true),
+        const CameraItem('c2', 'Cash counter', 'Store recorder', true, useFootfall: true),
         const CameraItem('c3', 'Aisle 1', 'Store recorder', true),
         const CameraItem('c4', 'Aisle 2', 'Store recorder', true),
         const CameraItem('c5', 'Back door', 'Store recorder', true),

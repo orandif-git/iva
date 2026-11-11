@@ -1,4 +1,7 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api_client.dart';
 import '../models.dart';
@@ -45,6 +48,7 @@ class ActivityPage extends StatefulWidget {
 class _ActivityPageState extends State<ActivityPage> {
   Period period = Period.today;
   Section? chosen;
+  String? cameraId;            // narrows People and Vehicles to one camera
   late Future<_Plan> plan = _load();
 
   @override
@@ -88,10 +92,18 @@ class _ActivityPageState extends State<ActivityPage> {
           return const EmptyState(icon: Icons.insights_outlined, title: 'Nothing to show yet', text: 'Add a camera, and turn on counting people, reading number plates or an alert in AI Watch. What they see appears here.');
         }
         final section = p.sections.contains(chosen) ? chosen! : p.sections.first;
+        // Which cameras can the second filter offer for this part?
+        final cams = switch (section) {
+          Section.people => p.cameras.where((c) => c.useFootfall).toList(),
+          Section.vehicles => p.cameras.where((c) => c.useAnpr).toList(),
+          _ => const <CameraItem>[],
+        };
+        final camera = cams.where((c) => c.id == cameraId).firstOrNull;
         return Column(children: [
+          // One quiet header: the parts as a segmented control, then the two filters side by side, then the exact dates.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Column(children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (p.sections.length > 1)
                 SizedBox(
                   width: double.infinity,
@@ -99,27 +111,47 @@ class _ActivityPageState extends State<ActivityPage> {
                     showSelectedIcon: false,
                     segments: [for (final s in p.sections) ButtonSegment(value: s, label: Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis))],
                     selected: {section},
-                    onSelectionChanged: (v) => setState(() => chosen = v.first),
+                    onSelectionChanged: (v) { HapticFeedback.selectionClick(); setState(() { chosen = v.first; cameraId = null; }); },
                   ),
                 ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  for (final x in Period.values)
-                    Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(x.label), labelPadding: const EdgeInsets.symmetric(horizontal: 2), visualDensity: VisualDensity.compact, selected: period == x, showCheckmark: false, onSelected: (_) => setState(() => period = x))),
-                ]),
-              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                FilterMenu<Period>(
+                  icon: Icons.calendar_today_rounded,
+                  label: period.label,
+                  value: period,
+                  items: [for (final x in Period.values) (x, x.label)],
+                  onSelected: (x) => setState(() => period = x),
+                ),
+                if (cams.length > 1) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: FilterMenu<String?>(
+                      icon: Icons.videocam_outlined,
+                      label: camera?.name ?? 'All cameras',
+                      value: camera?.id,
+                      items: [(null, 'All cameras'), for (final c in cams) (c.id, c.name)],
+                      onSelected: (x) => setState(() => cameraId = x),
+                    ),
+                  ),
+                ],
+              ]),
+              Padding(padding: const EdgeInsets.fromLTRB(4, 8, 4, 4), child: Text(periodRange(period), style: TextStyle(color: t.fg2, fontSize: 13))),
             ]),
           ),
-          Divider(height: 12, color: t.line.withValues(alpha: 0)),
           Expanded(
-            child: switch (section) {
-              Section.people => PeopleSection(key: ValueKey('people${period.name}'), repo: widget.repo, period: period, cameras: p.cameras.where((c) => c.useFootfall).toList()),
-              Section.vehicles => VehiclesTab(key: ValueKey('vehicles${period.name}'), repo: widget.repo, period: period),
-              Section.areas => AreasSection(key: ValueKey('areas${period.name}'), repo: widget.repo, period: period, defs: p.defs.where((d) => d.enabled && _areaAlerts.contains(d.type)).toList()),
-              Section.health => HealthSection(key: ValueKey('health${period.name}'), repo: widget.repo, period: period, defs: p.defs),
-            },
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: KeyedSubtree(
+                key: ValueKey('${section.name}${period.name}${camera?.id}'),
+                child: switch (section) {
+                  Section.people => PeopleSection(repo: widget.repo, period: period, cameraId: camera?.id),
+                  Section.vehicles => VehiclesTab(repo: widget.repo, period: period, cameraId: camera?.id),
+                  Section.areas => AreasSection(repo: widget.repo, period: period, defs: p.defs.where((d) => d.enabled && _areaAlerts.contains(d.type)).toList()),
+                  Section.health => HealthSection(repo: widget.repo, period: period, defs: p.defs),
+                },
+              ),
+            ),
           ),
         ]);
       },
@@ -127,52 +159,98 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 }
 
+/// "Wed 11 Nov" for a day, "5 Nov – 11 Nov" for a stretch: exactly which dates the numbers cover (days are cut at midnight in India).
+String periodRange(Period p) {
+  const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final ist = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+  final today = DateTime.utc(ist.year, ist.month, ist.day);
+  final from = today.add(Duration(days: p.fromDay)), last = today.add(Duration(days: p.toDay - 1));
+  String d(DateTime x) => '${x.day} ${mo[x.month - 1]}';
+  return from == last ? '${wd[from.weekday - 1]} ${d(from)}' : '${d(from)} – ${d(last)}';
+}
+
+/// A pull-down filter, the way iPhone apps do it: a quiet capsule showing the current choice, and a menu with a tick on it. Used for the period and the camera.
+class FilterMenu<T> extends StatelessWidget {
+  const FilterMenu({super.key, required this.icon, required this.label, required this.value, required this.items, required this.onSelected});
+  final IconData icon;
+  final String label;
+  final T value;
+  final List<(T, String)> items;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return PopupMenuButton<T>(
+      tooltip: label,
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
+      initialValue: value,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: t.surface,
+      elevation: 8,
+      onOpened: HapticFeedback.selectionClick,
+      onSelected: (v) { HapticFeedback.selectionClick(); onSelected(v); },
+      itemBuilder: (_) => [
+        for (final (v, text) in items)
+          PopupMenuItem<T>(
+            value: v,
+            height: 44,
+            child: Row(children: [
+              Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: v == value ? FontWeight.w700 : FontWeight.w500))),
+              if (v == value) Icon(Icons.check_rounded, size: 20, color: t.brand),
+            ]),
+          ),
+      ],
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(19), border: Border.all(color: t.line)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: t.brand),
+          const SizedBox(width: 8),
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+          const SizedBox(width: 2),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: t.fg2),
+        ]),
+      ),
+    );
+  }
+}
+
 // ----------------------------------------------------------------------------------------------------------------------------- people
 class PeopleSection extends StatefulWidget {
-  const PeopleSection({super.key, required this.repo, required this.period, required this.cameras});
+  const PeopleSection({super.key, required this.repo, required this.period, this.cameraId});
   final Repository repo;
   final Period period;
-  final List<CameraItem> cameras;
+  final String? cameraId;
   @override
   State<PeopleSection> createState() => _PeopleSectionState();
 }
 
 class _PeopleSectionState extends State<PeopleSection> {
-  String? cameraId;
-  late Future<FootfallRange> data = _load();
+  late Future<FootfallRange> data = widget.repo.footfallRange(period: widget.period, cameraId: widget.cameraId);
 
-  Future<FootfallRange> _load() => widget.repo.footfallRange(period: widget.period, cameraId: cameraId);
+  void _retry() => setState(() { data = widget.repo.footfallRange(period: widget.period, cameraId: widget.cameraId); });
 
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    final days = !widget.period.hourly;
+    final byDay = !widget.period.hourly;
     return FutureBuilder(
       future: data,
       builder: (context, snap) {
-        Widget chip(String label, bool on, VoidCallback tap) => Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(label), selected: on, onSelected: (_) => tap(), showCheckmark: false));
         return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, navClear), children: [
-          if (widget.cameras.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  chip('All cameras', cameraId == null, () => setState(() { cameraId = null; data = _load(); })),
-                  for (final c in widget.cameras) chip(c.name, cameraId == c.id, () => setState(() { cameraId = c.id; data = _load(); })),
-                ]),
-              ),
-            ),
           if (snap.hasError)
-            EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the counts', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}', action: OutlinedButton(onPressed: () => setState(() { data = _load(); }), child: const Text('Try again')))
+            EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the counts', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}', action: OutlinedButton(onPressed: _retry, child: const Text('Try again')))
           else if (!snap.hasData)
             const Padding(padding: EdgeInsets.all(40), child: Loading())
           else ...[
-            _Kpis(snap.data!),
+            _StatsCard(snap.data!),
             const GroupLabel('Over time'),
             Group(padding: EdgeInsets.all(cardPad(context)), children: [
-              Row(children: [Expanded(child: Text(days ? 'By day' : 'By hour', style: TextStyle(color: t.fg2))), _Dot(t.brand, 'In'), const SizedBox(width: 14), _Dot(t.fg2.withValues(alpha: .55), 'Out')]),
-              const SizedBox(height: 12),
+              Row(children: [Expanded(child: Text(byDay ? 'People in and out, by day' : 'People in and out, by hour', style: TextStyle(color: t.fg2, fontSize: 13.5))), _Dot(t.brand, 'In'), const SizedBox(width: 14), _Dot(t.fg2.withValues(alpha: .55), 'Out')]),
+              const SizedBox(height: 20),
               snap.data!.bars.any((b) => b.peopleIn > 0 || b.peopleOut > 0)
                   ? SizedBox(height: 190, child: CustomPaint(size: Size.infinite, painter: _BarsPainter(snap.data!.bars, t)))
                   : Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('No one was counted in this period.', style: TextStyle(color: t.fg2)))),
@@ -192,28 +270,32 @@ class _Dot extends StatelessWidget {
   Widget build(BuildContext context) => Row(children: [Container(width: 10, height: 10, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 6), Text(label, style: TextStyle(color: Tok.of(context).fg2, fontSize: 13))]);
 }
 
-class _Kpis extends StatelessWidget {
-  const _Kpis(this.r);
+/// The four numbers as one grouped card with hairlines between them, instead of four separate boxes.
+class _StatsCard extends StatelessWidget {
+  const _StatsCard(this.r);
   final FootfallRange r;
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    Widget card(String label, String value) => Expanded(
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-            decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line)),
+    Widget stat(String label, String value, IconData icon) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: TextStyle(color: t.fg2, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
-              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: -.5))),
+              Row(children: [Icon(icon, size: 15, color: t.fg2), const SizedBox(width: 6), Flexible(child: Text(label, style: TextStyle(color: t.fg2, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis))]),
+              const SizedBox(height: 6),
+              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -.6, fontFeatures: [FontFeature.tabularFigures()]))),
             ]),
           ),
         );
-    return Column(children: [
-      Row(children: [card('People in', '${r.peopleIn}'), const SizedBox(width: 10), card('People out', '${r.peopleOut}')]),
-      const SizedBox(height: 10),
-      Row(children: [card('Net', '${r.net >= 0 ? '+' : ''}${r.net}'), const SizedBox(width: 10), card('Busiest hour', r.peakLabel ?? '–')]),
-    ]);
+    final hair = Container(width: 1, color: t.line);
+    return Container(
+      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: t.line)),
+      child: Column(children: [
+        IntrinsicHeight(child: Row(children: [stat('People in', '${r.peopleIn}', Icons.south_west_rounded), hair, stat('People out', '${r.peopleOut}', Icons.north_east_rounded)])),
+        Divider(height: 1, color: t.line),
+        IntrinsicHeight(child: Row(children: [stat('Net', '${r.net >= 0 ? '+' : ''}${r.net}', Icons.swap_vert_rounded), hair, stat('Busiest hour', r.peakLabel ?? '–', Icons.schedule_rounded)])),
+      ]),
+    );
   }
 }
 
