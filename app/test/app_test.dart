@@ -772,17 +772,28 @@ void profileTests() {
     for (final x in ['People', 'Vehicles', 'Areas', 'Health']) {
       expect(find.widgetWithText(SegmentedButton<Section>, x), findsOneWidget, reason: x);
     }
-    for (final x in ['Today', 'Yesterday', '7 days', '30 days']) {
-      expect(find.text(x), findsOneWidget, reason: x);
-    }
+    // one tidy row of pull-down filters: the period, and (when there is more than one) the camera; the exact dates are written under them
+    expect(find.widgetWithText(FilterMenu<Period>, 'Today'), findsOneWidget);
+    expect(find.widgetWithText(FilterMenu<String?>, 'All cameras'), findsOneWidget);
+    expect(find.text(periodRange(Period.today)), findsOneWidget);
+    expect(find.text('Yesterday'), findsNothing, reason: 'the other choices are in the menu');
     expect(find.text('People in'), findsOneWidget);
     expect(find.text('342'), findsOneWidget);
-    await t.tap(find.text('Yesterday'));
+    await t.tap(find.widgetWithText(FilterMenu<Period>, 'Today'));
+    await t.pumpAndSettle();
+    for (final x in ['Today', 'Yesterday', '7 days', '30 days']) {
+      expect(find.text(x), findsWidgets, reason: x);
+    }
+    await t.tap(find.text('Yesterday').last);
     await t.pumpAndSettle();
     expect(find.text('410'), findsOneWidget, reason: 'yesterday\'s count');
-    await t.tap(find.text('7 days'));
+    expect(find.text(periodRange(Period.yesterday)), findsOneWidget);
+    await t.tap(find.widgetWithText(FilterMenu<Period>, 'Yesterday'));
     await t.pumpAndSettle();
-    expect(find.text('By day', skipOffstage: false), findsOneWidget);
+    await t.tap(find.text('7 days').last);
+    await t.pumpAndSettle();
+    expect(find.textContaining('by day', findRichText: true), findsOneWidget);
+    expect(find.textContaining(' – '), findsOneWidget, reason: 'a stretch of days shows both ends');
     await t.tap(find.text('Areas'));
     await t.pumpAndSettle();
     expect(find.text('Long queue'), findsOneWidget);
@@ -793,6 +804,25 @@ void profileTests() {
     expect(find.text('Cameras working'), findsOneWidget);
     expect(find.textContaining('Went offline'.toUpperCase()), findsOneWidget);
     expect(find.text('Stockroom'), findsOneWidget);
+  });
+
+  testWidgets('the camera filter narrows People to one camera', (t) async {
+    await phone(t);
+    final repo = _CameraAskRepo();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Activity').last);
+    await t.pumpAndSettle();
+    expect(repo.asked.last, isNull, reason: 'all cameras to begin with');
+    await t.tap(find.widgetWithText(FilterMenu<String?>, 'All cameras'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Cash counter').last);
+    await t.pumpAndSettle();
+    expect(repo.asked.last, 'c2');
+    expect(find.widgetWithText(FilterMenu<String?>, 'Cash counter'), findsOneWidget);
+    await t.tap(find.text('Vehicles'));
+    await t.pumpAndSettle();
+    expect(find.byType(FilterMenu<String?>), findsNothing, reason: 'only one camera reads plates, so there is nothing to choose, and the old choice is dropped');
   });
 
   testWidgets('Activity shows only the parts the customer has set up', (t) async {
@@ -823,7 +853,8 @@ void profileTests() {
     await t.pumpAndSettle();
     expect(find.text('GJ14AB1234'), findsOneWidget);
     expect(find.text('Needs a check'), findsOneWidget);
-    expect(find.text('Blocked list'), findsNWidgets(2), reason: 'the plate that is on the list, and the button to the list');
+    expect(find.text('Blocked list'), findsOneWidget, reason: 'the pill on the plate that is on the list');
+    expect(find.byTooltip('Blocked list'), findsOneWidget, reason: 'and the button to the list, beside the search');
     await t.enterText(find.byType(TextField), 'GJ14');
     await t.pump(const Duration(milliseconds: 500));
     await t.pumpAndSettle();
@@ -841,7 +872,7 @@ void profileTests() {
     expect(find.text('Remove from blocked list'), findsOneWidget);
     await t.pageBack();
     await t.pumpAndSettle();
-    await t.tap(find.widgetWithText(TextButton, 'Blocked list'));
+    await t.tap(find.byTooltip('Blocked list'));
     await t.pumpAndSettle();
     expect(find.text('GJ14AB1234'), findsOneWidget);
     expect(find.textContaining('followed a customer'), findsOneWidget);
@@ -930,6 +961,8 @@ void profileTests() {
     expect(d('vehicle_overstay', [w('max_hours', 8)], {'max_hours': 8}).summary, 'Alert when a vehicle stays more than 8 hours');
     expect(d('vehicle_overstay', [w('max_minutes', 45)], {'max_minutes': 45}).summary, 'Alert when a vehicle stays more than 45 minutes');
     expect(d('queue_long', [w('length', 6), w('minutes', 5)], {'length': 6, 'minutes': 5}).summary, 'Alert when more than 6 people waiting, for at least 5 minutes');
+    expect(d('queue_long', [w('length', 6), w('minutes', 5), w('picture_minutes', 2)], {'length': 6, 'minutes': 5, 'picture_minutes': 2}).summary, 'Alert when more than 6 people waiting, for at least 5 minutes', reason: 'the picture interval is set in the editor, not read out');
+    expect(settingWords['picture_minutes']!.$1, 'Take another picture every');
     expect(d('connection_unstable', [w('drops', 5)], {'drops': 5}).summary, 'Alert after 5 drops in an hour');
     expect(d('daily_summary', [w('hour', 8)], {'hour': 8}).summary, 'Send it at 8 am');
     expect(d('blocked_plate', [], {}).summary, 'Plain description.');
@@ -1019,5 +1052,15 @@ class _SetupRepo extends MockRepository {
       if (d.smart) d.enabled = smartOn;
     }
     return all;
+  }
+}
+
+/// Remembers which camera Activity asked the people counts for.
+class _CameraAskRepo extends MockRepository {
+  final asked = <String?>[];
+  @override
+  Future<FootfallRange> footfallRange({required Period period, String? cameraId}) {
+    asked.add(cameraId);
+    return super.footfallRange(period: period, cameraId: cameraId);
   }
 }

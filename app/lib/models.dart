@@ -141,7 +141,7 @@ class AlertDef {
     final bits = <String>[];
     for (final st in settings) {
       final v = params[st.key];
-      if (v == null || (st.key == 'wait_minutes' && v == 0)) continue;
+      if (v == null || (st.key == 'wait_minutes' && v == 0) || st.key == 'picture_minutes') continue;       // picture_minutes is set in the editor, not read out in the sentence
       final n = v == v.roundToDouble() ? '${v.toInt()}' : '$v';
       final text = st.key == 'hour' ? '${st.label} ${_clock(v)}' : [st.label, n, st.unit].where((x) => x.isNotEmpty).join(' ');
       bits.add(bits.isEmpty ? text : text[0].toLowerCase() + text.substring(1));
@@ -238,6 +238,7 @@ const settingWords = {
   'length': ('Alert when more than', 'people waiting'),
   'minutes': ('for at least', 'minutes'),
   'wait_minutes': ('and the wait is over (0 to ignore)', 'minutes'),
+  'picture_minutes': ('Take another picture every', 'minutes (0 for no pictures)'),
   'seconds': ('Alert after', 'seconds'),
   'people': ('Alert when more than', 'people inside'),
   'max_hours': ('Alert when a vehicle stays more than', 'hours'),

@@ -115,3 +115,16 @@ async def test_after_the_retention_period_the_picture_says_it_is_gone(client, ma
     r = await client.get(f"/v1/alerts/{alert['id']}/image", headers=u["headers"])
     assert r.status_code == 404 and r.json()["error"]["code"] == "picture_not_found"
     assert (await client.post(f"/v1/alerts/{alert['id']}/evidence-link", headers=u["headers"])).status_code == 404
+
+
+async def test_the_picture_interval_is_a_setting_of_the_area_and_is_checked(client, make, su):
+    t, u, cam = await shop(client, make, su)
+    kinds = {k["kind"]: k["settings"] for k in (await client.get("/v1/area-kinds", headers=u["headers"])).json()}
+    assert kinds["queue_area"]["picture_minutes"] == {"default": 2, "min": 0, "max": 60} and kinds["area_count"]["picture_minutes"]["default"] == 2
+    assert "picture_minutes" not in kinds["staff_area"], "a phone picture is taken once per episode; nothing to set"
+    (a,) = await draw(client, u, cam, area("queue_area", "Queue", picture_minutes=0))
+    assert a["params"]["picture_minutes"] == 0
+    r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area("queue_area", "Queue", picture_minutes=61)]}, headers=u["headers"])
+    assert r.status_code == 422
+    (b,) = await draw(client, u, cam, area("queue_area", "Queue"))
+    assert b["params"]["picture_minutes"] == 2, "the default when the customer does not set it"
