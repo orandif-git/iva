@@ -67,8 +67,8 @@ CATALOG: dict[str, dict] = {
     # ---- Smart Alerts: vehicles
     "blocked_plate": _a(SMART, "Vehicles", "Blocked vehicle seen", "A vehicle on your blocked list is read at any camera.", built=True, severity="critical", uses_evidence=True, media="image_clip",
                         shortcodes=["plate", "direction"], needs="Number plates", params={"clip": {"type": "boolean", "default": True}}),
-    "vehicle_overstay": _a(SMART, "Vehicles", "Vehicle has stayed too long", "A vehicle entered and has not left after the time you set.", built=True, shortcodes=["plate", "hours"], needs="Number plates",
-                           params={"max_hours": {"type": "number", "default": 8, "min": 1, "max": 168}}),
+    "vehicle_overstay": _a(SMART, "Vehicles", "Vehicle has stayed too long", "A vehicle entered and has not left after the time you set.", built=True, shortcodes=["plate", "minutes", "hours", "stay"], needs="Number plates",
+                           params={"max_minutes": {"type": "integer", "default": 480, "min": 5, "max": 10080}}),
     "low_confidence_plate": _a(SMART, "Vehicles", "Plate needs checking", "A number plate could not be read with confidence and needs a person to check it.", built=True, severity="info",
                                uses_evidence=True, media="image", shortcodes=["plate", "confidence"], needs="Number plates"),
 }

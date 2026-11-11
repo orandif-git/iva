@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,7 @@ import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/widgets/camera_picture.dart';
 import 'package:ivision_app/widgets/count_line_editor.dart';
 import 'package:ivision_app/screens/camera_setup.dart';
 import 'package:ivision_app/screens/wizard.dart';
@@ -714,7 +716,7 @@ void profileTests() {
     expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], null), 1);
   });
 
-  testWidgets('Activity shows people counted (today, 7 days) and the plates read, with search and a detail page', (t) async {
+  testWidgets('Activity shows people counted today and over 7 days', (t) async {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
@@ -728,21 +730,84 @@ void profileTests() {
     await t.tap(find.text('7 days'));
     await t.pumpAndSettle();
     expect(find.text('By day', skipOffstage: false), findsOneWidget);
+    expect(find.text('Vehicles'), findsNothing, reason: 'plates have their own page now');
+  });
+
+  testWidgets('Vehicles lists every plate read, searches, and the owner can add one to the blocked list and manage that list', (t) async {
+    await phone(t);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
     await t.tap(find.text('Vehicles'));
     await t.pumpAndSettle();
     expect(find.text('GJ14AB1234'), findsOneWidget);
-    expect(find.text('Blocked list'), findsOneWidget);
     expect(find.text('Needs a check'), findsOneWidget);
-    await t.enterText(find.byType(TextField), 'GJ05');
+    expect(find.text('Blocked list'), findsNWidgets(2), reason: 'the plate that is on the list, and the button to the list');
+    await t.enterText(find.byType(TextField), 'GJ14');
     await t.pump(const Duration(milliseconds: 500));
     await t.pumpAndSettle();
-    expect(find.text('GJ05CD9876'), findsOneWidget);
-    expect(find.text('GJ14AB1234'), findsNothing);
-    await t.tap(find.text('GJ05CD9876'));
+    expect(find.text('GJ05CD9876'), findsNothing);
+    await t.tap(find.text('GJ14AB1234'));
     await t.pumpAndSettle();
     expect(find.text('Number plate'), findsOneWidget);
-    expect(find.text('Time inside'), findsOneWidget);
-    expect(find.text('42 min'), findsOneWidget);
+    await t.tap(find.text('Add to blocked list'));
+    await t.pumpAndSettle();
+    await t.enterText(find.widgetWithText(TextField, 'Note (optional)'), 'followed a customer');
+    await t.tap(find.widgetWithText(FilledButton, 'Add to blocked list').last);
+    await t.pumpAndSettle();
+    expect(repo.blocked.map((b) => b.plate), contains('GJ14AB1234'));
+    expect(find.text('GJ14AB1234 is on the blocked list.'), findsOneWidget);
+    expect(find.text('Remove from blocked list'), findsOneWidget);
+    await t.pageBack();
+    await t.pumpAndSettle();
+    await t.tap(find.text('Blocked list').last);
+    await t.pumpAndSettle();
+    expect(find.text('GJ14AB1234'), findsOneWidget);
+    expect(find.textContaining('followed a customer'), findsOneWidget);
+    // add one by hand: a wrong plate says so, a right one is added
+    await t.tap(find.text('Add a plate'));
+    await t.pumpAndSettle();
+    await t.enterText(find.widgetWithText(TextField, 'Plate number'), 'XX');
+    await t.tap(find.widgetWithText(FilledButton, 'Add to blocked list'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('not a valid Indian plate'), findsOneWidget);
+    await t.enterText(find.widgetWithText(TextField, 'Plate number'), 'MH12AB1234');
+    await t.tap(find.widgetWithText(FilledButton, 'Add to blocked list'));
+    await t.pumpAndSettle();
+    expect(find.text('MH12AB1234'), findsOneWidget);
+    // take one off
+    await t.tap(find.byTooltip('Take MH12AB1234 off the list'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Take it off'));
+    await t.pumpAndSettle();
+    expect(find.text('MH12AB1234'), findsNothing);
+    expect(repo.blocked.map((b) => b.plate), isNot(contains('MH12AB1234')));
+  });
+
+  testWidgets('camera tiles show the latest picture and fetch it again every 5 seconds, two at a time', (t) async {
+    await phone(t);
+    final repo = _PictureRepo();
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: Column(children: [for (var i = 0; i < 4; i++) SizedBox(height: 60, child: CameraPicture(repo: repo, cameraId: 'c$i', active: true))]))));
+    await t.pump();
+    expect(repo.maxAtOnce, lessThanOrEqualTo(2), reason: 'never more than two pictures asked for at once');
+    await t.pump(const Duration(milliseconds: 400));
+    expect(repo.calls, 4, reason: 'every tile has its first picture');
+    await t.pump(const Duration(seconds: 5));
+    await t.pump(const Duration(milliseconds: 400));
+    expect(repo.calls, 8, reason: 'and again after 5 seconds');
+    expect(repo.maxAtOnce, lessThanOrEqualTo(2));
+    await t.pumpWidget(const SizedBox());       // leaving the screen stops the refresh
+    await t.pump(const Duration(seconds: 12));
+    expect(repo.calls, 8);
+  });
+
+  testWidgets('an offline camera tile fetches nothing', (t) async {
+    final repo = _PictureRepo();
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(height: 60, child: CameraPicture(repo: repo, cameraId: 'c0', active: false)))));
+    await t.pump(const Duration(seconds: 11));
+    expect(repo.calls, 0);
   });
 
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
@@ -784,6 +849,7 @@ void profileTests() {
     Setting w(String key, int def) => Setting(key, settingWords[key]!.$1, settingWords[key]!.$2, 1, 100, def);
     expect(d('crowding', [w('people', 50)], {'people': 50}).summary, 'Alert when more than 50 people inside');
     expect(d('vehicle_overstay', [w('max_hours', 8)], {'max_hours': 8}).summary, 'Alert when a vehicle stays more than 8 hours');
+    expect(d('vehicle_overstay', [w('max_minutes', 45)], {'max_minutes': 45}).summary, 'Alert when a vehicle stays more than 45 minutes');
     expect(d('queue_long', [w('length', 6), w('minutes', 5)], {'length': 6, 'minutes': 5}).summary, 'Alert when more than 6 people waiting, for at least 5 minutes');
     expect(d('connection_unstable', [w('drops', 5)], {'drops': 5}).summary, 'Alert after 5 drops in an hour');
     expect(d('daily_summary', [w('hour', 8)], {'hour': 8}).summary, 'Send it at 8 am');
@@ -844,4 +910,19 @@ class _FakeBrowser extends Browser {
   Future<ViewAsGrant?> waitForViewAs({Duration timeout = const Duration(seconds: 10)}) async => grant;
   @override
   void stopViewAs(String sessionId) => stopped = sessionId;
+}
+
+/// Hands out a tiny picture after a short wait, and counts how many were asked for at once.
+class _PictureRepo extends MockRepository {
+  int calls = 0, now = 0, maxAtOnce = 0;
+  static final _png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+  @override
+  Future<Uint8List?> snapshot(String cameraId) async {
+    calls++;
+    now++;
+    if (now > maxAtOnce) maxAtOnce = now;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    now--;
+    return _png;
+  }
 }
