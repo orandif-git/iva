@@ -1,6 +1,6 @@
 # Jas iVision design system
 
-This is the approved look and feel of the customer app (approved 11 November 2026). **Every new screen and every change follows it.** The approved prototype
+This is the approved look and feel of the customer app and the staff console (approved 11 November 2026). **Every new screen and every change follows it.** The approved prototype
 is kept in `docs/design/` (`Main`, `Live`, `Evidence`, `Setup`) and the working version of every rule below is in the app's code:
 
 | What | Where |
@@ -9,6 +9,7 @@ is kept in `docs/design/` (`Main`, `Live`, `Evidence`, `Setup`) and the working 
 | Motion and loading | `app/lib/widgets/motion.dart` (`RiseIn`, `Skeleton`, `SkeletonPage`, `SkeletonRows`, `Pressable`, `Grow`) |
 | Shared pieces | `app/lib/screens/common.dart` (`PageTitle`, `StatusPill`, `StatStrip`, `Segments`, `Group`, `GroupLabel`, `Section`, `Pill`, `Badge2`, `EmptyState`) |
 | Tab bar and top bar | `app/lib/widgets/glass_nav.dart`, `app/lib/main.dart` (`Shell`) |
+| Staff console (`/staff`) | the "design system" block at the end of `backend/web/css/app.css`: the same tokens as CSS variables, fonts in `backend/web/css/fonts/` |
 
 Use these pieces. Do not write a colour, a corner size or an animation by hand in a screen: if something is missing, add it to the shared files first.
 
