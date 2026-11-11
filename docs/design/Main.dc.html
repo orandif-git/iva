@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jas iVision app prototype</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+a{color:#0B6FB8}a:hover{color:#0A3D73}
+@keyframes ivRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes ivSlide{from{opacity:.4;transform:translateX(100%)}to{opacity:1;transform:none}}
+@keyframes ivShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+@keyframes ivGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes ivPop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+button:active{transform:scale(.97)}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: #F4F6FA; font-family: Inter, system-ui, sans-serif; color: #0E1726">
+
+  <!-- top bar -->
+  <div style="height: 64px; padding: 0 16px; display: flex; align-items: center; gap: 10px; background: #FFFFFF; border-bottom: 1px solid #E3E8F0; box-sizing: border-box">
+    <svg aria-hidden="true" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="#0A3D73" stroke-width="2.4" stroke-linecap="round"><path d="M3 9V5a2 2 0 0 1 2-2h4M21 3h4a2 2 0 0 1 2 2v4M27 21v4a2 2 0 0 1-2 2h-4M9 27H5a2 2 0 0 1-2-2v-4"/><circle cx="15" cy="15" r="5.5" stroke="#138BE0"/><circle cx="15" cy="15" r="1.6" fill="#138BE0" stroke="none"/></svg>
+    <div style="flex: 1; line-height: 1">
+      <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 18px; letter-spacing: -0.3px; color: #0A3D73">Jas iVision</div>
+      <div style="font-size: 11.5px; color: #55627A; margin-top: 3px">Green Valley Store</div>
+    </div>
+    <button onClick="{{openAlerts}}" aria-label="Alerts" style="position: relative; width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 0">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7 2.5 7h-17S6 15 6 9zM10 20a2 2 0 0 0 4 0"/></svg>
+      <sc-if value="{{hasAlerts}}" hint-placeholder-val="{{true}}">
+        <span style="position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #B42318; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; border: 2px solid #FFFFFF; animation: ivPop 0.35s ease both">{{alertCount}}</span>
+      </sc-if>
+    </button>
+    <button onClick="{{goMore}}" aria-label="Your profile" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 700; font-size: 16px; padding: 0">P</button>
+  </div>
+
+  <!-- screens -->
+  <div style="height: 780px; overflow-y: auto; box-sizing: border-box; padding: 16px 16px 120px">
+
+    <!-- LOADING: a shimmer in the shape of the screen, for a moment while it loads -->
+    <sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+      <div role="status" aria-label="Loading" style="display: flex; flex-direction: column; gap: 14px">
+        <div style="width: 62%; height: 30px; border-radius: 10px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+        <div style="width: 44%; height: 22px; border-radius: 11px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+        <div style="height: 210px; border-radius: 22px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+        <div style="height: 84px; border-radius: 22px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+        <div style="display: flex; gap: 12px">
+          <div style="flex: 1; height: 120px; border-radius: 16px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+          <div style="flex: 1; height: 120px; border-radius: 16px; background: linear-gradient(90deg, #E3E8F0 25%, #F1F4F9 50%, #E3E8F0 75%); background-size: 200% 100%; animation: ivShimmer 1.1s linear infinite"></div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- HOME -->
+    <sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+      <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+        <div>
+          <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.6px">Good morning, Priya</div>
+          <div style="display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 12px; border-radius: 16px; background: #DDF4E6; color: #0B6B3A; font-size: 13px; font-weight: 600">
+            <span style="width: 8px; height: 8px; border-radius: 4px; background: #0B6B3A"></span>All 8 cameras are working
+          </div>
+        </div>
+
+        <sc-if value="{{hasTop}}" hint-placeholder-val="{{true}}">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+            <div style="padding: 14px 16px 10px; display: flex; align-items: center; gap: 8px">
+              <span style="width: 8px; height: 8px; border-radius: 4px; background: #B42318"></span>
+              <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.6px; color: #B42318">NEEDS YOU</span>
+              <span style="flex: 1"></span>
+              <button onClick="{{openAlerts}}" style="border: none; background: none; color: #0B6FB8; font-weight: 600; font-size: 13.5px; min-height: 44px; padding: 0 4px">See all</button>
+            </div>
+            <div style="margin: 0 16px; height: 150px; border-radius: 14px; background: #1B2A41; position: relative; display: flex; align-items: flex-end">
+              <div style="position: absolute; left: 22%; top: 30%; width: 34%; height: 46%; border: 2px solid #F5C635; border-radius: 6px"></div>
+              <span style="margin: 10px; padding: 4px 8px; border-radius: 8px; background: rgba(14,23,38,0.72); color: #FFFFFF; font-size: 11.5px">Picture placeholder · {{top.where}}</span>
+            </div>
+            <div style="padding: 12px 16px 16px">
+              <div style="font-weight: 700; font-size: 16px">{{top.title}}</div>
+              <div style="color: #55627A; font-size: 13.5px; margin-top: 2px">{{top.where}} · {{top.time}}</div>
+              <div style="display: flex; gap: 10px; margin-top: 12px">
+                <button onClick="{{top.done}}" style="flex: 1; height: 46px; border-radius: 14px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 15px">Done</button>
+                <button onClick="{{top.done}}" style="flex: 1; height: 46px; border-radius: 14px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 15px">Snooze 1 hour</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{noAlerts}}" hint-placeholder-val="{{false}}">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; padding: 22px 16px; display: flex; align-items: center; gap: 14px">
+            <div style="width: 44px; height: 44px; border-radius: 22px; background: #DDF4E6; display: flex; align-items: center; justify-content: center">
+              <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B6B3A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+            </div>
+            <div><div style="font-weight: 700; font-size: 16px">Nothing needs you</div><div style="color: #55627A; font-size: 13.5px">We will message you on WhatsApp if something happens.</div></div>
+          </div>
+        </sc-if>
+
+        <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))">
+          <div style="padding: 16px 14px"><div style="color: #55627A; font-size: 12.5px">People in</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; margin-top: 4px">342</div></div>
+          <div style="padding: 16px 14px; border-left: 1px solid #E3E8F0"><div style="color: #55627A; font-size: 12.5px">Busiest</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; margin-top: 4px">5 pm</div></div>
+          <div style="padding: 16px 14px; border-left: 1px solid #E3E8F0"><div style="color: #55627A; font-size: 12.5px">Vehicles</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; margin-top: 4px">27</div></div>
+        </div>
+
+        <div style="display: flex; align-items: center">
+          <div style="flex: 1; font-weight: 700; font-size: 16px">Your cameras</div>
+          <button onClick="{{goCams}}" style="border: none; background: none; color: #0B6FB8; font-weight: 600; font-size: 13.5px; min-height: 44px; padding: 0 4px">See all</button>
+        </div>
+        <div style="display: flex; gap: 12px; overflow-x: auto; margin: -6px -16px 0; padding: 0 16px 4px">
+          <sc-for list="{{strip}}" as="c" hint-placeholder-count="3">
+            <button onClick="{{goCams}}" style="flex: 0 0 150px; padding: 0; border: none; background: none; text-align: left">
+              <div style="height: 96px; border-radius: 16px; background: #1B2A41; display: flex; align-items: flex-end">
+                <span style="margin: 8px; padding: 3px 8px; border-radius: 10px; background: #DDF4E6; color: #0B6B3A; font-size: 11px; font-weight: 600">Live</span>
+              </div>
+              <div style="font-weight: 600; font-size: 14px; margin-top: 8px; color: #0E1726">{{c.name}}</div>
+              <div style="color: #55627A; font-size: 12.5px">{{c.sub}}</div>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- CAMERAS -->
+    <sc-if value="{{isCams}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+        <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.6px">Cameras</div>
+        <div style="display: flex; gap: 8px">
+          <span style="padding: 9px 14px; border-radius: 20px; background: #0E1726; color: #FFFFFF; font-size: 13.5px; font-weight: 600">All 8</span>
+          <span style="padding: 9px 14px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E3E8F0; color: #0E1726; font-size: 13.5px; font-weight: 600">Store recorder</span>
+          <span style="padding: 9px 14px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E3E8F0; color: #0E1726; font-size: 13.5px; font-weight: 600">Godown</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+          <sc-for list="{{cams}}" as="c" hint-placeholder-count="6">
+            <a href="Live.dc.html" style="display: block; text-decoration: none; background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 18px; overflow: hidden; color: #0E1726">
+              <div style="height: 104px; background: #1B2A41; display: flex; align-items: flex-start">
+                <span style="margin: 8px; padding: 3px 8px; border-radius: 10px; background: {{c.pillBg}}; color: {{c.pillInk}}; font-size: 11px; font-weight: 600">{{c.status}}</span>
+              </div>
+              <div style="padding: 10px 12px 12px">
+                <div style="font-weight: 600; font-size: 14.5px">{{c.name}}</div>
+                <div style="color: #55627A; font-size: 12.5px; margin-top: 1px">{{c.sub}}</div>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- AI WATCH -->
+    <sc-if value="{{isWatch}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+        <div style="display: flex; align-items: center">
+          <div style="flex: 1; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.6px">AI Watch</div>
+          <a href="Setup.dc.html" style="height: 44px; padding: 0 16px; border-radius: 22px; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 14.5px; text-decoration: none; display: flex; align-items: center; gap: 6px">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New alert</a>
+        </div>
+        <div style="color: #55627A; font-size: 14px; margin-top: -6px">What iVision watches for you. Switch any of them off at any time.</div>
+        <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+          <sc-for list="{{rules}}" as="r" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 16px; border-top: 1px solid {{r.line}}">
+              <div style="width: 40px; height: 40px; border-radius: 12px; background: {{r.tint}}; display: flex; align-items: center; justify-content: center">
+                <span style="width: 12px; height: 12px; border-radius: 6px; background: {{r.ink}}"></span>
+              </div>
+              <div style="flex: 1; min-width: 0">
+                <div style="font-weight: 600; font-size: 15px">{{r.title}}</div>
+                <div style="color: #55627A; font-size: 12.5px; margin-top: 1px">{{r.sub}}</div>
+              </div>
+              <button onClick="{{r.toggle}}" aria-label="{{r.aria}}" style="width: 52px; height: 44px; padding: 0; border: none; background: none; display: flex; align-items: center">
+                <span style="display: block; width: 52px; height: 30px; border-radius: 15px; background: {{r.track}}; position: relative; transition: background 0.22s ease"><span style="position: absolute; top: 3px; left: {{r.knob}}px; width: 24px; height: 24px; border-radius: 12px; background: #FFFFFF; transition: left 0.22s cubic-bezier(0.3, 1.4, 0.5, 1)"></span></span>
+              </button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ACTIVITY -->
+    <sc-if value="{{isActivity}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+        <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.6px">Activity</div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #E9EDF4; border-radius: 16px">
+          <sc-for list="{{sections}}" as="s" hint-placeholder-count="4">
+            <button onClick="{{s.pick}}" style="height: 40px; border: none; border-radius: 12px; background: {{s.bg}}; color: #0E1726; font-weight: {{s.weight}}; font-size: 13.5px">{{s.label}}</button>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <button onClick="{{nextPeriod}}" style="height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B6FB8" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>{{period}}
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#55627A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <span style="color: #55627A; font-size: 13px">Tap to change the period</span>
+        </div>
+
+        <sc-if value="{{aPeople}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+            <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr))">
+              <div style="padding: 16px"><div style="color: #55627A; font-size: 12.5px">People in</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 28px; font-weight: 700; margin-top: 4px">{{pIn}}</div></div>
+              <div style="padding: 16px; border-left: 1px solid #E3E8F0"><div style="color: #55627A; font-size: 12.5px">People out</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 28px; font-weight: 700; margin-top: 4px">{{pOut}}</div></div>
+            </div>
+            <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; padding: 16px">
+              <div style="font-weight: 600; font-size: 14.5px">People in, through the day</div>
+              <div style="display: flex; align-items: flex-end; gap: 6px; height: 140px; margin-top: 14px">
+                <sc-for list="{{bars}}" as="b" hint-placeholder-count="12">
+                  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; justify-content: flex-end; height: 140px">
+                    <div style="width: 100%; height: {{b.h}}px; border-radius: 6px; background: {{b.color}}; transform-origin: bottom; animation: ivGrow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) {{b.delay}}s both"></div>
+                    <span style="font-size: 10.5px; color: #55627A">{{b.label}}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{aVehicles}}" hint-placeholder-val="{{false}}">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+            <sc-for list="{{plates}}" as="p" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid {{p.line}}">
+                <div style="width: 68px; height: 48px; border-radius: 10px; background: #1B2A41"></div>
+                <div style="flex: 1"><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: {{p.ink}}">{{p.plate}}</div><div style="color: #55627A; font-size: 12.5px">{{p.sub}}</div></div>
+                <span style="padding: 4px 9px; border-radius: 10px; background: {{p.tagBg}}; color: {{p.tagInk}}; font-size: 11.5px; font-weight: 600">{{p.tag}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{aAreas}}" hint-placeholder-val="{{false}}">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; padding: 16px">
+            <div style="display: flex; align-items: center"><div style="flex: 1"><div style="font-weight: 700; font-size: 15.5px">Queue too long</div><div style="color: #55627A; font-size: 13px">More than 6 waiting for 5 minutes</div></div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 28px; font-weight: 700">2</div></div>
+            <div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="flex: 0 0 110px; font-size: 13.5px">Billing queue</span><div style="flex: 1; height: 8px; border-radius: 4px; background: #EEEAFE"><div style="width: 100%; height: 8px; border-radius: 4px; background: #5B45D6"></div></div><span style="font-weight: 700; font-size: 13.5px">2</span></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{aHealth}}" hint-placeholder-val="{{false}}">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr))">
+            <div style="padding: 16px"><div style="color: #55627A; font-size: 12.5px">Cameras working</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700; margin-top: 4px">8 of 8</div></div>
+            <div style="padding: 16px; border-left: 1px solid #E3E8F0"><div style="color: #55627A; font-size: 12.5px">Recorders online</div><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700; margin-top: 4px">2 of 2</div></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- MORE -->
+    <sc-if value="{{isMore}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+        <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; padding: 16px; display: flex; align-items: center; gap: 14px">
+          <div style="width: 52px; height: 52px; border-radius: 26px; background: #0B6FB8; color: #FFFFFF; font-weight: 700; font-size: 20px; display: flex; align-items: center; justify-content: center">P</div>
+          <div style="flex: 1"><div style="font-weight: 700; font-size: 16.5px">Priya Shah</div><div style="color: #55627A; font-size: 13px">Owner · Green Valley Store</div></div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+          <sc-for list="{{moreRows}}" as="m" hint-placeholder-count="4">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 15px 14px 15px 16px; border-top: 1px solid {{m.line}}">
+              <div style="width: 38px; height: 38px; border-radius: 12px; background: #E6F1FB; display: flex; align-items: center; justify-content: center"><span style="width: 12px; height: 12px; border-radius: 3px; background: #0B6FB8"></span></div>
+              <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">{{m.title}}</div><div style="color: #55627A; font-size: 12.5px">{{m.sub}}</div></div>
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8792A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </sc-for>
+        </div>
+        <button style="height: 50px; border-radius: 16px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #B42318; font-weight: 600; font-size: 15px">Sign out</button>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- alerts sheet (from the bell) -->
+  <sc-if value="{{showAlerts}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: #F4F6FA; display: flex; flex-direction: column; animation: ivSlide 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+      <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; background: #FFFFFF; border-bottom: 1px solid #E3E8F0; box-sizing: border-box">
+        <button onClick="{{closeAlerts}}" aria-label="Back" style="width: 48px; height: 48px; border: none; background: none; display: flex; align-items: center; justify-content: center; padding: 0">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 20px">Alerts</div>
+      </div>
+      <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <sc-if value="{{noAlerts}}" hint-placeholder-val="{{false}}">
+          <div style="text-align: center; padding: 60px 20px; color: #55627A; font-size: 15px"><div style="font-weight: 700; font-size: 18px; color: #0E1726; margin-bottom: 6px">All caught up</div>Nothing needs you right now.</div>
+        </sc-if>
+        <sc-for list="{{open}}" as="a" hint-placeholder-count="2">
+          <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 20px; padding: 14px 16px 16px">
+            <div style="display: flex; gap: 12px; align-items: center">
+              <div style="width: 64px; height: 48px; border-radius: 10px; background: #1B2A41"></div>
+              <div style="flex: 1"><div style="font-weight: 700; font-size: 15.5px">{{a.title}}</div><div style="color: #55627A; font-size: 13px; margin-top: 1px">{{a.where}} · {{a.time}}</div></div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 12px">
+              <a href="Evidence.dc.html" style="flex: 1; height: 44px; border-radius: 14px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 14.5px; text-decoration: none; display: flex; align-items: center; justify-content: center">See what happened</a>
+              <button onClick="{{a.done}}" style="flex: 0 0 96px; height: 44px; border-radius: 14px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 14.5px">Done</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- floating tab bar -->
+  <sc-if value="{{showBar}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; left: 16px; right: 16px; bottom: 14px; height: 68px; border-radius: 34px; background: #FFFFFF; border: 1px solid #E3E8F0; box-shadow: 0 10px 28px rgba(14,23,38,0.14); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 6px; box-sizing: border-box">
+      <button onClick="{{goHome}}" style="border: none; border-radius: 28px; background: {{tHome.bg}}; color: {{tHome.color}}; font-weight: {{tHome.weight}}; font-size: 10.5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; transition: background 0.25s ease, color 0.25s ease, transform 0.12s ease">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>Home</button>
+      <button onClick="{{goCams}}" style="border: none; border-radius: 28px; background: {{tCams.bg}}; color: {{tCams.color}}; font-weight: {{tCams.weight}}; font-size: 10.5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; transition: background 0.25s ease, color 0.25s ease, transform 0.12s ease">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="4" rx="1"/><path d="M19 7v7a7 7 0 0 1-14 0V7"/><circle cx="12" cy="14" r="3"/></svg>Cameras</button>
+      <button onClick="{{goWatch}}" style="border: none; border-radius: 28px; background: {{tWatch.bg}}; color: {{tWatch.color}}; font-weight: {{tWatch.weight}}; font-size: 10.5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; transition: background 0.25s ease, color 0.25s ease, transform 0.12s ease">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>AI Watch</button>
+      <button onClick="{{goActivity}}" style="border: none; border-radius: 28px; background: {{tActivity.bg}}; color: {{tActivity.color}}; font-weight: {{tActivity.weight}}; font-size: 10.5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; transition: background 0.25s ease, color 0.25s ease, transform 0.12s ease">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20v-6M12 20V5M19 20v-9"/></svg>Activity</button>
+      <button onClick="{{goMore}}" style="border: none; border-radius: 28px; background: {{tMore.bg}}; color: {{tMore.color}}; font-weight: {{tMore.weight}}; font-size: 10.5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; transition: background 0.25s ease, color 0.25s ease, transform 0.12s ease">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/></svg>More</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.state || {};
+    const tab = s.tab || 'home', sec = s.sec || 'people', off = s.off || {}, done = s.done || {};
+    const periods = ['Today', 'Yesterday', '7 days', '30 days'];
+    const pi = s.pi || 0;
+    // Changing place shows the shimmer for a moment, then the screen rises in (a stand-in for the real loading time).
+    const go = (t) => () => {
+      if (t === tab && !s.alerts) return;
+      this.setState({ tab: t, alerts: false, loading: true });
+      clearTimeout(this._load);
+      this._load = setTimeout(() => this.setState({ loading: false }), 480);
+    };
+    const loading = !!s.loading;
+    const t = (id) => ({ color: tab === id ? '#0B6FB8' : '#55627A', bg: tab === id ? '#E6F1FB' : 'transparent', weight: tab === id ? '700' : '500' });
+    const all = [
+      { id: 'a1', title: '9 people waiting for 6 minutes', where: 'Billing queue', time: '10:42 am' },
+      { id: 'a2', title: 'Blocked vehicle GJ05CD9876', where: 'Parking', time: '9:12 am' }
+    ];
+    const open = all.filter((a) => !done[a.id]).map((a) => ({ ...a, done: () => this.setState({ done: { ...done, [a.id]: true } }) }));
+    const rules = [
+      { id: 'r1', title: 'Camera offline', sub: 'A camera stops sending pictures', smart: false },
+      { id: 'r2', title: 'Recorder offline', sub: 'The recorder loses its link', smart: false },
+      { id: 'r3', title: 'Queue too long', sub: 'Billing queue · more than 6 for 5 min', smart: true },
+      { id: 'r4', title: 'Too many people', sub: 'More than 50 people inside', smart: true },
+      { id: 'r5', title: 'Blocked vehicle seen', sub: 'A plate on your blocked list', smart: true }
+    ].map((r, i) => {
+      const on = !off[r.id];
+      return { ...r, line: i === 0 ? 'transparent' : '#E3E8F0', tint: r.smart ? '#EEEAFE' : '#DDF4E6', ink: r.smart ? '#5B45D6' : '#0B6B3A', track: on ? '#0B6FB8' : '#C5CCD9', knob: on ? 25 : 3,
+        aria: r.title + (on ? ' is on' : ' is off'), toggle: () => this.setState({ off: { ...off, [r.id]: on } }) };
+    });
+    const scale = [1, 1.15, 6.4, 27][pi];
+    const heights = [22, 34, 40, 52, 61, 70, 66, 78, 92, 110, 84, 58];
+    const labels = ['9', '', '11', '', '1', '', '3', '', '5', '', '7', ''];
+    return {
+      isLoading: loading,
+      isHome: !loading && tab === 'home', isCams: !loading && tab === 'cams', isWatch: !loading && tab === 'watch', isActivity: !loading && tab === 'activity', isMore: !loading && tab === 'more',
+      tHome: t('home'), tCams: t('cams'), tWatch: t('watch'), tActivity: t('activity'), tMore: t('more'),
+      goHome: go('home'), goCams: go('cams'), goWatch: go('watch'), goActivity: go('activity'), goMore: go('more'),
+      showAlerts: !!s.alerts, showBar: !s.alerts,
+      openAlerts: () => this.setState({ alerts: true }), closeAlerts: () => this.setState({ alerts: false }),
+      open, hasAlerts: open.length > 0, noAlerts: open.length === 0, alertCount: open.length, hasTop: open.length > 0, top: open[0] || {},
+      strip: [{ name: 'Front door', sub: 'Counting people' }, { name: 'Billing queue', sub: 'Watching the queue' }, { name: 'Parking', sub: 'Reading plates' }],
+      cams: ['Front door', 'Cash counter', 'Aisle 1', 'Aisle 2', 'Billing queue', 'Parking', 'Back door', 'Stockroom'].map((n, i) => ({
+        name: n, sub: i < 6 ? 'Store recorder' : 'Godown recorder', status: 'Live', pillBg: '#DDF4E6', pillInk: '#0B6B3A' })),
+      rules,
+      sections: [['people', 'People'], ['vehicles', 'Vehicles'], ['areas', 'Areas'], ['health', 'Health']].map(([id, label]) => ({
+        label, bg: sec === id ? '#FFFFFF' : 'transparent', weight: sec === id ? '700' : '500', pick: () => this.setState({ sec: id }) })),
+      aPeople: sec === 'people', aVehicles: sec === 'vehicles', aAreas: sec === 'areas', aHealth: sec === 'health',
+      period: periods[pi], nextPeriod: () => this.setState({ pi: (pi + 1) % 4 }),
+      pIn: Math.round(342 * scale), pOut: Math.round(324 * scale),
+      bars: heights.map((h, i) => ({ h, label: labels[i], color: h === 110 ? '#0B6FB8' : '#B9D8F2', delay: (i * 0.035).toFixed(3) })),
+      plates: [
+        { plate: 'GJ14AB1234', sub: 'In · 9:30 am · Car', tag: 'Read', tagBg: '#E9EDF4', tagInk: '#0E1726', ink: '#0E1726' },
+        { plate: 'GJ05CD9876', sub: 'Out · 9:12 am · Truck', tag: 'Blocked', tagBg: '#FDE7E4', tagInk: '#B42318', ink: '#B42318' },
+        { plate: 'MH12QR4471', sub: 'In · 8:55 am · Bike', tag: 'Check', tagBg: '#FFF0D1', tagInk: '#7A4700', ink: '#0E1726' }
+      ].map((p, i) => ({ ...p, line: i === 0 ? 'transparent' : '#E3E8F0' })),
+      moreRows: [
+        { title: 'Reports', sub: '2 scheduled, sent on WhatsApp' }, { title: 'People who get alerts', sub: '3 people' },
+        { title: 'Recorders', sub: '2 online' }, { title: 'Appearance', sub: 'Light' }
+      ].map((m, i) => ({ ...m, line: i === 0 ? 'transparent' : '#E3E8F0' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

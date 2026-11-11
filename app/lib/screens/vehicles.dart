@@ -7,8 +7,8 @@ import '../api_client.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
-import '../widgets/brand.dart';
 import 'common.dart';
+import '../widgets/motion.dart';
 
 String _when(DateTime? d) {
   if (d == null) return '';
@@ -98,7 +98,7 @@ class _VehiclesTabState extends State<VehiclesTab> {
       if (error != null)
         EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the plates', text: error!, action: OutlinedButton(onPressed: () => _load(reset: true), child: const Text('Try again')))
       else if (loading)
-        const Padding(padding: EdgeInsets.all(40), child: Loading())
+        const SkeletonRows()
       else if (items.isEmpty)
         EmptyState(icon: Icons.directions_car_outlined, title: q.text.isEmpty ? 'No vehicles read' : 'No plates match', text: q.text.isEmpty ? 'No plates were read in this period. Plates appear here with the picture taken at the time. Turn on plate reading when you add a camera at a gate.' : 'Try fewer letters, for example just GJ14.')
       else ...[
@@ -364,7 +364,7 @@ class _BlockedListPageState extends State<BlockedListPage> {
             future: data,
             builder: (context, snap) {
               if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the list', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-              if (!snap.hasData) return const Loading();
+              if (!snap.hasData) return const Padding(padding: EdgeInsets.all(16), child: SkeletonRows());
               final (me, list) = snap.data!;
               final admin = me.role == 'admin';
               return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 40), children: [

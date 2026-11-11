@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:ivision_app/screens/common.dart' show Segments;
 import 'package:ivision_app/api_client.dart';
 import 'package:ivision_app/browser.dart';
 import 'package:ivision_app/geometry/polygon.dart';
@@ -294,7 +295,7 @@ void profileTests() {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
-    expect(find.bySemanticsLabel('Jas iVision'), findsWidgets);
+    expect(find.bySemanticsLabel(RegExp('Jas iVision')), findsWidgets);
     expect(find.byType(ProfileButton), findsOneWidget);
     expect(find.text('Home'), findsOneWidget, reason: 'only the tab says Home');
     expect(find.byIcon(Icons.dark_mode_outlined), findsNothing, reason: 'the light/dark switch lives in the profile menu');
@@ -441,11 +442,13 @@ void profileTests() {
     await phone(t);
     await t.pumpWidget(IVisionApp(repo: MockRepository()));
     await t.pumpAndSettle();
-    final bar = t.getRect(find.descendant(of: find.byType(AppTabBar), matching: find.byType(BackdropFilter)));
+    final bar = t.getRect(find.byKey(const ValueKey('tab-bar-pill')));
     expect(bar.left, greaterThan(8), reason: 'not edge to edge');
     expect(bar.right, lessThan(390 - 8));
     expect(bar.bottom, lessThan(844 - 4), reason: 'it hovers, it does not sit on the edge of the screen');
-    expect(find.descendant(of: find.byType(AppTabBar), matching: find.byType(ClipRRect)), findsWidgets);
+    final box = t.widget<Container>(find.byKey(const ValueKey('tab-bar-pill'))).decoration as BoxDecoration;
+    expect(box.borderRadius, BorderRadius.circular(34), reason: 'a pill');
+    expect(box.boxShadow, isNotEmpty, reason: 'a soft shadow lifts it off the page');
   });
 
   testWidgets('Cameras are grouped by recorder and tell you if they are all working', (t) async {
@@ -885,7 +888,7 @@ void profileTests() {
     await t.tap(find.text('Activity').last);
     await t.pumpAndSettle();
     for (final x in ['People', 'Vehicles', 'Areas', 'Health']) {
-      expect(find.widgetWithText(SegmentedButton<Section>, x), findsOneWidget, reason: x);
+      expect(find.widgetWithText(Segments<Section>, x), findsOneWidget, reason: x);
     }
     // one tidy row of pull-down filters: the period, and (when there is more than one) the camera; the exact dates are written under them
     expect(find.widgetWithText(FilterMenu<Period>, 'Today'), findsOneWidget);
@@ -946,15 +949,15 @@ void profileTests() {
     await t.pumpAndSettle();
     await t.tap(find.text('Activity').last);
     await t.pumpAndSettle();
-    expect(find.byType(SegmentedButton<Section>), findsNothing, reason: 'only Health is left, so there is nothing to choose between');
+    expect(find.byType(Segments<Section>), findsNothing, reason: 'only Health is left, so there is nothing to choose between');
     expect(find.text('Cameras working'), findsOneWidget);
     await t.pumpWidget(IVisionApp(key: UniqueKey(), repo: _SetupRepo(footfall: true, plates: false, smartOn: true)));
     await t.pumpAndSettle();
     await t.tap(find.text('Activity').last);
     await t.pumpAndSettle();
-    expect(find.widgetWithText(SegmentedButton<Section>, 'People'), findsOneWidget);
-    expect(find.widgetWithText(SegmentedButton<Section>, 'Areas'), findsOneWidget);
-    expect(find.descendant(of: find.byType(SegmentedButton<Section>), matching: find.text('Vehicles')), findsNothing);
+    expect(find.widgetWithText(Segments<Section>, 'People'), findsOneWidget);
+    expect(find.widgetWithText(Segments<Section>, 'Areas'), findsOneWidget);
+    expect(find.descendant(of: find.byType(Segments<Section>), matching: find.text('Vehicles')), findsNothing);
   });
 
   testWidgets('Vehicles lists every plate read, searches, and the owner can add one to the blocked list and manage that list', (t) async {

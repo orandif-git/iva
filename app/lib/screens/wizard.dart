@@ -9,6 +9,7 @@ import '../theme.dart';
 import '../widgets/brand.dart';
 import '../widgets/area_editor.dart';
 import 'common.dart';
+import '../widgets/motion.dart';
 
 IconData iconFor(AlertDef d) => iconForType(d.type, smart: d.smart);
 
@@ -205,7 +206,7 @@ class _AlertWizardState extends State<AlertWizard> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                     children: [
                       if (step < 6) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('Step $stepNo of 5 · ${_stages[stepNo - 1]}', style: TextStyle(color: t.fg2, fontWeight: FontWeight.w600, fontSize: 13))),
-                      if (loading) const Padding(padding: EdgeInsets.all(40), child: Loading()) else ...switch (step) { 1 => _kind(t), 2 => _alert(t), 3 => _where(t), 4 => _settings(t), 5 => _who(t), _ => _done(t) },
+                      if (loading) const SkeletonRows() else ...switch (step) { 1 => _kind(t), 2 => _alert(t), 3 => _where(t), 4 => _settings(t), 5 => _who(t), _ => _done(t) },
                       if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
                     ],
                   ),

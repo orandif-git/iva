@@ -84,6 +84,11 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.otf
           weight: 700
+    # Headings and big numbers (SIL Open Font Licence, see assets/fonts/SpaceGrotesk-OFL.txt)
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

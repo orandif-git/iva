@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/motion.dart';
 
 enum Level { ok, warn, bad, ai, mute }
 
@@ -66,7 +67,7 @@ class Section extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     return Container(
-        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.line)),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
         padding: EdgeInsets.all(cardPad(context)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -95,7 +96,7 @@ class EmptyState extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 64, height: 64, decoration: BoxDecoration(color: t.brandSoft, shape: BoxShape.circle), child: Icon(icon, color: t.brand, size: 30)),
           const SizedBox(height: 14),
-          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700), textAlign: TextAlign.center),
+          Text(title, style: display(18), textAlign: TextAlign.center),
           const SizedBox(height: 4),
           Text(text, style: TextStyle(color: t.fg2), textAlign: TextAlign.center),
           if (action != null) ...[const SizedBox(height: 14), action!],
@@ -153,7 +154,7 @@ class Group extends StatelessWidget {
       rows.add(children[i]);
     }
     return Container(
-      decoration: bare ? null : BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.line)),
+      decoration: bare ? null : BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
       clipBehavior: bare ? Clip.none : Clip.antiAlias,
       padding: padding,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
@@ -174,6 +175,111 @@ class GroupLabel extends StatelessWidget {
       child: Row(children: [
         Expanded(child: Semantics(header: true, child: Text(text.toUpperCase(), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: .6, color: t.fg2)))),
         if (trailing != null) trailing!,
+      ]),
+    );
+  }
+}
+
+/// The name of a screen at the top of its page: Space Grotesk, 26. One per screen, with an optional line under it and an action on the right.
+class PageTitle extends StatelessWidget {
+  const PageTitle(this.text, {super.key, this.subtitle, this.trailing});
+  final String text;
+  final String? subtitle;
+  final Widget? trailing;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Semantics(header: true, child: Text(text, style: display(26)))),
+        if (trailing != null) trailing!,
+      ]),
+      if (subtitle != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(subtitle!, style: TextStyle(color: t.fg2, fontSize: 14))),
+    ]);
+  }
+}
+
+/// The answer in one soft pill with a dot: "All 8 cameras are working".
+class StatusPill extends StatelessWidget {
+  const StatusPill(this.text, this.level, {super.key});
+  final String text;
+  final Level level;
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = levelColors(Tok.of(context), level);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)),
+        const SizedBox(width: 8),
+        Flexible(child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 13))),
+      ]),
+    );
+  }
+}
+
+/// Figures side by side in one card: a small label above a big number, with hairlines between them.
+class StatStrip extends StatelessWidget {
+  const StatStrip(this.items, {super.key});
+  final List<(String label, String value)> items;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Container(
+      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
+      child: IntrinsicHeight(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) VerticalDivider(width: 1, thickness: 1, color: t.line),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 16, 10, 16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(items[i].$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.fg2, fontSize: 12.5)),
+                  const SizedBox(height: 4),
+                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(items[i].$2, style: display(26).copyWith(fontFeatures: const [FontFeature.tabularFigures()]))),
+                ]),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// A choice between a few things, as one soft bar with a white pill on the chosen one (People · Vehicles · Areas · Health).
+class Segments<T> extends StatelessWidget {
+  const Segments({super.key, required this.items, required this.value, required this.onChanged});
+  final List<(T, String)> items;
+  final T value;
+  final ValueChanged<T> onChanged;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: t.surface2, borderRadius: BorderRadius.circular(Radii.button)),
+      child: Row(children: [
+        for (final (v, label) in items)
+          Expanded(
+            child: Pressable(
+              label: label,
+              selected: v == value,
+              onTap: () => onChanged(v),
+              child: ExcludeSemantics(
+                child: AnimatedContainer(
+                  duration: reduceMotion(context) ? Duration.zero : Motion.quick,
+                  height: 44,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(color: v == value ? t.surface : Colors.transparent, borderRadius: BorderRadius.circular(12), boxShadow: v == value ? [BoxShadow(color: t.shadow.withValues(alpha: .08), blurRadius: 4, offset: const Offset(0, 1))] : null),
+                  child: FittedBox(fit: BoxFit.scaleDown, child: Text(label, maxLines: 1, style: TextStyle(fontSize: 13.5, fontWeight: v == value ? FontWeight.w700 : FontWeight.w500, color: t.fg))),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }

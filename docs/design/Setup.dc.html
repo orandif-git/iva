@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up a new alert</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+a{color:#0B6FB8}a:hover{color:#0A3D73}
+@keyframes ivRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes ivFill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+button:active{transform:scale(.97)}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F4F6FA; font-family: Inter, system-ui, sans-serif; color: #0E1726; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 16px 0 4px; display: flex; align-items: center; background: #FFFFFF; box-sizing: border-box">
+    <a href="Main.dc.html" aria-label="Close" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </a>
+    <div style="flex: 1; font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 19px">New alert</div>
+    <span style="color: #55627A; font-size: 13px; font-weight: 600">Step 3 of 4</span>
+  </div>
+  <!-- progress: four short bars -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 0 16px 12px; background: #FFFFFF; border-bottom: 1px solid #E3E8F0">
+    <div style="height: 4px; border-radius: 2px; background: #0B6FB8"></div>
+    <div style="height: 4px; border-radius: 2px; background: #0B6FB8"></div>
+    <div style="height: 4px; border-radius: 2px; background: #0B6FB8; transform-origin: left; animation: ivFill 0.45s ease both"></div>
+    <div style="height: 4px; border-radius: 2px; background: #DCE3EE"></div>
+  </div>
+
+  <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+    <!-- the alert as one sentence that changes as you set it -->
+    <div style="padding: 14px 16px; border-radius: 18px; background: #E6F1FB; color: #0A3D73; font-size: 15px; font-weight: 600; line-height: 1.45">Tell me when more than 6 people wait at the Billing queue for 5 minutes or more.</div>
+
+    <!-- draw the area -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+      <div style="height: 190px; background: #1B2A41; position: relative">
+        <svg aria-hidden="true" width="100%" height="190" viewBox="0 0 358 190" style="position: absolute; left: 0; top: 0"><polygon points="70,46 262,40 290,150 54,156" fill="rgba(245,198,53,0.22)" stroke="#F5C635" stroke-width="2.5"/><circle cx="70" cy="46" r="8" fill="#FFFFFF" stroke="#0B6FB8" stroke-width="3"/><circle cx="262" cy="40" r="8" fill="#FFFFFF" stroke="#0B6FB8" stroke-width="3"/><circle cx="290" cy="150" r="8" fill="#FFFFFF" stroke="#0B6FB8" stroke-width="3"/><circle cx="54" cy="156" r="8" fill="#FFFFFF" stroke="#0B6FB8" stroke-width="3"/></svg>
+        <span style="position: absolute; left: 12px; bottom: 10px; padding: 4px 8px; border-radius: 8px; background: rgba(14,23,38,0.72); color: #FFFFFF; font-size: 11.5px">Picture placeholder · Billing queue camera</span>
+      </div>
+      <div style="padding: 12px 16px 14px; display: flex; align-items: center; gap: 10px">
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 14.5px">Area is set</div><div style="color: #55627A; font-size: 12.5px">Drag a corner to reshape it</div></div>
+        <button style="height: 44px; padding: 0 14px; border-radius: 14px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 14px">Redraw</button>
+      </div>
+    </div>
+
+    <!-- the numbers: big, with plus and minus -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+      <div style="display: flex; align-items: center; padding: 12px 12px 12px 16px">
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">More than</div><div style="color: #55627A; font-size: 12.5px">people waiting</div></div>
+        <button aria-label="Fewer people" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">−</button>
+        <div style="width: 56px; text-align: center; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">6</div>
+        <button aria-label="More people" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">+</button>
+      </div>
+      <div style="display: flex; align-items: center; padding: 12px 12px 12px 16px; border-top: 1px solid #E3E8F0">
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">For at least</div><div style="color: #55627A; font-size: 12.5px">minutes</div></div>
+        <button aria-label="Fewer minutes" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">−</button>
+        <div style="width: 56px; text-align: center; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">5</div>
+        <button aria-label="More minutes" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">+</button>
+      </div>
+      <div style="display: flex; align-items: center; padding: 12px 12px 12px 16px; border-top: 1px solid #E3E8F0">
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">Take a picture every</div><div style="color: #55627A; font-size: 12.5px">minutes, as evidence · 0 for none</div></div>
+        <button aria-label="Less often" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">−</button>
+        <div style="width: 56px; text-align: center; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">15</div>
+        <button aria-label="More often" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E8F0; background: #FFFFFF; font-size: 22px; color: #0E1726; padding: 0">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding: 12px 16px 20px; background: #FFFFFF; border-top: 1px solid #E3E8F0; display: flex; gap: 10px">
+    <button style="flex: 0 0 96px; height: 50px; border-radius: 16px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 15.5px">Back</button>
+    <button style="flex: 1; height: 50px; border-radius: 16px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 15.5px">Next: who to tell</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

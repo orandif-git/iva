@@ -7,6 +7,7 @@ import '../widgets/brand.dart';
 import 'alert_rows.dart';
 import 'common.dart';
 import 'wizard.dart';
+import '../widgets/motion.dart';
 
 /// The alert inbox as a screen of its own (opened from the bell at the top right of every screen).
 class AlertsScreen extends StatelessWidget {
@@ -76,7 +77,7 @@ class _AlertsPageState extends State<AlertsPage> {
       future: data,
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load your alerts', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-        if (!snap.hasData) return const Loading(text: 'Loading your alerts');
+        if (!snap.hasData) return const SkeletonPage(label: 'Loading your alerts');
         final (items, defs) = snap.data!;
         final watching = defs.where((d) => d.enabled).length;
         final all = groupAlerts(items);
@@ -89,7 +90,7 @@ class _AlertsPageState extends State<AlertsPage> {
           onRefresh: () async => _reload(),
           child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 14, pad, navClear), children: [
             Row(children: [
-              SegmentedButton<bool>(showSelectedIcon: false, segments: const [ButtonSegment(value: true, label: Text('Needs you')), ButtonSegment(value: false, label: Text('History'))], selected: {openOnly}, onSelectionChanged: (v) => setState(() => openOnly = v.first)),
+              SizedBox(width: 216, child: Segments<bool>(items: const [(true, 'Needs you'), (false, 'History')], value: openOnly, onChanged: (v) => setState(() => openOnly = v))),
               Expanded(child: Align(alignment: Alignment.centerRight, child: openOnly && openCount > 0 ? TextButton(onPressed: () async { for (final g in all) { await doneGroup(widget.repo, g); } _reload(); }, child: Text('Mark all done ($openCount)', overflow: TextOverflow.ellipsis)) : const SizedBox())),
             ]),
             if (shown.isEmpty)
@@ -135,14 +136,14 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    final newAlert = FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(44, 40), padding: const EdgeInsets.symmetric(horizontal: 14)), onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded, size: 20), label: const Text('New alert'));
+    final newAlert = FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(44, 44), padding: const EdgeInsets.symmetric(horizontal: 16), shape: const StadiumBorder()), onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded, size: 20), label: const Text('New alert'));
     final list = _list(t);
     if (widget.embedded) {
       return Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Row(children: [
-            Expanded(child: Text('AI Watch', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -.4))),
+            Expanded(child: Semantics(header: true, child: Text('AI Watch', style: display(26)))),
             newAlert,
           ]),
         ),
@@ -165,7 +166,7 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
             future: mine,
             builder: (context, snap) {
               if (snap.hasError) return Center(child: Text('${snap.error}'));
-              if (!snap.hasData) return const Loading();
+              if (!snap.hasData) return const Padding(padding: EdgeInsets.all(16), child: SkeletonRows());
               final defs = snap.data!.$1, areas = snap.data!.$2;
               final all = defs.where((d) => d.smart == smartTab).toList();
               final nSystem = defs.where((d) => !d.smart && d.enabled).length, nSmart = defs.where((d) => d.smart && d.enabled).length;
@@ -214,14 +215,10 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
               return ListView(padding: EdgeInsets.fromLTRB(16, 6, 16, widget.embedded ? navClear : 40), children: [
                 SizedBox(
                   width: double.infinity,
-                  child: SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    segments: [
-                      ButtonSegment(value: false, label: Text('System alerts ($nSystem)', maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      ButtonSegment(value: true, label: Text('Smart alerts ($nSmart)', maxLines: 1, overflow: TextOverflow.ellipsis)),
-                    ],
-                    selected: {smartTab},
-                    onSelectionChanged: (v) => setState(() { smartTab = v.first; }),
+                  child: Segments<bool>(
+                    items: [(false, 'System alerts ($nSystem)'), (true, 'Smart alerts ($nSmart)')],
+                    value: smartTab,
+                    onChanged: (v) => setState(() { smartTab = v; }),
                   ),
                 ),
                 Padding(
