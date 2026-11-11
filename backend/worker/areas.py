@@ -19,7 +19,7 @@ import cv2
 from .geometry import point_in_polygon
 
 log = logging.getLogger("worker.areas")
-UPPER = 0.7           # the part of a person's box, from the top, where a phone in a hand or at the ear can be
+UPPER = 0.6           # the part of a person's box, from the top, where a phone in a hand or at the ear can be. Lower than this is counter height: a phone lying there is not in use
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class _State:
 
 
 class AreaMonitor:
-    def __init__(self, areas: list[AreaConfig], every: float = 10.0, grace: float = 5.0, leave_after: float = 3.0, warmup: float = 0.0):
+    def __init__(self, areas: list[AreaConfig], every: float = 10.0, grace: float = 5.0, leave_after: float = 8.0, warmup: float = 0.0):
         self.areas = list(areas)
         self.every, self.grace, self.leave_after, self.warmup = every, grace, leave_after, warmup
         self.started: float | None = None           # nobody is confirmed in the first moments, so the first report waits `warmup` seconds

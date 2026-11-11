@@ -13,11 +13,13 @@ from ..errors import ApiError
 from . import alert_catalog as cat
 from .alerts import raise_alert
 
+# `staff` (a queue only): how many of your own people normally stand inside the shape, for example the cashier. They are taken off the count, so a queue of
+# "6" means six customers.
 # name: (default, lowest, highest). A setting with default None must be given. `picture_minutes`: how often the worker takes another picture while a queue or a crowd stays
 # over its limit (the first is taken when it gets there); 0 means no pictures.
 SPEC = {
     "area_count": {"limit": (None, 1, 1000), "minutes": (2, 1, 60), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
-    "queue_area": {"length": (5, 1, 1000), "minutes": (3, 1, 60), "wait_minutes": (0, 0, 240), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
+    "queue_area": {"length": (5, 1, 1000), "minutes": (3, 1, 60), "wait_minutes": (0, 0, 240), "staff": (0, 0, 20), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
     "staff_area": {"seconds": (20, 5, 600), "repeat_minutes": (15, 5, 1440)},
 }
 LABEL = {"area_count": "people in an area", "queue_area": "queue", "staff_area": "staff area"}
@@ -56,12 +58,17 @@ def alert_for_kind(kind: str) -> str:
 
 
 # ------------------------------------------------------------------------------------------------ the conditions
+HELD_SHARE = 0.8        # this share of the readings must be at the limit: in a crowd people hide each other, so one low reading in five is not the crowd leaving
+
+
 async def _held(conn, zone_id: UUID, minutes: int, minimum: int) -> bool:
-    """Did every report in the last `minutes` show at least `minimum` people, with reports covering the whole time (a gap or a late start does not count)?"""
+    """Was the area at `minimum` people or more for the last `minutes`? Reports must cover the whole time (a gap or a late start does not count), the newest must
+    be at the limit, and at least four in five of them must be. One reading that drops because someone was hidden behind someone else does not start the clock again."""
     r = await conn.fetchrow(
-        """SELECT count(*)::int AS n, min(people) AS lowest, extract(epoch FROM (max(at) - min(at)))::float AS span FROM app.zone_samples
-           WHERE zone_id=$1 AND at > now() - make_interval(mins => $2)""", zone_id, minutes)
-    return bool(r["n"] >= 2 and r["lowest"] >= minimum and r["span"] >= minutes * 60 - 20)
+        """SELECT count(*)::int AS n, count(*) FILTER (WHERE people >= $3)::int AS at_limit, extract(epoch FROM (max(at) - min(at)))::float AS span,
+                  (array_agg(people ORDER BY at DESC))[1] AS newest
+           FROM app.zone_samples WHERE zone_id=$1 AND at > now() - make_interval(mins => $2)""", zone_id, minutes, minimum)
+    return bool(r["n"] >= 2 and r["newest"] >= minimum and r["at_limit"] >= r["n"] * HELD_SHARE and r["span"] >= minutes * 60 - 20)
 
 
 async def _picture(conn, zone_id: UUID, minutes: int, picture_minutes: int = 15):
@@ -89,10 +96,12 @@ async def evaluate(conn, zone_id: UUID) -> int:
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Occupancy limit exceeded in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
                                      details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
     if z["kind"] == "queue_area":
-        length, minutes, wait = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0))
-        now = await conn.fetchrow("SELECT people, wait_seconds FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
-        long_queue = await _held(conn, z["id"], minutes, length)
-        waited = wait > 0 and (await conn.fetchval("SELECT max(wait_seconds) FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '60 seconds'", z["id"]) or 0) >= wait * 60
+        length, minutes, wait, staff = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0)), int(p.get("staff", 0))
+        seen = await conn.fetchrow("SELECT people, wait_seconds FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
+        now = {"people": max(0, (seen["people"] or 0) - staff), "wait_seconds": seen["wait_seconds"]}        # your own people inside the shape are not part of the queue
+        long_queue = await _held(conn, z["id"], minutes, length + staff)
+        # someone waiting: only when there is a queue at all beyond your own people (the cashier is always "waiting")
+        waited = wait > 0 and now["people"] > 0 and (await conn.fetchval("SELECT max(wait_seconds) FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '60 seconds' AND people > $2", z["id"], staff) or 0) >= wait * 60
         if not (long_queue or waited):
             return 0
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."

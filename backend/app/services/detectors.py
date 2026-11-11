@@ -29,7 +29,10 @@ def overstay_minutes(params: dict | None) -> int:
 
 
 async def vehicle_overstay() -> int:
-    """A vehicle that entered more than the set time ago and has no matching exit. One alert per visit."""
+    """A vehicle that entered more than the set time ago and has not been seen since. One alert per visit.
+
+    Not reported: a vehicle on the customer's allowed list (staff and the owner are expected to stay), and a vehicle that was read again later, in or out, since it
+    plainly did not stay where it was (an exit the camera read badly, or a missed exit followed by the next visit)."""
     n = 0
     async with db.service_tx() as conn:
         rules = await conn.fetch("SELECT tenant_id, params FROM app.alert_rules WHERE rule_type='vehicle_overstay' AND enabled")
@@ -40,6 +43,9 @@ async def vehicle_overstay() -> int:
                    WHERE i.tenant_id=$1 AND i.direction='in' AND i.plate_text IS NOT NULL AND i.review_status <> 'needs_review'
                      AND i.seen_at < now() - make_interval(mins => $2) AND i.seen_at > now() - interval '7 days'
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events o WHERE o.entry_event_id = i.id)
+                     AND NOT EXISTS (SELECT 1 FROM app.plate_events l WHERE l.tenant_id = i.tenant_id AND l.plate_text = i.plate_text AND l.seen_at > i.seen_at
+                                     AND l.seen_at > now() - interval '7 days' AND (l.direction = 'in' OR l.direction = 'out'))
+                     AND NOT EXISTS (SELECT 1 FROM app.vehicle_lists v WHERE v.tenant_id = i.tenant_id AND v.plate_text = i.plate_text AND v.list_type = 'allowed')
                    ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes)
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle overstay: {r['plate_text']}",
@@ -53,20 +59,29 @@ async def vehicle_overstay() -> int:
 _crowd_pictures: dict = {}          # tenant -> (when it was taken, evidence id): kept in memory, so a restart simply takes a fresh one
 
 
-async def _crowd_picture(conn, tenant_id, tz: str, minutes: int):
-    """A picture for the "Too many people" alert: the camera that has counted the most people today, taken now. While the crowd stays over its limit a new one is taken
-    only every `minutes` (the customer sets it; 0 means no pictures), and the alert shows the newest. If the camera cannot be reached the alert goes out without one."""
+def people_inside(buckets) -> int:
+    """How many people are inside, from the day's counts in time order. The running number never goes below zero: when a few exits are counted before the first
+    entries (staff leaving by the front door, a person missed on the way in), the entries that follow are not swallowed by that shortfall."""
+    inside = 0
+    for b in buckets:
+        inside = max(0, inside + int(b["people_in"]) - int(b["people_out"]))
+    return inside
+
+
+async def _crowd_picture(conn, tenant_id, place_key: str, camera_ids: list, tz: str, minutes: int):
+    """A picture for the occupancy alert: the camera of this place that has counted the most people today, taken now. While the place stays over its limit a new one is
+    taken only every `minutes` (the customer sets it; 0 means no pictures), and the alert shows the newest. If the camera cannot be reached the alert goes out without one."""
     if minutes <= 0:
         return None
     now = time.monotonic()
-    kept = _crowd_pictures.get(tenant_id)
+    kept = _crowd_pictures.get((tenant_id, place_key))
     if kept and now - kept[0] < minutes * 60 and await conn.fetchval("SELECT expires_at > now() FROM app.evidence WHERE id=$1", kept[1]):
         return kept[1]
     cam = await conn.fetchrow(
         """SELECT c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol, t.retention_snapshots_days
            FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id LEFT JOIN app.recorders r ON r.id = c.recorder_id JOIN app.tenants t ON t.id = c.tenant_id
-           WHERE f.tenant_id=$1 AND c.enabled AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2
-           GROUP BY c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol, t.retention_snapshots_days ORDER BY sum(f.people_in) DESC LIMIT 1""", tenant_id, tz)
+           WHERE f.tenant_id=$1 AND c.enabled AND c.id = ANY($3::uuid[]) AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2
+           GROUP BY c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol, t.retention_snapshots_days ORDER BY sum(f.people_in) DESC LIMIT 1""", tenant_id, tz, camera_ids)
     if not cam:
         return None
     try:
@@ -77,31 +92,49 @@ async def _crowd_picture(conn, tenant_id, tz: str, minutes: int):
         jpeg = await asyncio.wait_for(snapshot.grab(url, fmt), snapshot.GRAB_TIMEOUT + 5)
         eid = await evidence.save_image(conn, tenant_id, cam["id"], jpeg, cam["retention_snapshots_days"])
     except Exception as e:                                  # a picture is a bonus: never hold an alert back for it
-        log.info("no picture for the crowding alert: %s", type(e).__name__)
+        log.info("no picture for the occupancy alert: %s", type(e).__name__)
         return None
-    _crowd_pictures[tenant_id] = (now, eid)
+    _crowd_pictures[(tenant_id, place_key)] = (now, eid)
     return eid
 
 
 async def crowding() -> int:
-    """People counted in minus out today (the tenant's day), across all cameras, at or above the limit. At most one alert an hour.
-    This is an estimate: a person missed at the door is never corrected, so counts drift. It is meant as a warning, not a head count."""
+    """People counted in minus out today (the tenant's day), at or above the limit. At most one alert an hour for each place.
+
+    A customer can have several places (a shop and a godown, or three shops on three recorders). Each place is counted on its own: the cameras of one site, or of one
+    recorder when no site is set. Adding every place together said nothing true about any of them.
+    It is still an estimate: a person missed at the door is never corrected, so the count drifts through the day. It is a warning, not a head count."""
     n = 0
     async with db.service_tx() as conn:
         rules = await conn.fetch("SELECT r.tenant_id, r.params, t.timezone FROM app.alert_rules r JOIN app.tenants t ON t.id=r.tenant_id WHERE r.rule_type='crowding' AND r.enabled")
         for rule in rules:
             params = rule["params"] or {}
             limit = int(params.get("people", 50))
-            inside = await conn.fetchval(
-                """SELECT greatest(coalesce(sum(people_in) - sum(people_out), 0), 0) FROM app.footfall_counts
-                   WHERE tenant_id=$1 AND bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2""", rule["tenant_id"], rule["timezone"])
-            if inside < limit:
-                _crowd_pictures.pop(rule["tenant_id"], None)           # back under the limit: the next time starts again
-                continue
-            pic = await _crowd_picture(conn, rule["tenant_id"], rule["timezone"], int(params.get("picture_minutes", 15)))
-            if await raise_alert(conn, rule["tenant_id"], "crowding", body=f"About {inside} people are inside. Your limit is {limit}.",
-                                 camera_name="All cameras", details={"people": int(inside), "limit": limit}, dedupe_key="crowding", cooldown_minutes=60, evidence_id=pic):
-                n += 1
+            rows = await conn.fetch(
+                """SELECT coalesce(c.site_id::text, c.recorder_id::text, c.id::text) AS place, coalesce(s.name, r.name, r.device_id, c.name) AS place_name, c.id AS camera_id,
+                          f.bucket_start, f.people_in, f.people_out
+                   FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id LEFT JOIN app.sites s ON s.id = c.site_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
+                   WHERE f.tenant_id=$1 AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2 ORDER BY f.bucket_start""", rule["tenant_id"], rule["timezone"])
+            places: dict = {}
+            for r in rows:
+                places.setdefault(r["place"], {"name": r["place_name"], "cams": set(), "buckets": {}})
+                pl = places[r["place"]]
+                pl["cams"].add(r["camera_id"])
+                agg = pl["buckets"].setdefault(r["bucket_start"], {"people_in": 0, "people_out": 0})          # the doors of one place are added together, hour by hour
+                agg["people_in"] += r["people_in"]; agg["people_out"] += r["people_out"]
+            several = len(places) > 1
+            for key, pl in places.items():
+                inside = people_inside([pl["buckets"][k] for k in sorted(pl["buckets"])])
+                if inside < limit:
+                    _crowd_pictures.pop((rule["tenant_id"], key), None)           # back under the limit: the next time starts again
+                    continue
+                pic = await _crowd_picture(conn, rule["tenant_id"], key, list(pl["cams"]), rule["timezone"], int(params.get("picture_minutes", 15)))
+                where = pl["name"] or "your premises"
+                if await raise_alert(conn, rule["tenant_id"], "crowding", title=f"Occupancy limit exceeded at {where}" if several else None,
+                                     body=f"About {inside} people are inside{' ' + where if several else ''}. Your limit is {limit}.",
+                                     camera_name=where if several else "All cameras", details={"people": int(inside), "limit": limit},
+                                     dedupe_key=f"crowding:{key}" if several else "crowding", cooldown_minutes=60, evidence_id=pic):
+                    n += 1
     return n
 
 
@@ -112,7 +145,8 @@ async def _param(conn, tenant_id, rule_type: str, key: str, default):
 
 
 async def connection_unstable() -> int:
-    """A recorder that went offline `drops` times in the last hour (a customer can change the number). At most one alert every six hours for it."""
+    """A recorder that went offline `drops` times in the last hour (3 unless the customer changed it). At most one alert every six hours for it.
+    A drop is only counted after 90 seconds of silence, so three in an hour is already a bad line."""
     n = 0
     async with db.service_tx() as conn:
         await conn.execute("DELETE FROM app.recorder_link_events WHERE at < now() - interval '14 days'")
@@ -121,7 +155,7 @@ async def connection_unstable() -> int:
             """SELECT e.tenant_id, e.recorder_id, r.device_id, r.name, count(*)::int AS drops FROM app.recorder_link_events e JOIN app.recorders r ON r.id = e.recorder_id
                WHERE e.status='offline' AND e.at > now() - interval '1 hour' GROUP BY 1,2,3,4 HAVING count(*) >= 2""")
         for r in rows:
-            if r["drops"] < int(await _param(conn, r["tenant_id"], "connection_unstable", "drops", 5)):
+            if r["drops"] < int(await _param(conn, r["tenant_id"], "connection_unstable", "drops", 3)):
                 continue
             name = r["name"] or r["device_id"]
             if await raise_alert(conn, r["tenant_id"], "connection_unstable", body=f"{name} went offline {r['drops']} times in the last hour. Check its internet connection and network cable.",
