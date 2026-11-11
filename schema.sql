@@ -840,6 +840,7 @@ GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_e
 GRANT SELECT ON platform.alert_checks, platform.fault_notify TO service_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON platform.worker_seen TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;
+GRANT SELECT ON platform.faults TO app_user;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;
 GRANT SELECT ON platform.audit_log TO platform_admin;
 GRANT INSERT ON platform.audit_log TO platform_admin, service_worker;

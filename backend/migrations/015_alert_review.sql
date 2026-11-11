@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS platform.faults (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS faults_open_idx ON platform.faults (kind) WHERE ended_at IS NULL;
 GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;
-GRANT SELECT ON platform.faults TO platform_admin;
+GRANT SELECT ON platform.faults TO platform_admin, app_user;         -- the customer app must know not to call a camera offline while the fault is ours
 
 -- Who is told about a platform fault. One row. `people` is a list of {"name": ..., "phone": ...}.
 CREATE TABLE IF NOT EXISTS platform.fault_notify (

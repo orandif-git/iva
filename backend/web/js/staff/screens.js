@@ -229,7 +229,7 @@ function openCustomerApp(X, c) {
 
 async function messagingTab(X, c, after) {
   const m = await X.api.get(`/admin/v1/messaging/tenants/${c.id}`);
-  const cur = { whatsapp: m.whatsapp, email: m.email, clips: m.clips, monthly_cap: m.monthly_cap };
+  const cur = { whatsapp: m.whatsapp, email: m.email, clips: m.clips };
   const save = (key, input) => async () => {
     const next = { ...cur, [key]: input.checked };
     reasonSheet({ title: "Change messaging?", text: `This changes what ${c.name} can send.`, label: "Save", run: async (reason) => { await X.api.put(`/admin/v1/messaging/tenants/${c.id}`, { ...next, reason }); cur[key] = input.checked; closeSheet(); toast("Saved"); after(); } });
@@ -239,8 +239,8 @@ async function messagingTab(X, c, after) {
   const sw = (key, label, sub) => { const t = toggle(cur[key], () => {}, label); const input = t.querySelector("input"); input.disabled = !X.isOwner; input.onchange = () => { const want = input.checked; reasonSheet({ title: `${want ? "Turn on" : "Turn off"} ${label.toLowerCase()}?`, text: `This changes what ${c.name} can send.`, label: "Save", run: async (reason) => { await X.api.put(`/admin/v1/messaging/tenants/${c.id}`, { ...cur, [key]: want, reason }); cur[key] = want; closeSheet(); toast("Saved"); after(); } }); input.checked = cur[key]; }; return h("div", { class: "gi static" }, h("div", {}, h("b", {}, label), h("small", {}, sub)), t); };
   void save;
   return h("div", {}, group(sw("whatsapp", "WhatsApp alerts", "Alerts are sent as webhook events, by WhatsApp only"), sw("email", "Email for reports", "Scheduled reports by email"), sw("clips", "Video clips on alerts", "A short clip with blocked-vehicle alerts"),
-    kv("Monthly WhatsApp cap", m.monthly_cap == null ? "No cap" : String(m.monthly_cap), `${m.whatsapp_this_month} sent this month`)),
-    X.isOwner ? h("div", { class: "acts2" }, h("button", { class: "btn gray block", type: "button", onclick: () => capSheet(X, c, cur, after) }, "Change monthly cap")) : h("p", { class: "sub" }, "Only an owner can change these."),
+    kv("WhatsApp messages this month", String(m.whatsapp_this_month), "There is no monthly limit")),
+    X.isOwner ? null : h("p", { class: "sub" }, "Only an owner can change these."),
     group(row({ icon: "chat", title: "Delivery log", sub: "What was sent and what failed, for every customer", onclick: () => { closeSheet(); X.go("#/webhooks"); } })),
     h("p", { class: "sub" }, "Who receives each alert is managed by the customer in their own app."));
 }
@@ -319,12 +319,6 @@ function cameraSpeed(X, c, cam, after) {
     run: async (reason) => { await X.api.del(`/admin/v1/cameras/${cam.id}/frame-rate${qs({ reason })}`); closeSheet(); toast("Now follows the customer"); after(); } }) }, "Use the customer's speed") : null;
   reasonSheet({ title: cam.name, text: `Now: ${fps(cam.effective)}. Leave a box empty to follow the customer for that part.`, label: "Save", extra: h("div", {}, f.node, reset),
     run: async (reason) => { const b = f.body(); if (!Object.keys(b).length) throw new Error("Choose a speed, or use the customer's speed."); await X.api.put(`/admin/v1/cameras/${cam.id}/frame-rate`, { ...b, reason }); closeSheet(); toast("Saved. The camera picks it up within a minute."); after(); } });
-}
-
-function capSheet(X, c, cur, after) {
-  const cap = h("input", { type: "number", min: 0, value: cur.monthly_cap ?? "", placeholder: "No cap", inputmode: "numeric" });
-  reasonSheet({ title: "Monthly WhatsApp cap", text: "The most WhatsApp messages this customer can send in a month. Leave empty for no cap.", label: "Save", extra: field("Messages per month", cap),
-    run: async (reason) => { await X.api.put(`/admin/v1/messaging/tenants/${c.id}`, { ...cur, monthly_cap: cap.value === "" ? null : Number(cap.value), reason }); closeSheet(); toast("Saved"); after(); } });
 }
 
 // ------------------------------------------------------------------------------------------------------ Fleet

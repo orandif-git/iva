@@ -1,5 +1,6 @@
 """One look at whether the shop's cameras and connection are fine. Feeds the health banner and panel on the customer app's Home screen."""
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 
@@ -22,8 +23,10 @@ async def health_summary(ctx: CustomerCtx = Depends(customer_ctx())):
            FROM app.cameras c LEFT JOIN app.recorders r ON r.id=c.recorder_id WHERE c.enabled ORDER BY c.name""")
     now = datetime.now(timezone.utc)
 
+    ours = await c.fetchval("SELECT EXISTS (SELECT 1 FROM platform.faults WHERE ended_at IS NULL)")     # our own analysis has stopped: a silent camera is not the customer's problem
+
     def fresh(ts):
-        return ts is not None and (now - ts).total_seconds() <= STALE_SECONDS
+        return ours or (ts is not None and (now - ts).total_seconds() <= STALE_SECONDS)
 
     down, working, starting = [], 0, 0
     for k in cams:
@@ -59,8 +62,18 @@ async def health_summary(ctx: CustomerCtx = Depends(customer_ctx())):
     if recorders and age is not None and age > STALE_SECONDS and not offline and not down:
         issues.append({"kind": "data_old", "level": "warning", "title": "Information is older than usual", "id": None})
 
+    # A payment that is due: shown as a line on Home (there is no alert or message for it). The earliest unpaid invoice, with its date in the customer's own time.
+    inv = await c.fetchrow(
+        """SELECT i.number, i.total_paise, i.due_at, t.timezone FROM app.invoices i JOIN app.tenants t ON t.id = i.tenant_id
+           WHERE i.status='issued' AND i.due_at IS NOT NULL ORDER BY i.due_at LIMIT 1""")
+    payment = None
+    if inv:
+        local = inv["due_at"].astimezone(ZoneInfo(inv["timezone"]))
+        payment = {"invoice": inv["number"], "amount": f"₹{inv['total_paise'] / 100:,.0f}", "due_date": f"{local.day} {local.strftime('%b %Y')}", "overdue": inv["due_at"] <= now,
+                   "days": abs((local.date() - now.astimezone(ZoneInfo(inv["timezone"])).date()).days)}
+
     return {
-        "status": "attention" if issues else "ok", "issues": issues, "open_alerts": open_alerts,
+        "status": "attention" if issues else "ok", "issues": issues, "open_alerts": open_alerts, "payment": payment,
         "recorders": {"total": len(recorders), "online": sum(r["status"] == "online" for r in recorders), "offline": offline, "unstable": unstable},
         "cameras": {"total": len(cams), "working": working, "starting": starting, "down": down},
         "messages": {"sent_24h": msg["sent"], "failed_24h": msg["failed"], "waiting_too_long": msg["stuck"], "last_sent": msg["last_sent"]},

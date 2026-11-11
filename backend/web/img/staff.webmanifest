@@ -25,9 +25,9 @@
  "theme_color": "#128BE0",
  "background_color": "#EEF2F7",
  "display": "standalone",
- "id": "/staff/",
- "start_url": "/staff/",
- "scope": "/staff/",
+ "id": "/platform/",
+ "start_url": "/platform/",
+ "scope": "/platform/",
  "orientation": "any",
  "categories": [
   "business",

@@ -29,7 +29,7 @@ class WebBrowser extends Browser {
   @override
   void handOffToStaff(String refreshToken) {
     web.window.sessionStorage.setItem('gi_staff_rt', refreshToken);        // where the staff console looks for it
-    web.window.location.href = '/staff/';
+    web.window.location.href = '/platform/';
   }
 
   @override
