@@ -57,7 +57,7 @@ def test_the_three_area_alerts_are_smart_alerts_that_are_built():
     for k, kind in (("people_in_area", "area_count"), ("queue_long", "queue_area"), ("phone_use", "staff_area")):
         assert cat.CATALOG[k]["family"] == "smart" and cat.CATALOG[k]["built"] and cat.AREA_ALERTS[kind] == k
     assert "image_url" in cat.shortcodes_for("phone_use") and {"area", "people", "limit", "minutes"} <= set(cat.shortcodes_for("people_in_area"))
-    assert {"area", "length", "wait_minutes"} <= set(cat.shortcodes_for("queue_long")) and "image_url" not in cat.shortcodes_for("queue_long")
+    assert {"area", "length", "wait_minutes"} <= set(cat.shortcodes_for("queue_long")) and "image_url" in cat.shortcodes_for("queue_long") and "image_url" in cat.shortcodes_for("people_in_area")
     assert len(cat.LISTED) == 23 and len(cat.BUILT) == 16
 
 
@@ -92,8 +92,8 @@ async def test_areas_are_saved_with_their_own_limits_and_defaults(client, make, 
     t, u, cam = await shop(client, make, su)
     got = await draw(client, u, cam, area("area_count", "Counter", limit=8), area("queue_area", "Queue", length=6), area("staff_area", "Behind the counter"))
     by = {a["name"]: a for a in got}
-    assert by["Counter"]["params"] == {"limit": 8, "minutes": 2, "picture_minutes": 2, "repeat_minutes": 15} and by["Counter"]["alert"] == "people_in_area"
-    assert by["Queue"]["params"] == {"length": 6, "minutes": 2, "wait_minutes": 0, "picture_minutes": 2, "repeat_minutes": 15}
+    assert by["Counter"]["params"] == {"limit": 8, "minutes": 2, "picture_minutes": 15, "repeat_minutes": 15} and by["Counter"]["alert"] == "people_in_area"
+    assert by["Queue"]["params"] == {"length": 6, "minutes": 2, "wait_minutes": 0, "picture_minutes": 15, "repeat_minutes": 15}
     staff = by["Behind the counter"]["params"]
     assert staff["seconds"] == 20 and staff["notice_confirmed"] is True and staff["notice_confirmed_by"] == str(u["id"]) and staff["notice_confirmed_at"]
     assert await su.fetchval("SELECT use_areas FROM app.cameras WHERE id=$1", uuid.UUID(cam)) is True

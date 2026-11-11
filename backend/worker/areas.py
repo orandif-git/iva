@@ -106,7 +106,7 @@ class AreaMonitor:
             # A queue or a crowd at its limit: a picture when it first gets there, and another every `picture_minutes` (the customer sets it) while it stays,
             # so the alert always has a recent one to show.
             limit = int(a.param("length", 5)) if a.kind == "queue_area" else (int(a.param("limit", 0)) if a.kind == "area_count" else 0)
-            every_min = int(a.param("picture_minutes", 2))                  # the customer's choice: how often to take another; 0 means no pictures at all
+            every_min = int(a.param("picture_minutes", 15))                  # the customer's choice: how often to take another; 0 means no pictures at all
             if limit >= 1 and n >= limit:
                 if st.over_since is None:
                     st.over_since = ts

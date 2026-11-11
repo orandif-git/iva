@@ -49,10 +49,11 @@ String sampleMessage(AlertDef d, {String? where}) {
 /// Alert first, then camera: kind, alert, where, settings (with the drawable area), who hears about it, save.
 /// System alerts apply to the whole account, so they skip the camera step; area alerts are drawn on one camera.
 class AlertWizard extends StatefulWidget {
-  const AlertWizard({super.key, required this.repo, this.preselected, this.edit});
+  const AlertWizard({super.key, required this.repo, this.preselected, this.edit, this.editArea});
   final Repository repo;
   final CameraItem? preselected;
   final AlertDef? edit;
+  final AreaInfo? editArea;      // an area that already exists: its camera, shape and numbers are loaded, and saving changes it
   @override
   State<AlertWizard> createState() => _AlertWizardState();
 }
@@ -62,7 +63,7 @@ class _AlertWizardState extends State<AlertWizard> {
   bool? smart;
   AlertDef? def;
   CameraItem? camera;
-  final area = AreaController();
+  AreaController area = AreaController();
   final values = <String, int>{};
   final who = <String, bool>{};
   bool told = false, saving = false, saved = false, forward = true;
@@ -94,7 +95,18 @@ class _AlertWizardState extends State<AlertWizard> {
           step = def!.area ? 3 : (def!.settings.isEmpty ? 5 : 4);
         }
         camera = widget.preselected;
+        final ea = widget.editArea;
+        if (ea != null && widget.edit != null) {
+          // Changing an area that is already there: start from what is saved (the camera, the shape, the numbers), not from a blank screen.
+          camera = cams.where((c) => c.id == ea.cameraId).firstOrNull ?? CameraItem(ea.cameraId, ea.cameraName, '', true);
+          area = AreaController(points: ea.points, closed: true);
+          for (final e in ea.params.entries) {
+            if (values.containsKey(e.key)) values[e.key] = e.value.toInt();
+          }
+          step = 4;
+        }
       });
+      if (widget.editArea != null && mounted) _loadPicture();
     }();
   }
 
@@ -158,7 +170,7 @@ class _AlertWizardState extends State<AlertWizard> {
     setState(() { saving = true; error = null; });
     try {
       await widget.repo.saveAlert(NewAlert(def!, {for (final e in values.entries) e.key: e.value}, [for (final e in who.entries) if (e.value) e.key],
-          cameraId: camera?.id, cameraName: camera?.name, area: def!.area ? [for (final p in area.points) p.toJson()] : null));
+          cameraId: camera?.id, cameraName: camera?.name, area: def!.area ? [for (final p in area.points) p.toJson()] : null, areaId: widget.editArea?.id));
       if (mounted) setState(() { saving = false; saved = true; forward = true; step = 6; });
     } catch (e) {
       if (mounted) setState(() { saving = false; error = e.toString(); });
@@ -260,10 +272,8 @@ class _AlertWizardState extends State<AlertWizard> {
           const SizedBox(height: 22),
         ],
         for (final s in def!.settings)
-          if (s.key != 'picture_minutes') _Stepper(s.label, values[s.key] ?? s.def, s.unit, (v) => setState(() => values[s.key] = v), min: s.min, max: s.max),
-        // Evidence: a picture is kept with the alert. Shown for the alerts that take one while the limit stays crossed (a queue, a crowded area).
-        if (def!.settings.any((s) => s.key == 'picture_minutes'))
-          _PictureEvery(value: values['picture_minutes'] ?? def!.settings.firstWhere((s) => s.key == 'picture_minutes').def, onChanged: (v) => setState(() => values['picture_minutes'] = v)),
+          _Stepper(s.label, values[s.key] ?? s.def, s.unit, (v) => setState(() => values[s.key] = v), min: s.min, max: s.max,
+              help: s.key == 'picture_minutes' ? ((values[s.key] ?? s.def) == 0 ? 'No pictures will be taken for this alert.' : 'A picture is kept with the alert: one the moment the limit is reached, then another every ${values[s.key] ?? s.def} minutes while it stays that way. The alert shows the newest. People in the picture are not named.') : null),
         if (def!.type == 'phone_use') _Pick2(on: told, onTap: () => setState(() => told = !told), title: 'Our staff have been told this alert is on', sub: 'Required. The alert says "possible phone use in this area". It never names a person.'),
       ];
 
@@ -543,46 +553,10 @@ class _Pick2 extends StatelessWidget {
   }
 }
 
-/// How often to take another evidence picture while the limit stays crossed. The first one is always taken when the limit is reached; Off means none at all.
-class _PictureEvery extends StatelessWidget {
-  const _PictureEvery({required this.value, required this.onChanged});
-  final int value;
-  final ValueChanged<int> onChanged;
-  static const _choices = [0, 1, 2, 5, 10, 15];
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Tok.of(context);
-    final choices = {..._choices, value}.toList()..sort();       // a value saved earlier that is not one of the usual ones is still shown
-    String label(int v) => v == 0 ? 'Off' : '$v min';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line, width: 1.5)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(Icons.photo_camera_outlined, size: 20, color: t.brand), const SizedBox(width: 10), const Expanded(child: Text('Picture as evidence', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)))]),
-        const SizedBox(height: 6),
-        Text(value == 0 ? 'No pictures will be taken for this alert.' : 'A picture is taken the moment the limit is reached, and another every $value ${value == 1 ? 'minute' : 'minutes'} while it stays that way. The alert shows the newest one. People in the picture are not named.', style: TextStyle(color: t.fg2, fontSize: 13.5, height: 1.4)),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final c in choices)
-            ChoiceChip(
-              label: Text(label(c)),
-              selected: value == c,
-              showCheckmark: false,
-              onSelected: (_) { HapticFeedback.selectionClick(); onChanged(c); },
-            ),
-        ]),
-        const SizedBox(height: 8),
-        Text('Take another picture every', style: TextStyle(color: t.fg2, fontSize: 12.5)),
-      ]),
-    );
-  }
-}
-
 class _Stepper extends StatelessWidget {
-  const _Stepper(this.label, this.value, this.unit, this.onChanged, {required this.min, required this.max});
+  const _Stepper(this.label, this.value, this.unit, this.onChanged, {required this.min, required this.max, this.help});
   final String label, unit;
+  final String? help;      // a sentence under the number, when the setting needs explaining
   final int value, min, max;
   final ValueChanged<int> onChanged;
   @override
@@ -592,11 +566,14 @@ class _Stepper extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
       decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line, width: 1.5)),
-      child: Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)), Text(unit, style: TextStyle(color: t.fg2, fontSize: 13))])),
-        IconButton.outlined(onPressed: value > min ? () => onChanged(value - 1) : null, icon: const Icon(Icons.remove), tooltip: 'Less'),
-        SizedBox(width: 64, child: Center(child: Text('$value', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])))),
-        IconButton.outlined(onPressed: value < max ? () => onChanged(value + 1) : null, icon: const Icon(Icons.add), tooltip: 'More'),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)), Text(unit, style: TextStyle(color: t.fg2, fontSize: 13))])),
+          IconButton.outlined(onPressed: value > min ? () => onChanged(value - 1) : null, icon: const Icon(Icons.remove), tooltip: 'Less'),
+          SizedBox(width: 64, child: Center(child: Text('$value', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])))),
+          IconButton.outlined(onPressed: value < max ? () => onChanged(value + 1) : null, icon: const Icon(Icons.add), tooltip: 'More'),
+        ]),
+        if (help != null) Padding(padding: const EdgeInsets.only(top: 8, right: 4), child: Text(help!, style: TextStyle(color: t.fg2, fontSize: 13, height: 1.4))),
       ]),
     );
   }

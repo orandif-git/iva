@@ -16,8 +16,8 @@ from .alerts import raise_alert
 # name: (default, lowest, highest). A setting with default None must be given. `picture_minutes`: how often the worker takes another picture while a queue or a crowd stays
 # over its limit (the first is taken when it gets there); 0 means no pictures.
 SPEC = {
-    "area_count": {"limit": (None, 1, 1000), "minutes": (2, 1, 60), "picture_minutes": (2, 0, 60), "repeat_minutes": (15, 5, 1440)},
-    "queue_area": {"length": (5, 1, 1000), "minutes": (3, 1, 60), "wait_minutes": (0, 0, 240), "picture_minutes": (2, 0, 60), "repeat_minutes": (15, 5, 1440)},
+    "area_count": {"limit": (None, 1, 1000), "minutes": (2, 1, 60), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
+    "queue_area": {"length": (5, 1, 1000), "minutes": (3, 1, 60), "wait_minutes": (0, 0, 240), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
     "staff_area": {"seconds": (20, 5, 600), "repeat_minutes": (15, 5, 1440)},
 }
 LABEL = {"area_count": "people in an area", "queue_area": "queue", "staff_area": "staff area"}
@@ -64,7 +64,7 @@ async def _held(conn, zone_id: UUID, minutes: int, minimum: int) -> bool:
     return bool(r["n"] >= 2 and r["lowest"] >= minimum and r["span"] >= minutes * 60 - 20)
 
 
-async def _picture(conn, zone_id: UUID, minutes: int, picture_minutes: int = 2):
+async def _picture(conn, zone_id: UUID, minutes: int, picture_minutes: int = 15):
     """The newest picture the worker took of this area while it was over its limit (it takes one when it gets there and another every `picture_minutes`)."""
     return await conn.fetchval(
         """SELECT evidence_id FROM app.zone_samples WHERE zone_id=$1 AND evidence_id IS NOT NULL AND at > now() - make_interval(mins => $2) ORDER BY at DESC LIMIT 1""",
@@ -87,7 +87,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
             return 0
         now = await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Too many people in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
-                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 2))), **common) is not None)
+                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
     if z["kind"] == "queue_area":
         length, minutes, wait = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0))
         now = await conn.fetchrow("SELECT people, wait_seconds FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
@@ -97,7 +97,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
             return 0
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Queue too long at {area}", body=why,
-                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 2))), **common) is not None)
+                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
     seconds = int(p.get("seconds", 20))
     r = await conn.fetchrow("SELECT max(phone_seconds) AS held, (array_agg(evidence_id ORDER BY at DESC) FILTER (WHERE evidence_id IS NOT NULL))[1] AS evidence "
                             "FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '30 seconds'", z["id"])

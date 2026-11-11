@@ -120,11 +120,71 @@ async def test_after_the_retention_period_the_picture_says_it_is_gone(client, ma
 async def test_the_picture_interval_is_a_setting_of_the_area_and_is_checked(client, make, su):
     t, u, cam = await shop(client, make, su)
     kinds = {k["kind"]: k["settings"] for k in (await client.get("/v1/area-kinds", headers=u["headers"])).json()}
-    assert kinds["queue_area"]["picture_minutes"] == {"default": 2, "min": 0, "max": 60} and kinds["area_count"]["picture_minutes"]["default"] == 2
+    assert kinds["queue_area"]["picture_minutes"] == {"default": 15, "min": 0, "max": 240} and kinds["area_count"]["picture_minutes"]["default"] == 15
     assert "picture_minutes" not in kinds["staff_area"], "a phone picture is taken once per episode; nothing to set"
     (a,) = await draw(client, u, cam, area("queue_area", "Queue", picture_minutes=0))
     assert a["params"]["picture_minutes"] == 0
-    r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area("queue_area", "Queue", picture_minutes=61)]}, headers=u["headers"])
+    r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area("queue_area", "Queue", picture_minutes=241)]}, headers=u["headers"])
     assert r.status_code == 422
     (b,) = await draw(client, u, cam, area("queue_area", "Queue"))
-    assert b["params"]["picture_minutes"] == 2, "the default when the customer does not set it"
+    assert b["params"]["picture_minutes"] == 15, "the default when the customer does not set it"
+
+
+# ------------------------------------------------------------------------------------------ "Too many people" (the count) carries a picture too
+async def crowd_world(client, make, su, monkeypatch, picture_minutes=None):
+    """A customer whose people-count is over its limit, with a camera that can be photographed (the picture is a stand-in)."""
+    from app.services import snapshot
+    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='crowding'")           # the detector looks at every customer's rule: leave only this one
+    t, u, (foot,), _ = await setup_cameras(client, make, footfall=1, anpr=0)
+    params = {"people": 10, **({"picture_minutes": picture_minutes} if picture_minutes is not None else {})}
+    await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'crowding',true,$2)", t, json.dumps(params))
+    await su.execute("INSERT INTO app.footfall_counts (tenant_id, camera_id, bucket_start, people_in, people_out) VALUES ($1,$2,date_trunc('minute', now()),30,5)", t, foot)
+    taken = []
+
+    async def source(row, decrypt):
+        return "test://camera", None
+
+    async def grab(url, fmt):
+        taken.append(1)
+        return JPEG
+    monkeypatch.setattr(snapshot, "source_for", source)
+    monkeypatch.setattr(snapshot, "grab", grab)
+    detectors._crowd_pictures.clear()
+    return t, u, foot, taken
+
+
+async def test_the_people_count_alert_shows_a_picture_of_the_busiest_camera(client, make, su, monkeypatch):
+    t, u, foot, taken = await crowd_world(client, make, su, monkeypatch)
+    assert await detectors.crowding() == 1
+    row = await su.fetchrow("SELECT evidence_id FROM app.alerts WHERE tenant_id=$1 AND rule_type='crowding'", t)
+    assert row["evidence_id"] is not None and len(taken) == 1
+    assert await su.fetchval("SELECT camera_id FROM app.evidence WHERE id=$1", row["evidence_id"]) == uuid.UUID(foot)
+
+
+async def test_a_new_crowd_picture_is_taken_only_after_the_chosen_minutes_and_zero_means_none(client, make, su, monkeypatch):
+    t, u, foot, taken = await crowd_world(client, make, su, monkeypatch, picture_minutes=15)
+    await detectors.crowding()
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)                          # the hour is up: the alert may be sent again
+    await detectors.crowding()
+    assert len(taken) == 1, "the picture from a few minutes ago is still fresh, so it is shown again"
+    first = detectors._crowd_pictures[t]
+    detectors._crowd_pictures[t] = (first[0] - 16 * 60, first[1])                               # 16 minutes pass
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    await detectors.crowding()
+    assert len(taken) == 2
+    await su.execute("UPDATE app.alert_rules SET params = '{\"people\": 10, \"picture_minutes\": 0}'::jsonb WHERE tenant_id=$1 AND rule_type='crowding'", t)
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    detectors._crowd_pictures.clear()
+    await detectors.crowding()
+    assert len(taken) == 2 and (await su.fetchrow("SELECT evidence_id FROM app.alerts WHERE tenant_id=$1", t))["evidence_id"] is None
+
+
+async def test_if_the_camera_cannot_be_photographed_the_crowd_alert_still_goes_out(client, make, su, monkeypatch):
+    from app.services import snapshot
+    t, u, foot, taken = await crowd_world(client, make, su, monkeypatch)
+
+    async def broken(url, fmt):
+        raise RuntimeError("camera offline")
+    monkeypatch.setattr(snapshot, "grab", broken)
+    assert await detectors.crowding() == 1
+    assert (await su.fetchrow("SELECT evidence_id FROM app.alerts WHERE tenant_id=$1 AND rule_type='crowding'", t))["evidence_id"] is None

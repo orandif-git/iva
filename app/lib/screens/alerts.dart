@@ -119,12 +119,17 @@ class ManageAlertsPage extends StatefulWidget {
 }
 
 class _ManageAlertsPageState extends State<ManageAlertsPage> {
-  late Future<List<AlertDef>> mine = widget.repo.alertDefs();
+  late Future<(List<AlertDef>, List<AreaInfo>)> mine = _load();
   bool smartTab = false;      // System alerts (recorders and cameras) or Smart alerts (what the AI sees)
 
-  Future<void> _wizard({AlertDef? edit}) async {
-    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, edit: edit)));
-    if (saved == true && mounted) setState(() { mine = widget.repo.alertDefs(); });
+  Future<(List<AlertDef>, List<AreaInfo>)> _load() async {
+    final r = await Future.wait([widget.repo.alertDefs(), widget.repo.areas().catchError((_) => <AreaInfo>[])]);
+    return (r[0] as List<AlertDef>, r[1] as List<AreaInfo>);
+  }
+
+  Future<void> _wizard({AlertDef? edit, AreaInfo? area}) async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AlertWizard(repo: widget.repo, edit: edit, editArea: area)));
+    if (saved == true && mounted) setState(() { mine = _load(); });
   }
 
   @override
@@ -161,12 +166,37 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
             builder: (context, snap) {
               if (snap.hasError) return Center(child: Text('${snap.error}'));
               if (!snap.hasData) return const Loading();
-              final all = snap.data!.where((d) => d.smart == smartTab).toList();
-              final nSystem = snap.data!.where((d) => !d.smart && d.enabled).length, nSmart = snap.data!.where((d) => d.smart && d.enabled).length;
+              final defs = snap.data!.$1, areas = snap.data!.$2;
+              final all = defs.where((d) => d.smart == smartTab).toList();
+              final nSystem = defs.where((d) => !d.smart && d.enabled).length, nSmart = defs.where((d) => d.smart && d.enabled).length;
               final on = all.where((d) => d.enabled).toList();
               final off = all.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
-              Widget row(AlertDef m) => InkWell(
-                    onTap: () => _wizard(edit: m),
+              // The marked areas an alert is watching, one line each: tap one to change it (its shape and numbers are loaded).
+              Widget areaLines(AlertDef m) {
+                final mine = areas.where((a) => a.kind == m.areaKind).toList();
+                if (!m.area || mine.isEmpty) return const SizedBox.shrink();
+                return Column(children: [
+                  for (final a in mine)
+                    InkWell(
+                      onTap: () => _wizard(edit: m, area: a),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(cardPad(context) + 56, 6, 12, 6),
+                        child: Row(children: [
+                          Icon(Icons.crop_free_rounded, size: 18, color: t.fg2),
+                          const SizedBox(width: 10),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(a.cameraName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            Text(m.sentence(a.params).replaceFirst(RegExp(r'^Alert when '), 'When '), style: TextStyle(color: t.fg2, fontSize: 12.5)),
+                          ])),
+                          Icon(Icons.chevron_right_rounded, size: 20, color: t.fg2.withValues(alpha: .6)),
+                        ]),
+                      ),
+                    ),
+                  Padding(padding: EdgeInsets.fromLTRB(cardPad(context) + 46, 0, 12, 8), child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: () => _wizard(edit: m), icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add another area')))),
+                ]);
+              }
+              Widget rowHead(AlertDef m) => InkWell(
+                    onTap: () => m.area && areas.any((a) => a.kind == m.areaKind) ? null : _wizard(edit: m),
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(cardPad(context), 10, 10, 10),
                       child: Row(children: [
@@ -180,6 +210,7 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
                       ]),
                     ),
                   );
+              Widget row(AlertDef m) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [rowHead(m), areaLines(m)]);
               return ListView(padding: EdgeInsets.fromLTRB(16, 6, 16, widget.embedded ? navClear : 40), children: [
                 SizedBox(
                   width: double.infinity,
