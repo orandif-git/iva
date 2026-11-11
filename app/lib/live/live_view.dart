@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../geometry/polygon.dart';
 import '../models.dart';
 import '../repo.dart';
+import '../screens/common.dart' show Segments;
 import '../theme.dart';
 import '../widgets/brand.dart';
 import 'live_rules.dart';
@@ -162,10 +163,10 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
       SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(20), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
       if (widget.compact) ...[
         const SizedBox(height: 10),
-        SegmentedButton<PictureSize>(
-          segments: const [ButtonSegment(value: PictureSize.fit, label: Text('Fit')), ButtonSegment(value: PictureSize.fill, label: Text('Fill')), ButtonSegment(value: PictureSize.enlarge, label: Text('Enlarge'))],
-          selected: {size},
-          onSelectionChanged: (v) => setState(() => size = v.first),
+        Segments<PictureSize>(
+          items: const [(PictureSize.fit, 'Fit'), (PictureSize.fill, 'Fill'), (PictureSize.enlarge, 'Enlarge')],
+          value: size,
+          onChanged: (v) => setState(() => size = v),
         ),
         const SizedBox(height: 4),
         Text(switch (size) {

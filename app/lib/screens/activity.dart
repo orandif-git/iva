@@ -340,6 +340,13 @@ String _ago(DateTime? d) {
   return shortAgo(s);
 }
 
+/// Where it happened, without repeating the alert's own name in front ("Too many people in an area · Jas Office" reads as "Jas Office").
+String _placeName(String place, String title) {
+  var p = place.trim();
+  if (p.toLowerCase().startsWith(title.toLowerCase())) p = p.substring(title.length).replaceFirst(RegExp(r'^[\s·:,-]+'), '');
+  return p.isEmpty ? 'Not named' : p;
+}
+
 /// The marked areas the customer watches (people in an area, a queue, phone use): how often each fired in the period, and where.
 class AreasSection extends StatelessWidget {
   const AreasSection({super.key, required this.repo, required this.period, required this.defs});
@@ -364,7 +371,10 @@ class AreasSection extends StatelessWidget {
               final last = mine.map((c) => c.last).whereType<DateTime>().fold<DateTime?>(null, (m, x) => m == null || x.isAfter(m) ? x : m);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 14),
-                child: Group(padding: EdgeInsets.all(cardPad(context)), children: [
+                child: Container(
+                  padding: EdgeInsets.all(cardPad(context)),
+                  decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(children: [
                     Badge2(iconForType(d.type), Level.ai, ai: true, size: 42),
                     const SizedBox(width: 14),
@@ -385,14 +395,14 @@ class AreasSection extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 5),
                         child: Row(children: [
-                          Expanded(flex: 3, child: Text(c.place.isEmpty ? 'Not named' : c.place, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          Expanded(flex: 3, child: Text(_placeName(c.place, d.title), maxLines: 1, overflow: TextOverflow.ellipsis)),
                           Expanded(flex: 4, child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: c.count / mine.first.count, minHeight: 8, backgroundColor: t.brandSoft, color: t.ai))),
                           SizedBox(width: 40, child: Text('${c.count}', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700))),
                         ]),
                       ),
-                    if (last != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Last one ${_ago(last)} ago', style: TextStyle(color: t.fg2, fontSize: 12.5))),
+                    if (last != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Last one ${_ago(last)}', style: TextStyle(color: t.fg2, fontSize: 12.5))),
                   ],
-                ]),
+                ])),
               );
             }(),
           ],
@@ -452,7 +462,7 @@ class HealthSection extends StatelessWidget {
                     const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(c.place.isEmpty ? title(c.rule) : c.place, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text([title(c.rule), if (c.last != null) 'last ${_ago(c.last)} ago'].join(' · '), style: TextStyle(color: t.fg2, fontSize: 13)),
+                      Text([title(c.rule), if (c.last != null) 'last ${_ago(c.last)}'].join(' · '), style: TextStyle(color: t.fg2, fontSize: 13)),
                     ])),
                     Text('${c.count}×', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                   ]),

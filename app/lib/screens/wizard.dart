@@ -390,7 +390,6 @@ class _KindCard extends StatelessWidget {
             color: ai ? null : t.surface,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: ai ? t.ai.withValues(alpha: .45) : t.line, width: 1.5),
-            boxShadow: t.lift,
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
