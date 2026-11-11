@@ -11,10 +11,12 @@ import '../widgets/profile_menu.dart';
 import 'common.dart';
 import '../push.dart';
 import 'recorders.dart';
+import '../widgets/motion.dart';
 
 /// More: the two things you open now and then. Reports and Settings sit here so the bar stays at five.
 class MorePage extends StatefulWidget {
-  const MorePage({super.key, required this.repo, required this.onSignOut, this.push});
+  const MorePage({super.key, required this.repo, required this.onSignOut, this.push, this.me});
+  final Me? me;
   final Repository repo;
   final void Function(String? message) onSignOut;
   final PushRegistration? push;
@@ -46,11 +48,11 @@ class _MorePageState extends State<MorePage> {
           child: Padding(
             padding: EdgeInsets.fromLTRB(cardPad(context), 14, 12, 14),
             child: Row(children: [
-              Container(width: 42, height: 42, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(13)), child: Icon(icon, color: t.brand, size: 22)),
+              Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: t.brand, size: 21)),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
-                Text(sub, style: TextStyle(color: t.fg2, fontSize: 13)),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                Text(sub, style: TextStyle(color: t.fg2, fontSize: 12.5)),
               ])),
               Icon(Icons.chevron_right_rounded, color: t.fg2.withValues(alpha: .6)),
             ]),
@@ -61,11 +63,28 @@ class _MorePageState extends State<MorePage> {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
-        child: ListView(padding: EdgeInsets.fromLTRB(16, 14, 16, navClear), children: [
+        child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, navClear), children: [
+          if (widget.me != null) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
+              child: Row(children: [
+                Container(width: 52, height: 52, alignment: Alignment.center, decoration: BoxDecoration(color: t.brand, shape: BoxShape.circle), child: Text(widget.me!.name.isEmpty ? '?' : widget.me!.name[0].toUpperCase(), style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.w700, fontSize: 20))),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(widget.me!.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16.5)),
+                  Text([if (widget.me!.role.isNotEmpty) widget.me!.role == 'admin' ? 'Owner' : widget.me!.role[0].toUpperCase() + widget.me!.role.substring(1), if (widget.me!.business.isNotEmpty) widget.me!.business].join(' · '), style: TextStyle(color: t.fg2, fontSize: 13)),
+                ])),
+              ]),
+            ),
+            const SizedBox(height: 14),
+          ],
           Group(children: [
             row(Icons.bar_chart_rounded, 'Reports', reportsSub, () => _open(_ReportsScreen(widget.repo))),
             row(Icons.tune_rounded, 'Settings', 'Your plan, people and recorders', () => _open(SettingsPage(repo: widget.repo, onSignOut: widget.onSignOut, push: widget.push))),
           ]),
+          const SizedBox(height: 14),
+          OutlinedButton(style: OutlinedButton.styleFrom(foregroundColor: t.crit), onPressed: () => widget.onSignOut(null), child: const Text('Sign out')),
         ]),
       ),
     );
@@ -147,7 +166,7 @@ class _ReportsPageState extends State<ReportsPage> {
       future: data,
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load your reports', text: '${snap.error}');
-        if (!snap.hasData) return const Loading(text: 'Loading your reports');
+        if (!snap.hasData) return const SkeletonPage(label: 'Loading your reports');
         final (schedules, people, made) = snap.data!;
         String names(ReportSchedule s) {
           final n = people.where((p) => s.recipientIds.contains(p.id)).map((p) => p.name.split(RegExp(r'[ ,(]')).first).toList();
@@ -191,7 +210,7 @@ class _ReportsPageState extends State<ReportsPage> {
                 for (final e in reportTypes.entries) ChoiceChip(label: Text(e.value.$1), selected: makeType == e.key, onSelected: (_) => setState(() => makeType = e.key)),
               ]),
               const SizedBox(height: 14),
-              SegmentedButton<int>(showSelectedIcon: false, segments: const [ButtonSegment(value: 1, label: Text('Yesterday')), ButtonSegment(value: 7, label: Text('7 days')), ButtonSegment(value: 30, label: Text('30 days'))], selected: {days}, onSelectionChanged: (v) => setState(() => days = v.first)),
+              Segments<int>(items: const [(1, 'Yesterday'), (7, '7 days'), (30, '30 days')], value: days, onChanged: (v) => setState(() => days = v)),
               const SizedBox(height: 14),
               FilledButton.icon(onPressed: making ? null : _make, icon: const Icon(Icons.description_outlined), label: Text(making ? 'Starting…' : 'Make the report')),
               if (message != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(message!, style: TextStyle(color: t.fg2, fontSize: 13))),
@@ -277,7 +296,7 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
                 child: _Pick(on: type == e.key, onTap: () => setState(() => type = e.key), icon: e.value.$3, title: e.value.$1, sub: e.value.$2),
               ),
             const GroupLabel('How often'),
-            SegmentedButton<String>(showSelectedIcon: false, segments: const [ButtonSegment(value: 'daily', label: Text('Every day')), ButtonSegment(value: 'weekly', label: Text('Every week')), ButtonSegment(value: 'monthly', label: Text('Every month'))], selected: {frequency}, onSelectionChanged: (v) => setState(() => frequency = v.first)),
+            Segments<String>(items: const [('daily', 'Every day'), ('weekly', 'Every week'), ('monthly', 'Every month')], value: frequency, onChanged: (v) => setState(() => frequency = v)),
             const SizedBox(height: 14),
             if (frequency == 'weekly') Wrap(spacing: 8, runSpacing: 8, children: [for (var i = 0; i < 7; i++) ChoiceChip(label: Text(days[i].substring(0, 3)), selected: weekday == i, onSelected: (_) => setState(() => weekday = i))]),
             if (frequency == 'monthly')
@@ -402,7 +421,7 @@ class _SettingsPageState extends State<SettingsPage> {
               future: data,
               builder: (context, snap) {
                 if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load your settings', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-                if (!snap.hasData) return const Loading(text: 'Loading your settings');
+                if (!snap.hasData) return const SkeletonPage(label: 'Loading your settings');
                 final (me, people, recorders) = snap.data!;
                 final used = me.camerasInUse, limit = me.cameraLimit;
                 return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [

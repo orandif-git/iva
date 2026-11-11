@@ -7,9 +7,9 @@ import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import '../widgets/area_editor.dart';
-import '../widgets/brand.dart';
 import '../widgets/count_line_editor.dart';
 import 'common.dart';
+import '../widgets/motion.dart';
 
 /// Setting a camera up, for the owner: the counting line across the doorway, the plate area, the picture quality, pause and remove.
 class CameraSetup extends StatefulWidget {
@@ -89,7 +89,7 @@ class _CameraSetupState extends State<CameraSetup> {
       future: data,
       builder: (context, snap) {
         if (snap.hasError) return Padding(padding: const EdgeInsets.only(top: 8), child: Text('${snap.error}', style: TextStyle(color: t.fg2)));
-        if (!snap.hasData) return const Padding(padding: EdgeInsets.all(24), child: Loading());
+        if (!snap.hasData) return const SkeletonRows(rows: 2);
         final s = snap.data!;
         final zl = s.zone('count_line'), zp = s.zone('anpr_zone');
         if (s.useFootfall) line ??= zl != null && zl.points.length == 2 ? CountLineController(a: zl.points[0], b: zl.points[1], flip: CountLineController.flipFor(zl.points, zl.inDirection)) : CountLineController();

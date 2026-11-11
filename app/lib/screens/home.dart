@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -5,6 +7,8 @@ import '../repo.dart';
 import '../scope.dart';
 import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/camera_picture.dart';
+import '../widgets/motion.dart';
 import 'alert_rows.dart';
 import 'common.dart';
 
@@ -56,7 +60,7 @@ class _HomePageState extends State<HomePage> {
         if (snap.hasError) {
           return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
         }
-        if (!snap.hasData) return const Loading(text: 'Loading your day');
+        if (!snap.hasData) return const SkeletonPage(label: 'Loading your day');
         final (h, alerts, foot) = snap.data!;
         final wide = MediaQuery.sizeOf(context).width >= 900;
         final pad = wide ? 32.0 : 16.0;
@@ -73,7 +77,7 @@ class _HomePageState extends State<HomePage> {
           onRefresh: () async => _reload(),
           child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 16, pad, navClear), children: [
             if (wide) _Banner(h: h, onReview: widget.onOpenAlerts) else _Hero(h: h, me: widget.me, onReview: widget.onOpenAlerts),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             if (wide)
               IntrinsicHeight(
                 child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -83,11 +87,12 @@ class _HomePageState extends State<HomePage> {
                 ]),
               )
             else ...[
-              if (attention != null) ...[attention, const SizedBox(height: 16)],
+              if (attention != null) ...[attention, const SizedBox(height: 14)],
               needs,
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               today,
-              const SizedBox(height: 16),
+              _CameraStrip(repo: widget.repo, onOpen: widget.onOpenCameras),
+              const SizedBox(height: 14),
               health,
             ],
             const SizedBox(height: 24),
@@ -111,7 +116,7 @@ String _today() {
   return '${wd[n.weekday - 1]}, ${n.day} ${mo[n.month - 1]}';
 }
 
-/// Phone: the greeting and the answer. Always the brand colour; a problem shows as an amber chip, not a muddy hero.
+/// Phone: the greeting, then the answer in one pill. Green when all is well, amber when something needs a look.
 class _Hero extends StatelessWidget {
   const _Hero({required this.h, required this.me, required this.onReview});
   final Health h;
@@ -119,57 +124,16 @@ class _Hero extends StatelessWidget {
   final VoidCallback onReview;
   @override
   Widget build(BuildContext context) {
+    final t = Tok.of(context);
     final ok = h.ok, n = h.issues.length;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        decoration: const BoxDecoration(gradient: brandGradient),
-        child: Stack(children: [
-          Positioned(right: -34, bottom: -50, child: IgnorePointer(child: CustomPaint(size: const Size(170, 170), painter: _RingsPainter()))),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${_today()}${me == null || me!.business.isEmpty ? '' : ' · ${me!.business}'}', style: TextStyle(color: Colors.white.withValues(alpha: .82), fontSize: 13, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              Text(me == null || me!.first.isEmpty ? _greeting() : '${_greeting()}, ${me!.first}', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.7, height: 1.15)),
-              const SizedBox(height: 16),
-              _StatusChip(ok: ok, text: ok ? 'Everything is working' : (n == 1 ? '1 thing needs attention' : '$n things need attention')),
-              if (ok) Padding(padding: const EdgeInsets.only(top: 10), child: Text('All cameras and recorders are connected.', style: TextStyle(color: Colors.white.withValues(alpha: .85), fontSize: 13.5))),
-            ]),
-          ),
-        ]),
-      ),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Semantics(header: true, child: Text(me == null || me!.first.isEmpty ? _greeting() : '${_greeting()}, ${me!.first}', style: display(26))),
+      const SizedBox(height: 2),
+      Text(_today(), style: TextStyle(color: t.fg2, fontSize: 13)),
+      const SizedBox(height: 10),
+      StatusPill(ok ? 'Everything is working' : (n == 1 ? '1 thing needs attention' : '$n things need attention'), ok ? Level.ok : Level.warn),
+    ]);
   }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.ok, required this.text});
-  final bool ok;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(8, 7, 14, 7),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(99)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 24, height: 24, decoration: BoxDecoration(color: ok ? const Color(0xFFDDF4E6) : const Color(0xFFFFE9B8), shape: BoxShape.circle), child: Icon(ok ? Icons.check_rounded : Icons.priority_high_rounded, size: 16, color: ok ? const Color(0xFF0B6B3A) : const Color(0xFF7A4700))),
-          const SizedBox(width: 8),
-          Flexible(child: Text(text, style: const TextStyle(color: Color(0xFF0B1220), fontWeight: FontWeight.w700, fontSize: 14.5))),
-        ]),
-      );
-}
-
-class _RingsPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size s) {
-    final c = Offset(s.width / 2, s.height / 2);
-    for (var i = 1; i <= 4; i++) {
-      canvas.drawCircle(c, s.width / 2 * i / 4, Paint()..color = Colors.white.withValues(alpha: .10 - i * .015)..style = PaintingStyle.stroke..strokeWidth = 2);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingsPainter o) => false;
 }
 
 /// Wide screens: the greeting is in the page header, so the answer is a slim banner.
@@ -184,7 +148,7 @@ class _Banner extends StatelessWidget {
     final (bg, fg) = ok ? (t.okSoft, t.okInk) : (t.warnSoft, t.warnInk);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.card)),
       child: Row(children: [
         Icon(ok ? Icons.check_circle_rounded : Icons.error_rounded, color: fg, size: 26),
         const SizedBox(width: 12),
@@ -242,7 +206,11 @@ class _Needs extends StatelessWidget {
       trailing: total == 0 ? null : Pill('$total open', Level.bad),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         if (total == 0) const EmptyState(icon: Icons.check_circle_outline_rounded, title: 'You are all caught up', text: 'We will message you on WhatsApp if something changes.'),
-        if (recent.isNotEmpty) Group(bare: true, children: [for (final g in recent) AlertRow(key: ValueKey(g.key), group: g, repo: repo, onChanged: reload, alwaysOpen: true)]),
+        if (recent.isNotEmpty) _Featured(key: ValueKey('top${recent.first.key}${recent.first.latest.id}'), group: recent.first, repo: repo, reload: reload),
+        if (recent.length > 1) ...[
+          Divider(height: 25, thickness: 1, color: t.line),
+          Group(bare: true, children: [for (final g in recent.skip(1)) AlertRow(key: ValueKey(g.key), group: g, repo: repo, onChanged: reload, alwaysOpen: true)]),
+        ],
         if (earlier.isNotEmpty) ...[
           const SizedBox(height: 12),
           _Earlier(groups: earlier, repo: repo, reload: reload),
@@ -287,38 +255,146 @@ class _Earlier extends StatelessWidget {
   }
 }
 
-/// Three aligned figures in one card, so the numbers always line up.
+/// Today in three figures, side by side.
 class _Today extends StatelessWidget {
   const _Today({required this.foot, required this.open});
   final Footfall foot;
   final int open;
   @override
+  Widget build(BuildContext context) => Semantics(label: 'Today', container: true, child: StatStrip([('People in', '${foot.peopleIn}'), ('Busiest hour', foot.peakHour ?? '–'), ('Open alerts', '$open')]));
+}
+
+/// The alert that most needs you, shown large: what the camera saw (when a picture was kept), what happened, and the two things you can do about it.
+class _Featured extends StatefulWidget {
+  const _Featured({super.key, required this.group, required this.repo, required this.reload});
+  final AlertGroup group;
+  final Repository repo;
+  final VoidCallback reload;
+  @override
+  State<_Featured> createState() => _FeaturedState();
+}
+
+class _FeaturedState extends State<_Featured> {
+  late final Future<Uint8List?> picture = widget.group.latest.hasEvidence ? widget.repo.alertImage(widget.group.latest.id).catchError((_) => null) : Future.value(null);
+  bool busy = false;
+
+  Future<void> _act(Future<void> Function() what) async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      await what();
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+    widget.reload();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    Widget cell(IconData icon, String value, String label, Color tint) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(children: [
-              Icon(icon, size: 20, color: tint),
-              const SizedBox(height: 8),
-              FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -.8, height: 1.1, fontFeatures: [FontFeature.tabularFigures()]))),
-              const SizedBox(height: 4),
-              Text(label, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.fg2, fontSize: 12.5, fontWeight: FontWeight.w500)),
-            ]),
+    final g = widget.group, a = g.latest;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (a.hasEvidence)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(Radii.picture),
+            child: SizedBox(
+              height: 150,
+              child: FutureBuilder<Uint8List?>(
+                future: picture,
+                builder: (context, p) => p.data != null
+                    ? Image.memory(p.data!, fit: BoxFit.cover, gaplessPlayback: true, semanticLabel: 'What the camera saw: ${a.title}', errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1B2A41)))
+                    : (p.connectionState == ConnectionState.waiting ? const Skeleton(height: 150, radius: 0) : Container(color: const Color(0xFF1B2A41))),
+              ),
+            ),
           ),
-        );
-    return Section(
-      icon: Icons.today_outlined,
-      title: 'Today',
-      child: IntrinsicHeight(
-        child: Row(children: [
-          cell(Icons.groups_rounded, '${foot.peopleIn}', 'People in', t.okInk),
-          VerticalDivider(width: 1, color: t.line),
-          cell(Icons.schedule_rounded, foot.peakHour ?? '–', 'Busiest hour', t.accent),
-          VerticalDivider(width: 1, color: t.line),
-          cell(Icons.notifications_rounded, '$open', 'Open alerts', open == 0 ? t.okInk : t.warnInk),
-        ]),
-      ),
+        ),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Badge2(iconForType(a.rule, smart: a.smart), a.smart ? Level.ai : Level.bad, ai: a.smart, size: 40),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(a.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 2),
+          Text(repeatsLine(g), style: TextStyle(color: t.fg2, fontSize: 13.5)),
+        ])),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(44, 46), padding: const EdgeInsets.symmetric(horizontal: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control))), onPressed: busy ? null : () => _act(() => doneGroup(widget.repo, g)), child: Text(g.openItems.length > 1 ? 'Done (${g.openItems.length})' : 'Done'))),
+        const SizedBox(width: 10),
+        Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(44, 46), padding: const EdgeInsets.symmetric(horizontal: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control))), onPressed: busy ? null : () => _act(() => snoozeGroup(widget.repo, g)), child: const FittedBox(fit: BoxFit.scaleDown, child: Text('Snooze 1 hour')))),
+      ]),
+    ]);
+  }
+}
+
+/// A row of your cameras to flick through, each with its latest picture. Tapping one opens Cameras.
+class _CameraStrip extends StatefulWidget {
+  const _CameraStrip({required this.repo, required this.onOpen});
+  final Repository repo;
+  final VoidCallback onOpen;
+  @override
+  State<_CameraStrip> createState() => _CameraStripState();
+}
+
+class _CameraStripState extends State<_CameraStrip> {
+  late final Future<List<CameraItem>> cams = widget.repo.cameras().catchError((_) => <CameraItem>[]);
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return FutureBuilder<List<CameraItem>>(
+      future: cams,
+      builder: (context, snap) {
+        final list = snap.data ?? const <CameraItem>[];
+        if (list.isEmpty) return const SizedBox.shrink();
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SizedBox(height: 6),
+          Row(children: [
+            const Expanded(child: Text('Your cameras', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+            TextButton(onPressed: widget.onOpen, child: const Text('See all')),
+          ]),
+          SizedBox(
+            height: 152,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              itemCount: list.length > 6 ? 6 : list.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, i) {
+                final c = list[i];
+                return Pressable(
+                  label: '${c.name}, ${c.working ? 'working' : 'offline'}',
+                  onTap: widget.onOpen,
+                  child: ExcludeSemantics(
+                    child: SizedBox(
+                      width: 150,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: SizedBox(
+                            height: 96,
+                            width: 150,
+                            child: Stack(children: [
+                              Positioned.fill(child: ColoredBox(color: c.working ? const Color(0xFF1B2A41) : t.surface2)),
+                              Positioned.fill(child: CameraPicture(repo: widget.repo, cameraId: c.id, active: c.working, every: const Duration(seconds: 15))),
+                              Positioned(left: 8, bottom: 8, child: Pill(c.working ? 'Live' : 'Offline', c.working ? Level.ok : Level.bad)),
+                            ]),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        Text(c.recorder.isEmpty ? (c.working ? 'Working' : 'Not sending pictures') : c.recorder, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.fg2, fontSize: 12.5)),
+                      ]),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ]);
+      },
     );
   }
 }

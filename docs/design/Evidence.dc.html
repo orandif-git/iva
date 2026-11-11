@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alert with evidence</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+a{color:#0B6FB8}a:hover{color:#0A3D73}
+@keyframes ivRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+button:active{transform:scale(.97)}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F4F6FA; font-family: Inter, system-ui, sans-serif; color: #0E1726; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; background: #FFFFFF; border-bottom: 1px solid #E3E8F0; box-sizing: border-box">
+    <a href="Main.dc.html" aria-label="Back to the app" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 19px">Alert</div>
+  </div>
+
+  <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+    <!-- what happened, in one sentence -->
+    <div>
+      <div style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 12px; background: #EEEAFE; color: #5B45D6; font-size: 12px; font-weight: 700">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="#5B45D6"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/></svg>Smart alert
+      </div>
+      <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin-top: 10px; line-height: 1.2">9 people waited 6 minutes at the Billing queue</div>
+      <div style="color: #55627A; font-size: 14px; margin-top: 6px">Today, 10:42 am · Your limit is 6 people for 5 minutes</div>
+    </div>
+
+    <!-- the evidence -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+      <div style="height: 210px; background: #1B2A41; position: relative">
+        <div style="position: absolute; left: 14%; top: 22%; width: 56%; height: 58%; border: 2px solid #F5C635; border-radius: 8px"></div>
+        <span style="position: absolute; left: 14%; top: 12%; padding: 2px 8px; border-radius: 6px; background: #F5C635; color: #0E1726; font-size: 11px; font-weight: 700">Billing queue</span>
+        <span style="position: absolute; left: 12px; bottom: 12px; padding: 4px 8px; border-radius: 8px; background: rgba(14,23,38,0.72); color: #FFFFFF; font-size: 11.5px">Picture placeholder · what the camera saw</span>
+      </div>
+      <div style="padding: 12px 16px 14px; display: flex; align-items: center; gap: 10px">
+        <div style="flex: 1; color: #55627A; font-size: 13px; line-height: 1.4">The marked area and the people in it. Nobody is named. Kept for 7 days.</div>
+        <button aria-label="Open the picture full size" style="width: 44px; height: 44px; border-radius: 14px; border: 1px solid #E3E8F0; background: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 0">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- the day so far, for context -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; padding: 14px 16px">
+      <div style="font-weight: 600; font-size: 14.5px">This queue today</div>
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 10px">
+        <div style="flex: 1"><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">2</div><div style="color: #55627A; font-size: 12.5px">times too long</div></div>
+        <div style="flex: 1"><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">10:42</div><div style="color: #55627A; font-size: 12.5px">last time</div></div>
+        <div style="flex: 1"><div style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 700">2</div><div style="color: #55627A; font-size: 12.5px">people told</div></div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: #E6F1FB; color: #0A3D73; font-size: 13.5px; line-height: 1.4">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A3D73" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+      <span>Tip: opening a second counter usually clears a queue like this.</span>
+    </div>
+  </div>
+
+  <!-- one clear action, always in reach -->
+  <div style="padding: 12px 16px 20px; background: #FFFFFF; border-top: 1px solid #E3E8F0; display: flex; gap: 10px">
+    <button style="flex: 1; height: 50px; border-radius: 16px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 15.5px">Snooze 1 hour</button>
+    <button style="flex: 1; height: 50px; border-radius: 16px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 15.5px">Mark as done</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

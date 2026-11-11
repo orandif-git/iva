@@ -12,6 +12,7 @@ import 'scope.dart';
 import 'screens/more.dart';
 import 'widgets/brand.dart';
 import 'widgets/glass_nav.dart';
+import 'widgets/motion.dart';
 import 'widgets/profile_menu.dart';
 import 'screens/signin.dart';
 import 'screens/alerts.dart';
@@ -193,6 +194,7 @@ class _ShellState extends State<Shell> {
   static const _home = 0, _cams = 1, _watch = 2, _activity = 3;
   final _visited = <int>{0};        // a place is built the first time you open it, then keeps where you were
   final _refresh = ValueNotifier<int>(0);
+  final _stackKey = GlobalKey();    // the places keep their state while the rise-in plays again on each change of tab
 
   @override
   void initState() {
@@ -208,7 +210,7 @@ class _ShellState extends State<Shell> {
         _cams => CamerasPage(repo: widget.repo, onAddAlert: _addAlertFor),
         _watch => ManageAlertsPage(repo: widget.repo, embedded: true),
         _activity => ActivityPage(repo: widget.repo, refresh: _refresh),
-        _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m), push: widget.push),
+        _ => MorePage(repo: widget.repo, onSignOut: (m) => widget.onSignOut(m), push: widget.push, me: me),
       };
 
   void _go(int i) {
@@ -243,16 +245,19 @@ class _ShellState extends State<Shell> {
           width: 44,
           height: 44,
           child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
-            Container(width: 40, height: 40, decoration: BoxDecoration(color: t.surface, shape: BoxShape.circle, border: Border.all(color: t.line)), child: Icon(Icons.notifications_none_rounded, size: 22, color: t.fg)),
+            Container(width: 44, height: 44, decoration: BoxDecoration(color: t.surface, shape: BoxShape.circle, border: Border.all(color: t.line)), child: Icon(Icons.notifications_none_rounded, size: 22, color: t.fg)),
             if (openAlerts > 0)
               Positioned(
                 right: 0,
                 top: 0,
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 18),
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.bg, width: 1.5)),
-                  child: Text(openAlerts > 99 ? '99+' : '$openAlerts', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.2)),
+                child: _Pop(
+                  key: ValueKey(openAlerts),      // the number pops in, and again when it changes
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.surface, width: 2)),
+                    child: Text(openAlerts > 99 ? '99+' : '$openAlerts', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.2)),
+                  ),
                 ),
               ),
           ]),
@@ -281,7 +286,7 @@ class _ShellState extends State<Shell> {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final t = Tok.of(context);
     // Switching places is instant and each keeps its scroll position and what it loaded, like WhatsApp and the iPhone's own apps.
-    final content = SelectionArea(child: IndexedStack(index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()]));
+    final content = SelectionArea(child: RiseIn(key: ValueKey('place$tab'), child: IndexedStack(key: _stackKey, index: tab, children: [for (var i = 0; i < _defs.length; i++) _visited.contains(i) ? _page(i) : const SizedBox.shrink()])));
     final body = widget.viewing == null ? content : Column(children: [_ViewBanner(name: widget.viewing!, onStop: () => widget.onSignOut()), Expanded(child: content)]);
     final navItems = [for (var i = 0; i < _defs.length; i++) NavDef(_defs[i].icon, _defs[i].selected, _defs[i].label, custom: _defs[i].custom)];
     if (wide) {
@@ -306,7 +311,7 @@ class _ShellState extends State<Shell> {
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Row(children: [
                   Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(tab == 0 ? _greeting : _defs[tab].label, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.6)),
+                    Text(tab == 0 ? _greeting : _defs[tab].label, style: display(26)),
                     Text(tab == 0 ? _today : _subtitles[tab], style: TextStyle(color: t.fg2, fontSize: 14)),
                   ])),
                   _bell(),
@@ -323,9 +328,17 @@ class _ShellState extends State<Shell> {
     return Scaffold(
       extendBody: true,
       appBar: AppBar(
-        toolbarHeight: 60,
+        toolbarHeight: 64,
         titleSpacing: 16,
-        title: const Align(alignment: Alignment.centerLeft, child: BrandLogo(style: LogoStyle.compact, height: 34)),
+        // the mark, the name, and whose business this is
+        title: Row(children: [
+          const BrandLogo(style: LogoStyle.mark, height: 32),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            ExcludeSemantics(child: Text('Jas iVision', maxLines: 1, style: display(18, color: Theme.of(context).brightness == Brightness.dark ? t.fg : t.brandDeep))),
+            if (me != null && me!.business.isNotEmpty) Text(me!.business, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Inter', fontSize: 11.5, fontWeight: FontWeight.w400, letterSpacing: 0, color: t.fg2)),
+          ])),
+        ]),
         actions: [_bell(), const SizedBox(width: 4), _profile(), const SizedBox(width: 16)],
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.line)),
       ),
@@ -333,6 +346,16 @@ class _ShellState extends State<Shell> {
       bottomNavigationBar: AppTabBar(items: navItems, index: tab, onTap: _go),
     );
   }
+}
+
+/// A small thing arriving: it pops in a little too big, then settles.
+class _Pop extends StatelessWidget {
+  const _Pop({super.key, required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => reduceMotion(context)
+      ? child
+      : TweenAnimationBuilder<double>(tween: Tween(begin: .6, end: 1), duration: const Duration(milliseconds: 350), curve: Curves.easeOutBack, child: child, builder: (_, v, c) => Transform.scale(scale: v, child: c));
 }
 
 class _NavItem extends StatelessWidget {
@@ -350,7 +373,7 @@ class _NavItem extends StatelessWidget {
         selected: selected,
         label: def.label,
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(Radii.button),
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),

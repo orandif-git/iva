@@ -7,9 +7,9 @@ import '../api_client.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
-import '../widgets/brand.dart';
 import 'common.dart';
 import 'vehicles.dart';
+import '../widgets/motion.dart';
 
 /// The kinds of alert that belong to each part of Activity. A part is shown only when the customer has something set up for it.
 const _peopleAlerts = {'crowding'};
@@ -86,7 +86,7 @@ class _ActivityPageState extends State<ActivityPage> {
       future: plan,
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load Activity', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-        if (!snap.hasData) return const Loading(text: 'Loading Activity');
+        if (!snap.hasData) return const SkeletonPage(label: 'Loading Activity');
         final p = snap.data!;
         if (p.sections.isEmpty) {
           return const EmptyState(icon: Icons.insights_outlined, title: 'Nothing to show yet', text: 'Add a camera, and turn on counting people, reading number plates or an alert in AI Watch. What they see appears here.');
@@ -102,16 +102,16 @@ class _ActivityPageState extends State<ActivityPage> {
         return Column(children: [
           // One quiet header: the parts as a segmented control, then the two filters side by side, then the exact dates.
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (MediaQuery.sizeOf(context).width < 900) const Padding(padding: EdgeInsets.only(bottom: 14), child: PageTitle('Activity')),
               if (p.sections.length > 1)
                 SizedBox(
                   width: double.infinity,
-                  child: SegmentedButton<Section>(
-                    showSelectedIcon: false,
-                    segments: [for (final s in p.sections) ButtonSegment(value: s, label: Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis))],
-                    selected: {section},
-                    onSelectionChanged: (v) { HapticFeedback.selectionClick(); setState(() { chosen = v.first; cameraId = null; }); },
+                  child: Segments<Section>(
+                    items: [for (final s in p.sections) (s, s.label)],
+                    value: section,
+                    onChanged: (v) { HapticFeedback.selectionClick(); setState(() { chosen = v; cameraId = null; }); },
                   ),
                 ),
               const SizedBox(height: 12),
@@ -244,7 +244,7 @@ class _PeopleSectionState extends State<PeopleSection> {
           if (snap.hasError)
             EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load the counts', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}', action: OutlinedButton(onPressed: _retry, child: const Text('Try again')))
           else if (!snap.hasData)
-            const Padding(padding: EdgeInsets.all(40), child: Loading())
+            const SkeletonRows()
           else ...[
             _StatsCard(snap.data!),
             const GroupLabel('Over time'),
@@ -252,7 +252,7 @@ class _PeopleSectionState extends State<PeopleSection> {
               Row(children: [Expanded(child: Text(byDay ? 'People in and out, by day' : 'People in and out, by hour', style: TextStyle(color: t.fg2, fontSize: 13.5))), _Dot(t.brand, 'In'), const SizedBox(width: 14), _Dot(t.fg2.withValues(alpha: .55), 'Out')]),
               const SizedBox(height: 20),
               snap.data!.bars.any((b) => b.peopleIn > 0 || b.peopleOut > 0)
-                  ? SizedBox(height: 190, child: CustomPaint(size: Size.infinite, painter: _BarsPainter(snap.data!.bars, t)))
+                  ? SizedBox(height: 190, child: Grow(key: ValueKey(snap.data), builder: (_, v) => CustomPaint(size: Size.infinite, painter: _BarsPainter(snap.data!.bars, t, v))))
                   : Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('No one was counted in this period.', style: TextStyle(color: t.fg2)))),
             ]),
           ],
@@ -300,9 +300,10 @@ class _StatsCard extends StatelessWidget {
 }
 
 class _BarsPainter extends CustomPainter {
-  _BarsPainter(this.bars, this.t);
+  _BarsPainter(this.bars, this.t, [this.grow = 1]);
   final List<FootfallBar> bars;
   final Tok t;
+  final double grow;     // 0 to 1: the bars rise from the floor when the chart appears
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -319,9 +320,10 @@ class _BarsPainter extends CustomPainter {
     final every = (bars.length / 6).ceil().clamp(1, 99);
     for (var i = 0; i < bars.length; i++) {
       final cx = slot * i + slot / 2, b = bars[i];
-      final hi = h * b.peopleIn / top, ho = h * b.peopleOut / top;
-      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(cx - bw - 1, h - hi, bw, hi), const Radius.circular(3)), inP);
-      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(cx + 1, h - ho, bw, ho), const Radius.circular(3)), outP);
+      final rise = Curves.easeOut.transform(((grow * (1 + bars.length * .035)) - i * .035).clamp(0.0, 1.0));     // one after another, left to right
+      final hi = h * b.peopleIn / top * rise, ho = h * b.peopleOut / top * rise;
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(cx - bw - 1, h - hi, bw, hi), const Radius.circular(5)), inP);
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(cx + 1, h - ho, bw, ho), const Radius.circular(5)), outP);
       if (i % every == 0) {
         final tp = TextPainter(text: TextSpan(text: b.label, style: TextStyle(color: t.fg2, fontSize: 10.5)), textDirection: TextDirection.ltr)..layout(maxWidth: slot * every);
         tp.paint(canvas, Offset((cx - tp.width / 2).clamp(0.0, size.width - tp.width), h + 6));
@@ -330,7 +332,7 @@ class _BarsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BarsPainter o) => o.bars != bars;
+  bool shouldRepaint(_BarsPainter o) => o.bars != bars || o.grow != grow;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------ areas
@@ -354,7 +356,7 @@ class AreasSection extends StatelessWidget {
       future: repo.alertCounts(period),
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}');
-        if (!snap.hasData) return const Padding(padding: EdgeInsets.all(40), child: Loading());
+        if (!snap.hasData) return const SkeletonRows();
         final counts = snap.data!;
         return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, navClear), children: [
           for (final d in defs) ...[
@@ -373,7 +375,7 @@ class AreasSection extends StatelessWidget {
                       Text(d.summary, style: TextStyle(color: t.fg2, fontSize: 13)),
                     ])),
                     Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text('$total', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.5)),
+                      Text('$total', style: display(26)),
                       Text(total == 1 ? 'alert' : 'alerts', style: TextStyle(color: t.fg2, fontSize: 12)),
                     ]),
                   ]),
@@ -418,7 +420,7 @@ class HealthSection extends StatelessWidget {
       future: Future.wait([repo.health(), repo.alertCounts(period)]).then((r) => (r[0] as Health, r[1] as List<AlertCount>)),
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}');
-        if (!snap.hasData) return const Padding(padding: EdgeInsets.all(40), child: Loading());
+        if (!snap.hasData) return const SkeletonRows();
         final (h, counts) = snap.data!;
         final incidents = counts.where((c) => _healthAlerts.contains(c.rule) && c.rule != 'back_to_normal').toList()..sort((a, b) => b.count.compareTo(a.count));
         String title(String rule) => defs.where((d) => d.type == rule).firstOrNull?.title ?? rule.replaceAll('_', ' ');

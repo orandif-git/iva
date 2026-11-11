@@ -7,8 +7,8 @@ import '../api_client.dart';
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
-import '../widgets/brand.dart';
 import 'common.dart';
+import '../widgets/motion.dart';
 
 /// A value to type into the recorder, with a Copy button.
 class CopyRow extends StatelessWidget {
@@ -344,7 +344,7 @@ class _RecorderPageState extends State<RecorderPage> {
             future: data,
             builder: (context, snap) {
               if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this recorder', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-              if (!snap.hasData) return const Loading();
+              if (!snap.hasData) return const Padding(padding: EdgeInsets.all(16), child: SkeletonRows());
               final (conn, check, channels) = snap.data!;
               final online = check.status == 'online';
               return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 40), children: [

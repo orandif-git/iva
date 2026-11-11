@@ -8,6 +8,7 @@ import '../widgets/brand.dart';
 import '../widgets/camera_picture.dart';
 import 'camera_setup.dart';
 import 'common.dart';
+import '../widgets/motion.dart';
 
 /// Every camera, grouped by the recorder it belongs to, with a one-line answer to "are they all working?" at the top.
 class CamerasPage extends StatefulWidget {
@@ -39,7 +40,7 @@ class _CamerasPageState extends State<CamerasPage> {
       future: data,
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load your cameras', text: '${snap.error}', action: OutlinedButton(onPressed: _reload, child: const Text('Try again')));
-        if (!snap.hasData) return const Loading(text: 'Loading your cameras');
+        if (!snap.hasData) return const SkeletonPage(label: 'Loading your cameras');
         final cams = snap.data!;
         if (cams.isEmpty) return const EmptyState(icon: Icons.videocam_off_outlined, title: 'No cameras yet', text: 'When your recorder is connected, its cameras appear here. Recorders are set up in the current app for now.');
         final bad = cams.where((c) => !c.working).length;
@@ -50,7 +51,8 @@ class _CamerasPageState extends State<CamerasPage> {
         }
         return RefreshIndicator(
           onRefresh: () async => _reload(),
-          child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 12, pad, navClear), children: [
+          child: ListView(padding: EdgeInsets.fromLTRB(pad, wide ? 0 : 16, pad, navClear), children: [
+            if (!wide) const Padding(padding: EdgeInsets.only(bottom: 12), child: PageTitle('Cameras')),
             _Summary(total: cams.length, bad: bad),
             if (bad > 0 || cams.length > 8) ...[
               const SizedBox(height: 14),
@@ -82,20 +84,10 @@ class _Summary extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     final ok = bad == 0;
-    final (bg, fg) = ok ? (t.okSoft, t.okInk) : (t.warnSoft, t.warnInk);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18)),
-      child: Row(children: [
-        Icon(ok ? Icons.check_circle_rounded : Icons.error_rounded, color: fg, size: 28),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(ok ? (total == 1 ? 'Your camera is working' : 'All $total cameras are working') : '$bad of $total cameras need attention', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
-          Text('Tap a camera to watch live', style: TextStyle(color: fg.withValues(alpha: .85), fontSize: 13)),
-        ])),
-        Icon(Icons.play_circle_outline_rounded, color: fg.withValues(alpha: .7)),
-      ]),
-    );
+    return Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      StatusPill(ok ? (total == 1 ? 'Your camera is working' : 'All $total cameras are working') : '$bad of $total cameras need attention', ok ? Level.ok : Level.warn),
+      Text('Tap a camera to watch live', style: TextStyle(color: t.fg2, fontSize: 13)),
+    ]);
   }
 }
 
@@ -118,25 +110,24 @@ class _CamCardState extends State<_CamCard> {
     return Semantics(
       button: true,
       label: '${c.name}, ${c.working ? 'working' : 'offline'}',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+      child: Pressable(
         onTap: onTap,
         child: Container(
-          decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: t.line), boxShadow: t.lift),
+          decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.tile), border: Border.all(color: t.line)),
           clipBehavior: Clip.antiAlias,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: Stack(children: [
-                Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: c.working ? const LinearGradient(colors: [Color(0xFF16304F), Color(0xFF2E5A8A)], begin: Alignment.topLeft, end: Alignment.bottomRight) : LinearGradient(colors: [t.surface2, t.line])))),
+                Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: c.working ? const Color(0xFF1B2A41) : t.surface2))),
                 // the camera's latest picture, fetched again every 5 seconds while the tile is on the screen
                 Positioned.fill(child: CameraPicture(repo: widget.repo, cameraId: c.id, active: c.working, onPicture: (_) => setState(() => hasPicture = true))),
                 Positioned.fill(child: CustomPaint(painter: FramePainter(color: (c.working ? Colors.white : t.fg2).withValues(alpha: hasPicture ? .5 : .22), inset: 10, arm: 16, width: 2))),
                 if (!hasPicture) Center(child: Container(width: 44, height: 44, decoration: BoxDecoration(color: (c.working ? Colors.white : t.fg2).withValues(alpha: .18), shape: BoxShape.circle), child: Icon(c.working ? Icons.play_arrow_rounded : Icons.videocam_off_rounded, color: (c.working ? Colors.white : t.fg2).withValues(alpha: .9), size: 26))),
-                Positioned(left: 10, top: 10, child: Pill(c.working ? 'Working' : 'Offline', c.working ? Level.ok : Level.bad, dot: true)),
+                Positioned(left: 8, top: 8, child: Pill(c.working ? 'Live' : 'Offline', c.working ? Level.ok : Level.bad)),
               ]),
             ),
-            Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5), maxLines: 1, overflow: TextOverflow.ellipsis),
               Text(c.working ? (c.seenAgo == null ? 'Live view available' : 'Seen ${shortAgo(c.seenAgo)}') : 'Not sending pictures', style: TextStyle(color: c.working ? t.fg2 : t.crit, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
             ])),
           ]),

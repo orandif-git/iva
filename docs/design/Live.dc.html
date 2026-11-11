@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Camera live view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+body{margin:0}
+button{font-family:inherit;cursor:pointer}
+a{color:#0B6FB8}a:hover{color:#0A3D73}
+@keyframes ivRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes ivPulse{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes ivDrain{from{width:100%}to{width:0%}}
+button:active{transform:scale(.97)}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F4F6FA; font-family: Inter, system-ui, sans-serif; color: #0E1726; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; background: #FFFFFF; border-bottom: 1px solid #E3E8F0; box-sizing: border-box">
+    <a href="Main.dc.html" aria-label="Back to the app" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <div style="flex: 1">
+      <div style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 19px">Front door</div>
+      <div style="font-size: 12px; color: #55627A">Store recorder</div>
+    </div>
+    <span style="margin-right: 8px; padding: 5px 10px; border-radius: 12px; background: #DDF4E6; color: #0B6B3A; font-size: 12px; font-weight: 600">Working</span>
+  </div>
+
+  <div style="padding: 16px; display: flex; flex-direction: column; gap: 14px; animation: ivRise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both">
+    <!-- the picture, large -->
+    <div style="height: 300px; border-radius: 22px; background: #1B2A41; position: relative; overflow: hidden">
+      <span style="position: absolute; left: 12px; top: 12px; padding: 5px 10px; border-radius: 12px; background: #B42318; color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; animation: ivPulse 1.6s ease-in-out infinite">LIVE</span>
+      <span style="position: absolute; right: 12px; top: 12px; padding: 5px 10px; border-radius: 12px; background: rgba(14,23,38,0.72); color: #FFFFFF; font-size: 12px; font-weight: 600">Closes in 1:42</span>
+      <span style="position: absolute; left: 12px; bottom: 12px; padding: 4px 8px; border-radius: 8px; background: rgba(14,23,38,0.72); color: #FFFFFF; font-size: 11.5px">Picture placeholder · the camera's video plays here</span>
+    </div>
+
+    <!-- the clock as a simple bar -->
+    <div>
+      <div style="height: 6px; border-radius: 3px; background: #DCE3EE"><div style="width: 85%; height: 6px; border-radius: 3px; background: #0B6FB8; animation: ivDrain 120s linear both"></div></div>
+      <div style="display: flex; margin-top: 8px; font-size: 13px; color: #55627A"><span style="flex: 1">Live view closes by itself to save your internet.</span></div>
+    </div>
+
+    <!-- one choice: plain or what the AI sees -->
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #E9EDF4; border-radius: 16px">
+      <button style="height: 44px; border: none; border-radius: 12px; background: #FFFFFF; color: #0E1726; font-weight: 700; font-size: 14px">Live view</button>
+      <button style="height: 44px; border: none; border-radius: 12px; background: transparent; color: #0E1726; font-weight: 500; font-size: 14px">What the AI sees</button>
+    </div>
+
+    <div style="display: flex; gap: 10px">
+      <button style="flex: 1; height: 50px; border-radius: 16px; border: none; background: #0B6FB8; color: #FFFFFF; font-weight: 600; font-size: 15.5px">Keep watching</button>
+      <button style="flex: 0 0 110px; height: 50px; border-radius: 16px; border: 1px solid #E3E8F0; background: #FFFFFF; color: #0E1726; font-weight: 600; font-size: 15.5px">Stop</button>
+    </div>
+
+    <!-- what this camera does, in plain words -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 22px; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #E6F1FB; display: flex; align-items: center; justify-content: center">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0B6FB8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5"/></svg>
+        </div>
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">Counting people</div><div style="color: #55627A; font-size: 12.5px">342 came in today</div></div>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8792A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-top: 1px solid #E3E8F0">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #EEEAFE; display: flex; align-items: center; justify-content: center">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B45D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7 2.5 7h-17S6 15 6 9zM10 20a2 2 0 0 0 4 0"/></svg>
+        </div>
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">Add an alert for this camera</div><div style="color: #55627A; font-size: 12.5px">A crowd, a queue, a phone at the counter</div></div>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8792A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-top: 1px solid #E3E8F0">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #E9EDF4; display: flex; align-items: center; justify-content: center">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0E1726" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        </div>
+        <div style="flex: 1"><div style="font-weight: 600; font-size: 15px">Camera settings</div><div style="color: #55627A; font-size: 12.5px">Name, counting line, picture quality</div></div>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8792A6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

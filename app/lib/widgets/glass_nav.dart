@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -7,6 +5,7 @@ import 'package:remixicon/remixicon.dart';
 
 import '../theme.dart';
 import 'brand.dart';
+import 'motion.dart';
 
 class NavDef {
   final IconData icon, selected;
@@ -56,7 +55,7 @@ class NavIcons {
   static const more = NavDef(Remix.apps_2_line, Remix.apps_2_fill, 'More');                  // Reports and Settings
 }
 
-/// The floating, frosted bar: a rounded pill that hovers above the page, with the content showing softly through it. A highlight slides to the chosen place,
+/// The floating bar: a white rounded pill with a soft shadow that hovers above the page. A highlight slides to the chosen place,
 /// the chosen icon turns solid and gives a small spring, and switching places is instant (each place keeps where you were).
 class AppTabBar extends StatelessWidget {
   const AppTabBar({super.key, required this.items, required this.index, required this.onTap});
@@ -76,28 +75,25 @@ class AppTabBar extends StatelessWidget {
           heightFactor: 1,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(34),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                child: Container(
-                  height: 70,
+            child: Container(
+                  key: const ValueKey('tab-bar-pill'),
+                  height: 68,
                   decoration: BoxDecoration(
-                    color: t.surface.withValues(alpha: dark ? .74 : .8),
+                    color: t.surface,
                     borderRadius: BorderRadius.circular(34),
-                    border: Border.all(color: t.line.withValues(alpha: .9)),
-                    boxShadow: [BoxShadow(color: t.shadow.withValues(alpha: .26), blurRadius: 26, offset: const Offset(0, 10))],
+                    border: Border.all(color: t.line),
+                    boxShadow: [BoxShadow(color: t.shadow.withValues(alpha: dark ? .4 : .14), blurRadius: 28, offset: const Offset(0, 10))],
                   ),
                   child: LayoutBuilder(builder: (context, box) {
                     final w = (box.maxWidth - 12) / items.length;
                     return Stack(children: [
                       AnimatedPositioned(
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeOutBack,
+                        duration: reduceMotion(context) ? Duration.zero : const Duration(milliseconds: 280),
+                        curve: Motion.ease,
                         left: 6 + index * w,
-                        top: 7,
+                        top: 6,
                         width: w,
-                        height: 56,
+                        height: 54,
                         child: Container(margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(28))),
                       ),
                       Padding(
@@ -112,8 +108,6 @@ class AppTabBar extends StatelessWidget {
                       ),
                     ]);
                   }),
-                ),
-              ),
             ),
           ),
         ),
@@ -142,7 +136,7 @@ class _ItemState extends State<_Item> with SingleTickerProviderStateMixin {
   @override
   void didUpdateWidget(_Item old) {
     super.didUpdateWidget(old);
-    if (widget.on && !old.on) _c.forward(from: 0);
+    if (widget.on && !old.on && !reduceMotion(context)) _c.forward(from: 0);
   }
 
   @override
@@ -163,11 +157,11 @@ class _ItemState extends State<_Item> with SingleTickerProviderStateMixin {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
-        child: SizedBox(height: 70, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        child: SizedBox(height: 66, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           ScaleTransition(
             scale: _scale,
             child: Stack(clipBehavior: Clip.none, children: [
-              d.glyph(on, color, 27),
+              d.glyph(on, color, 25),
               if (d.badge > 0) Positioned(right: -11, top: -5, child: Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), constraints: const BoxConstraints(minWidth: 17), decoration: BoxDecoration(color: t.crit, borderRadius: BorderRadius.circular(9), border: Border.all(color: t.surface, width: 1.5)), child: Text(d.badge > 99 ? '99+' : '${d.badge}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.2)))),
             ]),
           ),
