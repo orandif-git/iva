@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:ivision_app/api_client.dart';
+import 'package:ivision_app/browser.dart';
 import 'package:ivision_app/geometry/polygon.dart';
 import 'package:ivision_app/main.dart';
 import 'package:ivision_app/save_file.dart';
@@ -13,6 +16,8 @@ import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/widgets/count_line_editor.dart';
+import 'package:ivision_app/screens/camera_setup.dart';
 import 'package:ivision_app/screens/wizard.dart';
 import 'package:ivision_app/widgets/glass_nav.dart';
 import 'package:ivision_app/widgets/profile_menu.dart';
@@ -579,6 +584,167 @@ void profileTests() {
     expect(find.textContaining('Not available in this browser'), findsOneWidget);
   });
 
+  testWidgets('a staff member signing in on the customer page is handed to the staff console', (t) async {
+    await phone(t);
+    SharedPreferences.setMockInitialValues({});
+    final fake = _FakeBrowser();
+    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response(jsonEncode({'kind': 'staff', 'access_token': 'sa', 'refresh_token': 'staff-rt'}), 200)));
+    await t.pumpWidget(IVisionApp(client: client, browser: fake));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField).at(0), 'admin@x.test');
+    await t.enterText(find.byType(TextField).at(1), 'a long password');
+    await t.tap(find.text('Sign in').last);
+    await t.pumpAndSettle();
+    expect(fake.handedOff, 'staff-rt');
+    expect(find.textContaining('staff account'), findsNothing, reason: 'no more "sign in at /staff/" message');
+  });
+
+  testWidgets('an invitation link asks for a password, saves it, and goes to sign-in with a note', (t) async {
+    await phone(t);
+    SharedPreferences.setMockInitialValues({});
+    final seen = <Map>[];
+    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async {
+      if (r.url.path == '/v1/auth/set-password') { seen.add(jsonDecode(r.body) as Map); return http.Response('', 204); }
+      return http.Response('{}', 404);
+    }));
+    final fake = _FakeBrowser(path: '/set-password', query: {'token': 'tok123'});
+    await t.pumpWidget(IVisionApp(client: client, browser: fake));
+    await t.pumpAndSettle();
+    expect(find.text('Choose your password'), findsOneWidget);
+    await t.enterText(find.byType(TextField).at(0), 'short');
+    await t.enterText(find.byType(TextField).at(1), 'short');
+    await t.tap(find.text('Save password'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('at least 10 characters'), findsWidgets);
+    await t.enterText(find.byType(TextField).at(0), 'a long enough password');
+    await t.enterText(find.byType(TextField).at(1), 'something different');
+    await t.tap(find.text('Save password'));
+    await t.pumpAndSettle();
+    expect(find.text('The two passwords are not the same.'), findsOneWidget);
+    await t.enterText(find.byType(TextField).at(1), 'a long enough password');
+    await t.tap(find.text('Save password'));
+    await t.pumpAndSettle();
+    expect(seen, [{'token': 'tok123', 'password': 'a long enough password'}]);
+    expect(find.text('Your password is saved. Sign in with it now.'), findsOneWidget);
+    expect(fake.url, '/');
+  });
+
+  testWidgets('an incomplete invitation link says so instead of showing a form', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(client: ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(path: '/set-password')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('This link is not complete'), findsOneWidget);
+    expect(find.text('Save password'), findsNothing);
+  });
+
+  testWidgets('staff opening a customer from the console see the customer view-only, with a banner, and Stop ends it', (t) async {
+    await phone(t);
+    SharedPreferences.setMockInitialValues({});
+    final calls = <String>[];
+    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async {
+      calls.add('${r.method} ${r.url.path} ${r.headers['Authorization']}');
+      if (r.url.path == '/v1/auth/refresh') return http.Response('{}', 401);
+      return http.Response(jsonEncode(r.url.path == '/v1/me' ? {'user': {'name': 'Priya', 'role': 'admin'}, 'tenant': {'name': 'Green Valley Store'}} : <String, dynamic>{}), 200);
+    }));
+    final fake = _FakeBrowser(openedByStaff: true, grant: const ViewAsGrant(token: 'view-token', sessionId: 's1', tenant: 'Green Valley Store'));
+    await t.pumpWidget(IVisionApp(client: client, browser: fake));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(find.textContaining('You are looking at', findRichText: true), findsOneWidget);
+    expect(find.textContaining('Green Valley Store', findRichText: true), findsWidgets);
+    expect(calls.where((c) => c.contains('/auth/refresh')), isEmpty, reason: 'a view-only token is never renewed');
+    expect(calls.any((c) => c.endsWith('Bearer view-token')), true);
+    await t.tap(find.text('Stop'));
+    await t.pumpAndSettle();
+    expect(fake.stopped, 's1');
+    expect(find.textContaining('view-only session has ended'), findsOneWidget);
+  });
+
+  testWidgets('if the console never hands the session over, the tab says so', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(client: ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(openedByStaff: true)));
+    await t.pumpAndSettle();
+    expect(find.textContaining("Could not open the customer's app"), findsOneWidget);
+  });
+
+  testWidgets('the owner sets a camera up: counting line (swap in/out), plate area, quality, pause and remove', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2600 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: SingleChildScrollView(child: CameraSetup(repo: repo, camera: const CameraItem('c1', 'Front door', 'Store recorder', true), onRemoved: () => repo.cameraRemoved = true)))));
+    await t.pumpAndSettle();
+    expect(find.text('Counting line'.toUpperCase()), findsOneWidget);
+    expect(find.text('Plate area'.toUpperCase()), findsOneWidget);
+    await t.tap(find.text('Swap in / out'));
+    await t.pump();
+    // drag the first end of the line
+    await t.drag(find.bySemanticsLabel('Line end 1, drag to move'), const Offset(30, -20));
+    await t.pump();
+    await t.tap(find.text('Save'));
+    await t.pumpAndSettle();
+    final saved = repo.zonesSaved['c1']!;
+    expect(saved.single.kind, 'count_line', reason: 'no plate area drawn yet, so only the line is saved');
+    expect(saved.single.points.length, 2);
+    expect(saved.single.points[0].x, isNot(0.15), reason: 'the dragged end moved');
+    expect(saved.single.points[1], const Pt(0.85, 0.6));
+    expect(saved.single.inDirection!.y, lessThan(0), reason: 'swapped: the arrow points up instead of down');
+    expect(find.text('Saved. The camera uses it within a minute.'), findsOneWidget);
+    await t.tap(find.text('Full quality'));
+    await t.pumpAndSettle();
+    expect(repo.streamSet, 'main');
+    await t.tap(find.text('Pause this camera'));
+    await t.pumpAndSettle();
+    expect(repo.cameraEnabled, false);
+    expect(find.text('Resume this camera'), findsOneWidget);
+    await t.tap(find.text('Remove this camera'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Remove'));
+    await t.pumpAndSettle();
+    expect(repo.cameraRemoved, true);
+  });
+
+  test('the counting line knows which way is in, and reads it back from the server', () {
+    final c = CountLineController(a: const Pt(0.2, 0.5), b: const Pt(0.8, 0.5));      // a line left to right
+    expect(c.inDirection, const Pt(0, 1), reason: 'in is downwards in the picture');
+    c.swap();
+    expect(c.inDirection.y, -1);
+    expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], const Pt(0, -1)), -1);
+    expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], const Pt(0, 1)), 1);
+    expect(CountLineController.flipFor([const Pt(0.2, 0.5), const Pt(0.8, 0.5)], null), 1);
+  });
+
+  testWidgets('Activity shows people counted (today, 7 days) and the plates read, with search and a detail page', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Activity'));
+    await t.pumpAndSettle();
+    expect(find.text('People in'), findsOneWidget);
+    expect(find.text('342'), findsOneWidget);
+    expect(find.text('5pm'), findsOneWidget, reason: 'the busiest hour');
+    await t.tap(find.text('7 days'));
+    await t.pumpAndSettle();
+    expect(find.text('By day', skipOffstage: false), findsOneWidget);
+    await t.tap(find.text('Vehicles'));
+    await t.pumpAndSettle();
+    expect(find.text('GJ14AB1234'), findsOneWidget);
+    expect(find.text('Blocked list'), findsOneWidget);
+    expect(find.text('Needs a check'), findsOneWidget);
+    await t.enterText(find.byType(TextField), 'GJ05');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pumpAndSettle();
+    expect(find.text('GJ05CD9876'), findsOneWidget);
+    expect(find.text('GJ14AB1234'), findsNothing);
+    await t.tap(find.text('GJ05CD9876'));
+    await t.pumpAndSettle();
+    expect(find.text('Number plate'), findsOneWidget);
+    expect(find.text('Time inside'), findsOneWidget);
+    expect(find.text('42 min'), findsOneWidget);
+  });
+
   testWidgets('Reports shows scheduled reports, switches one off, and can schedule a new one', (t) async {
     await phone(t);
     final repo = MockRepository();
@@ -655,4 +821,27 @@ class _FakePush implements PushService {
     if (ask) asked++;
     return granted_ || ask ? _t : null;
   }
+}
+
+class _FakeBrowser extends Browser {
+  _FakeBrowser({String path = '/', Map<String, String> query = const {}, this.openedByStaff = false, this.grant}) : _path = path, _query = query;
+  final String _path;
+  final Map<String, String> _query;
+  @override
+  final bool openedByStaff;
+  final ViewAsGrant? grant;
+  String? handedOff, stopped;
+  String url = '';
+  @override
+  String get path => _path;
+  @override
+  Map<String, String> get query => _query;
+  @override
+  void replaceUrl(String path) => url = path;
+  @override
+  void handOffToStaff(String refreshToken) => handedOff = refreshToken;
+  @override
+  Future<ViewAsGrant?> waitForViewAs({Duration timeout = const Duration(seconds: 10)}) async => grant;
+  @override
+  void stopViewAs(String sessionId) => stopped = sessionId;
 }

@@ -5,6 +5,7 @@ import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import '../widgets/brand.dart';
+import 'camera_setup.dart';
 import 'common.dart';
 
 /// Every camera, grouped by the recorder it belongs to, with a one-line answer to "are they all working?" at the top.
@@ -23,7 +24,10 @@ class _CamerasPageState extends State<CamerasPage> {
 
   void _reload() => setState(() { data = widget.repo.cameras(); });
 
-  void _open(CameraItem c) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CameraDetail(repo: widget.repo, camera: c, onAddAlert: widget.onAddAlert)));
+  Future<void> _open(CameraItem c) async {
+    final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => CameraDetail(repo: widget.repo, camera: c, onAddAlert: widget.onAddAlert)));
+    if (changed == true && mounted) _reload();         // a camera was removed
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +183,11 @@ class CameraDetail extends StatelessWidget {
               ]),
               const SizedBox(height: 16),
               FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size(44, 52)), onPressed: () { Navigator.of(context).pop(); onAddAlert(camera); }, icon: const Icon(Icons.add_alert_outlined), label: const Text('Add an alert for this camera')),
+              // Setting the camera up (counting line, plate area, quality, pause, remove) is for the owner.
+              FutureBuilder<Me>(
+                future: repo.me(),
+                builder: (context, me) => me.data?.role == 'admin' ? CameraSetup(repo: repo, camera: camera, onRemoved: () => Navigator.of(context).pop(true)) : const SizedBox.shrink(),
+              ),
             ]),
           ),
         ),

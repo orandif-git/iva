@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 # The web pages load only their own scripts and styles and talk only to this server, so a page cannot be made to load or send anything elsewhere.
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; manifest-src 'self'; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-# The new customer app (Flutter, served at /next/) draws on a canvas, so it needs WebAssembly and its own inline styles. It loads scripts only from this server and talks to it,
+# The customer app (Flutter, served at the root) draws on a canvas, so it needs WebAssembly and its own inline styles. It loads scripts only from this server and talks to it,
 # plus the three Google addresses a browser needs to get its push address (Firebase Cloud Messaging).
 RETIRE_SW = '''self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil((async () => {
@@ -35,6 +35,7 @@ NEXT_CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src
             "connect-src 'self' data: blob: https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://fcm.googleapis.com; "
             "font-src 'self' data:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 _DOCS = ("/docs", "/openapi.json")
+_APP_PAGES = ("/", "/index.html", "/set-password")       # the pages that start the customer app; every other page keeps the strict policy
 # A request that came through a proxy (the website's front door) carries one of these headers; our own services call the API directly and do not.
 _PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")
 
@@ -77,7 +78,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         if not request.url.path.startswith(_DOCS):
             response.headers.setdefault("X-Frame-Options", "DENY")
             if response.headers.get("content-type", "").startswith("text/html"):
-                response.headers.setdefault("Content-Security-Policy", NEXT_CSP if request.url.path.startswith("/next") else CSP)         # a page with its own policy (the evidence viewer plays video) keeps it
+                response.headers.setdefault("Content-Security-Policy", NEXT_CSP if request.url.path in _APP_PAGES else CSP)         # a page with its own policy (the evidence viewer plays video) keeps it
             if not request.url.path.startswith(("/v1", "/admin/v1", "/internal")):
                 response.headers.setdefault("Cache-Control", "no-cache")        # pages and scripts are re-checked each time, so an update reaches everyone
         if request.url.scheme == "https":
@@ -97,38 +98,35 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         app.include_router(r.router)
 
     web = Path(s.web_dir) if s.web_dir else Path(__file__).resolve().parents[1] / "web"
-    if (web / "index.html").is_file():
-        @app.get("/set-password", include_in_schema=False)
-        async def set_password_page():
-            return FileResponse(web / "index.html")
+    nxt = web.parent / "web_next"            # the customer app (Flutter, built from /app by scripts/build_app.sh)
+    if (web / "staff" / "index.html").is_file():
         @app.get("/staff/set-password", include_in_schema=False)
         async def staff_set_password_page():
             return FileResponse(web / "staff" / "index.html")
-        nxt = web.parent / "web_next"
-        if (nxt / "index.html").is_file():          # the new customer app, built from /app (see scripts/build_app.sh)
-            if s.default_app == "next":
-                # The new app opens at the plain address. The old one is still there for support and for a person who needs it: /?classic=1 opens it and a
-                # cookie keeps it for 30 days; /?next=1 goes back. Password links (/set-password) and the staff console are untouched.
-                @app.get("/", include_in_schema=False)
-                async def front_door(request: Request):
-                    q = request.query_params
-                    if "next" in q:
-                        r = RedirectResponse("/next/#/", status_code=302)
-                        r.delete_cookie("gi_ui", path="/")
-                        return r
-                    if "classic" in q or request.cookies.get("gi_ui") == "classic":
-                        r = FileResponse(web / "index.html")
-                        if "classic" in q:
-                            r.set_cookie("gi_ui", "classic", max_age=30 * 86400, path="/", secure=s.env != "dev", httponly=True, samesite="lax")
-                        return r
-                    return RedirectResponse("/next/#/", status_code=302)
-                # Phones and computers that used the old app still hold its service worker, which keeps old files. While the new app is the front door the server
-                # answers the old worker's update check with one that empties its caches, removes itself and reloads the page, so every device moves over by itself.
-                @app.get("/sw.js", include_in_schema=False)
-                async def retire_old_worker():
-                    return Response(RETIRE_SW, media_type="application/javascript", headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/"})
-            app.mount("/next", StaticFiles(directory=nxt, html=True), name="web_next")
-        app.mount("/", StaticFiles(directory=web, html=True), name="web")        # last, so it never hides an API route
+    if (nxt / "index.html").is_file():
+        @app.get("/set-password", include_in_schema=False)
+        async def set_password_page():
+            return FileResponse(nxt / "index.html")           # the app reads the link's token itself
+        @app.get("/next", include_in_schema=False)
+        @app.get("/next/{rest:path}", include_in_schema=False)
+        async def old_address(rest: str = ""):
+            return RedirectResponse("/", status_code=301)      # the app used to live at /next/: bookmarks and Home Screen icons keep working
+        # The old customer app's service worker is still on some phones and computers. Its next update check gets this one, which empties its caches,
+        # removes itself and reloads the page, so every device moves over by itself (the new app registers its own worker at the same address).
+        @app.get("/sw.js", include_in_schema=False)
+        async def retire_old_worker():
+            return Response(RETIRE_SW, media_type="application/javascript", headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/"})
+    if (web / "favicon.ico").is_file():
+        @app.get("/favicon.ico", include_in_schema=False)
+        async def favicon():
+            return FileResponse(web / "favicon.ico", media_type="image/vnd.microsoft.icon")      # the staff console links it; the app has its own favicon.png
+    if (web / "staff").is_dir():
+        app.mount("/staff", StaticFiles(directory=web / "staff", html=True), name="staff")
+        for d in ("js", "css", "img"):
+            if (web / d).is_dir():
+                app.mount(f"/{d}", StaticFiles(directory=web / d), name=f"web_{d}")       # shared by the staff console
+    if (nxt / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=nxt, html=True), name="web_next")            # last, so it never hides an API route
     return app
 
 

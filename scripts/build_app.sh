@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds the new customer app (Flutter, in /app) and puts it where the API serves it: backend/web_next, at /next/.
+# Builds the new customer app (Flutter, in /app) and puts it where the API serves it: backend/web_next, at the root address.
 # Needs the Flutter SDK. The server itself needs nothing but the built files, so this runs on a developer machine, not on the server.
 set -euo pipefail
 cd "$(dirname "$0")/../app"
-flutter build web --release --no-web-resources-cdn --base-href /next/
+flutter build web --release --no-web-resources-cdn --base-href /
 rm -rf ../backend/web_next && cp -r build/web ../backend/web_next
 cd ../backend/web_next
 # only the CanvasKit engine is used; drop the debug symbols and the engines this build never loads

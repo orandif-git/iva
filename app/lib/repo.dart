@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'api_client.dart';
 import 'live/live_rules.dart';
 import 'live/jpeg_splitter.dart';
+import 'geometry/polygon.dart';
 import 'models.dart';
 
 export 'api_client.dart' show ApiError;
@@ -19,6 +20,14 @@ abstract class Repository {
   Future<Me> me();
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
+  Future<FootfallRange> footfallRange({required int days, String? cameraId});
+  Future<PlatePage> plates({String q = '', String? cursor});
+  Future<Uint8List?> plateImage(String id);
+  Future<CameraSettings> cameraSettings(String id);
+  Future<void> saveZones(String cameraId, List<CameraZone> zones);
+  Future<void> setStream(String cameraId, String stream);
+  Future<void> setCameraEnabled(String cameraId, bool enabled);
+  Future<void> removeCamera(String cameraId);
   Future<void> done(String alertId);
   Future<void> snooze(String alertId, {int minutes = 60});
   Future<List<CameraItem>> cameras();
@@ -90,6 +99,77 @@ class ApiRepository implements Repository {
       for (final j in list)
         AlertItem.fromJson(j as Map<String, dynamic>)..smart = fam[j['rule_type']] ?? false
     ];
+  }
+
+  /// Midnight in India, as the API wants it (days are cut there).
+  static String _istDay(int offsetDays) {
+    final t = DateTime.now().toUtc().add(Duration(hours: 5, minutes: 30, days: offsetDays));
+    return '${t.year.toString().padLeft(4, '0')}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}T00:00:00+05:30';
+  }
+
+  @override
+  Future<FootfallRange> footfallRange({required int days, String? cameraId}) async {
+    final from = _istDay(1 - days), to = _istDay(1), hourly = days == 1;
+    final q = {'from': from, 'to': to, 'tz': 'Asia/Kolkata', if (cameraId != null) 'camera_id': cameraId};
+    final r = await Future.wait([api.call('GET', '/v1/footfall', query: {...q, 'interval': hourly ? 'hour' : 'day'}), api.call('GET', '/v1/footfall/summary', query: q)]);
+    final f = r[0] as Map, sum = r[1] as Map;
+    String label(String iso) {
+      final t = DateTime.parse(iso).toUtc().add(const Duration(hours: 5, minutes: 30));
+      if (hourly) return '${t.hour % 12 == 0 ? 12 : t.hour % 12}${t.hour < 12 ? 'am' : 'pm'}';
+      const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${t.day} ${m[t.month - 1]}';
+    }
+    final peak = sum['peak_hour'] as Map?;
+    return FootfallRange((sum['people_in'] as num).toInt(), (sum['people_out'] as num).toInt(), peak == null ? null : label(peak['bucket'] as String),
+        [for (final p in f['items'] as List) FootfallBar(label(p['bucket'] as String), (p['people_in'] as num).toInt(), (p['people_out'] as num).toInt())]);
+  }
+
+  @override
+  Future<PlatePage> plates({String q = '', String? cursor}) async {
+    final r = await api.call('GET', '/v1/plates', query: {'limit': '30', 'from': _istDay(-6), 'to': _istDay(1), if (q.trim().isNotEmpty) 'q': q.trim(), if (cursor != null) 'cursor': cursor}) as Map;
+    return PlatePage([
+      for (final j in r['items'] as List)
+        PlateRead('${j['id']}', '${j['camera_id']}', j['plate_text'] as String?, DateTime.tryParse('${j['seen_at']}')?.toLocal(),
+            vehicle: j['vehicle_type'] as String?, direction: j['direction'] as String?, blocked: j['blocked'] == true, needsReview: j['review_status'] == 'needs_review',
+            hasPicture: j['has_snapshot'] == true, confidence: (j['confidence'] as num?)?.toInt(), dwellMinutes: j['dwell_seconds'] == null ? null : ((j['dwell_seconds'] as num) / 60).round())
+    ], r['next_cursor'] as String?);
+  }
+
+  @override
+  Future<Uint8List?> plateImage(String id) async {
+    final r = await api.raw('GET', '/v1/plates/$id/image');
+    return r.statusCode == 200 ? r.bodyBytes : null;
+  }
+
+  @override
+  Future<CameraSettings> cameraSettings(String id) async {
+    final r = await Future.wait([api.call('GET', '/v1/cameras'), api.call('GET', '/v1/cameras/$id/zones')]);
+    final cam = (r[0] as List).cast<Map>().firstWhere((c) => c['id'] == id, orElse: () => throw ApiError(404, 'That camera was not found.'));
+    List<Pt> pts(Object? l) => [for (final p in (l as List? ?? const [])) Pt((p[0] as num).toDouble(), (p[1] as num).toDouble())];
+    return CameraSettings(id, cam['name'] as String, useFootfall: cam['use_footfall'] == true, useAnpr: cam['use_anpr'] == true, enabled: cam['enabled'] == true, stream: (cam['stream'] ?? 'sub') as String, zones: [
+      for (final z in (r[1] as List).cast<Map>())
+        CameraZone(z['kind'] as String, pts(z['points']), inDirection: z['in_direction'] == null ? null : Pt((z['in_direction'][0] as num).toDouble(), (z['in_direction'][1] as num).toDouble()))
+    ]);
+  }
+
+  @override
+  Future<void> saveZones(String cameraId, List<CameraZone> zones) => api.call('PUT', '/v1/cameras/$cameraId/zones', body: {
+        'zones': [for (final z in zones) {'kind': z.kind, 'points': [for (final p in z.points) p.toJson()], if (z.inDirection != null) 'in_direction': z.inDirection!.toJson()}]
+      });
+
+  @override
+  Future<void> setStream(String cameraId, String stream) => api.call('PATCH', '/v1/cameras/$cameraId', body: {'stream': stream});
+
+  @override
+  Future<void> setCameraEnabled(String cameraId, bool enabled) async {
+    await api.call('PATCH', '/v1/cameras/$cameraId', body: {'enabled': enabled});
+    _recorders = null;
+  }
+
+  @override
+  Future<void> removeCamera(String cameraId) async {
+    await api.call('DELETE', '/v1/cameras/$cameraId');
+    _recorders = null;
   }
 
   @override
@@ -344,6 +424,36 @@ class MockRepository implements Repository {
 
   @override
   Future<Footfall> today() async => const Footfall(342, 324, '5 pm');
+  final Map<String, List<CameraZone>> zonesSaved = {};
+  String? streamSet;
+  bool? cameraEnabled;
+  bool cameraRemoved = false;
+  @override
+  Future<FootfallRange> footfallRange({required int days, String? cameraId}) async => days == 1
+      ? FootfallRange(342, 324, '5pm', [for (var h = 9; h <= 20; h++) FootfallBar('${h % 12 == 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}', 10 + h * 2, 8 + h * 2)])
+      : FootfallRange(2310 * days ~/ 7, 2200 * days ~/ 7, '6pm', [for (var d = 0; d < days.clamp(1, 7); d++) FootfallBar('${d + 1} Nov', 300 + d * 10, 290 + d * 9)]);
+  @override
+  Future<PlatePage> plates({String q = '', String? cursor}) async {
+    final all = [
+      PlateRead('p1', 'c1', 'GJ14AB1234', DateTime(2026, 11, 10, 9, 30), vehicle: 'car', direction: 'in', hasPicture: true, confidence: 97),
+      PlateRead('p2', 'c1', 'GJ05CD9876', DateTime(2026, 11, 10, 9, 12), vehicle: 'truck', direction: 'out', blocked: true, dwellMinutes: 42),
+      PlateRead('p3', 'c1', null, DateTime(2026, 11, 10, 8, 55), vehicle: 'bike', needsReview: true),
+    ];
+    return PlatePage(q.isEmpty ? all : all.where((p) => (p.plate ?? '').contains(q.toUpperCase())).toList(), null);
+  }
+  @override
+  Future<Uint8List?> plateImage(String id) async => null;
+  @override
+  Future<CameraSettings> cameraSettings(String id) async => CameraSettings(id, 'Front door', useFootfall: true, useAnpr: true, enabled: cameraEnabled ?? true, stream: streamSet ?? 'sub', zones: zonesSaved[id] ?? const []);
+  @override
+  Future<void> saveZones(String cameraId, List<CameraZone> zones) async => zonesSaved[cameraId] = zones;
+  @override
+  Future<void> setStream(String cameraId, String stream) async => streamSet = stream;
+  @override
+  Future<void> setCameraEnabled(String cameraId, bool enabled) async => cameraEnabled = enabled;
+  @override
+  Future<void> removeCamera(String cameraId) async => cameraRemoved = true;
+
   @override
   Future<void> done(String id) async => _state[id] = AlertState.done;
   @override

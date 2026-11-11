@@ -23,7 +23,7 @@ def _clean_cache():
 
 
 # ------------------------------------------------------------------------------------------ the pages
-@pytest.mark.parametrize("path", ["/", "/staff/", "/set-password"])
+@pytest.mark.parametrize("path", ["/staff/", "/staff/set-password"])
 async def test_pages_are_served_with_a_strict_content_policy(client, path):
     r = await client.get(path)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
@@ -36,27 +36,34 @@ async def test_pages_are_served_with_a_strict_content_policy(client, path):
     assert "style=" not in r.text
 
 
-async def test_the_new_customer_app_is_served_at_next_with_the_policy_it_needs_and_nothing_else_loosens(client):
-    r = await client.get("/next/")
-    assert r.status_code == 200 and "flutter_bootstrap.js" in r.text
-    csp = r.headers["content-security-policy"]
-    assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and "connect-src 'self'" in csp
-    assert "script-src 'self' 'wasm-unsafe-eval'" in csp and "unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")
-    assert (await client.get("/next/main.dart.js")).status_code == 200
-    assert (await client.get("/next/canvaskit/canvaskit.wasm")).status_code == 200
-    for path in ("/", "/staff/", "/set-password"):                  # every other page keeps the strict policy
-        h = (await client.get(path)).headers["content-security-policy"]
-        assert "wasm-unsafe-eval" not in h and "'unsafe-inline'" not in h
-    assert (await client.get("/v1/health-summary")).status_code == 401          # the API is not hidden by the new pages
+async def test_the_customer_app_is_the_root_with_the_policy_it_needs_and_nothing_else_loosens(client):
+    for path in ("/", "/set-password"):
+        r = await client.get(path)
+        assert r.status_code == 200 and "flutter_bootstrap.js" in r.text and r.headers["content-type"].startswith("text/html"), path
+        csp = r.headers["content-security-policy"]
+        assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and "connect-src 'self'" in csp
+        assert "script-src 'self' 'wasm-unsafe-eval'" in csp and "unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")
+        assert "https://fcm.googleapis.com" in csp and "https://fcmregistrations.googleapis.com" in csp          # a browser getting its push address
+    assert (await client.get("/main.dart.js")).status_code == 200
+    assert (await client.get("/canvaskit/canvaskit.wasm")).status_code == 200
+    assert (await client.get("/push.js")).status_code == 200 and (await client.get("/firebase/firebase-app-compat.js")).status_code == 200
+    h = (await client.get("/staff/")).headers["content-security-policy"]                          # the staff console keeps the strict policy
+    assert "wasm-unsafe-eval" not in h and "'unsafe-inline'" not in h
+    assert (await client.get("/v1/health-summary")).status_code == 401                            # the API is not hidden by the pages
 
 
-def test_the_old_service_worker_leaves_the_new_app_alone():
-    sw = (pathlib.Path(__file__).resolve().parents[1] / "web" / "sw.js").read_text()
-    assert 'p.startsWith("/next")' in sw
+async def test_the_old_addresses_lead_to_the_new_app_and_the_old_worker_cleans_up_after_itself(client):
+    r = await client.get("/next/", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/"
+    assert (await client.get("/next/some/where", follow_redirects=False)).headers["location"] == "/"
+    r = await client.get("/sw.js")
+    assert r.status_code == 200 and "javascript" in r.headers["content-type"] and r.headers["cache-control"] == "no-store"
+    assert "caches.delete" in r.text and "unregister()" in r.text
+    assert not (_web() / "index.html").exists() and not (_web() / "js/app/main.js").exists(), "the old customer app is gone"
 
 
 async def test_scripts_and_styles_are_served_and_nothing_outside_the_web_folder(client):
-    assert "javascript" in (await client.get("/js/app/main.js")).headers["content-type"]
+    assert "javascript" in (await client.get("/js/staff/main.js")).headers["content-type"]
     assert (await client.get("/css/app.css")).status_code == 200
     for bad in ("/../app/config.py", "/..%2fapp%2fconfig.py", "/%2e%2e/app/config.py", "/js/../../app/main.py"):
         r = await client.get(bad)
@@ -311,10 +318,10 @@ async def test_the_picture_files_have_the_sizes_their_names_promise(client):
     assert sorted(ico[6 + 16 * i] for i in range(3)) == [16, 32, 48]
 
 
-@pytest.mark.parametrize("path", ["/", "/staff/"])
+@pytest.mark.parametrize("path", ["/staff/"])
 async def test_pages_point_at_the_icons(client, path):
     html = (await client.get(path)).text
-    manifest = "/img/staff.webmanifest" if path == "/staff/" else "/img/site.webmanifest"
+    manifest = "/img/staff.webmanifest"
     for want in ('href="/img/favicon.svg"', 'href="/favicon.ico"', 'href="/img/apple-touch-icon.png"', f'href="{manifest}"', 'name="theme-color"', 'href="/css/app.css"'):
         assert want in html            # one shared stylesheet for both apps
 
@@ -343,15 +350,6 @@ async def test_public_routes_still_work_through_the_proxy(client, make):
     r = await client.get("/v1/me", headers={**u["headers"], "X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
     assert r.status_code == 200
     assert (await client.get("/", headers={"X-Forwarded-For": "203.0.113.5"})).status_code == 200
-
-
-async def test_the_service_worker_is_served_from_the_root_and_is_not_cached_forever(client):
-    r = await client.get("/sw.js")
-    assert r.status_code == 200 and "javascript" in r.headers["content-type"] and r.headers["cache-control"] == "no-cache"
-    src = r.text
-    assert "snapshot" not in src and "download" not in src and "/auth" not in src            # pictures, downloads and sign-in are never stored
-    assert "authorization" not in src.lower()                                            # nor are tokens
-    assert "clear-api-cache" in src
 
 
 async def test_the_manifest_makes_an_installable_app(client):
@@ -407,32 +405,10 @@ def _web():
     return pathlib.Path(get_settings().web_dir or pathlib.Path(__file__).resolve().parents[1] / "web")
 
 
-async def test_the_new_shell_files_are_served_as_scripts(client):
-    for f in ("/js/app/shell.js", "/js/app/table.js", "/js/app/theme.js"):
+async def test_the_shared_shell_files_the_staff_console_uses_are_served_as_scripts(client):
+    for f in ("/js/app/shell.js", "/js/app/table.js", "/js/app/theme.js", "/js/app/ui.js"):
         r = await client.get(f)
         assert r.status_code == 200 and "javascript" in r.headers["content-type"], f
-
-
-def test_the_customer_app_starts_in_light_and_the_staff_console_follows_the_device():
-    src = (_web() / "js/app/theme.js").read_text()
-    assert 'startsWith("/staff") ? "auto" : "light"' in src            # a customer's phone being in dark mode does not turn the app dark
-
-
-def test_the_offline_copy_holds_every_file_the_customer_app_loads():
-    """If a file is missing from the saved list, the app opens half old and half new after an update."""
-    import posixpath
-    import re
-    web = _web()
-    saved = set(re.findall(r'"(/[^"]+\.(?:js|css))"', re.search(r"PRECACHE = \[(.*?)\];", (web / "sw.js").read_text(), re.S).group(1)))
-    seen, todo = set(), ["/js/app/main.js"]
-    while todo:
-        cur = todo.pop()
-        if cur in seen:
-            continue
-        seen.add(cur)
-        for imp in re.findall(r'from "(\.{1,2}/[^"]+)"', (web / cur.lstrip("/")).read_text()):
-            todo.append(posixpath.normpath(posixpath.join(posixpath.dirname(cur), imp)))
-    assert seen <= saved, sorted(seen - saved)
 
 
 def test_every_staff_page_is_in_exactly_one_menu_group():
