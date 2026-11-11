@@ -428,20 +428,20 @@ class _SettingsPageState extends State<SettingsPage> {
                   // who you are, and the plan
                   Container(
                     padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(gradient: brandGradient, borderRadius: BorderRadius.circular(22)),
+                    decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line)),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Container(width: 52, height: 52, alignment: Alignment.center, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle), child: Text(me.name.isEmpty ? '?' : me.name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700))),
+                        Container(width: 52, height: 52, alignment: Alignment.center, decoration: BoxDecoration(color: t.brand, shape: BoxShape.circle), child: Text(me.name.isEmpty ? '?' : me.name[0].toUpperCase(), style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontSize: 20, fontWeight: FontWeight.w700))),
                         const SizedBox(width: 14),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(me.name, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700)), Text(me.business, style: TextStyle(color: Colors.white.withValues(alpha: .85), fontSize: 14)), if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 6), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), borderRadius: BorderRadius.circular(99)), child: const Text('Owner or manager', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))))])),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(me.name, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700)), Text(me.business, style: TextStyle(color: t.fg2, fontSize: 13)), if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 6), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(99)), child: Text('Owner or manager', style: TextStyle(color: t.brand, fontSize: 12, fontWeight: FontWeight.w600))))])),
                       ]),
                       if (me.plan != null || used != null) ...[
                         const SizedBox(height: 16),
                         Row(children: [
-                          Expanded(child: Text(me.plan == null ? 'Cameras' : '${me.plan}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: .9), fontWeight: FontWeight.w600))),
-                          if (used != null && limit != null) Text('$used of $limit cameras', style: TextStyle(color: Colors.white.withValues(alpha: .9), fontSize: 13)),
+                          Expanded(child: Text(me.plan == null ? 'Cameras' : '${me.plan}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
+                          if (used != null && limit != null) Text('$used of $limit cameras', style: TextStyle(color: t.fg2, fontSize: 13)),
                         ]),
-                        if (used != null && limit != null && limit > 0) Padding(padding: const EdgeInsets.only(top: 8), child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (used / limit).clamp(0.0, 1.0), minHeight: 7, color: Colors.white, backgroundColor: Colors.white.withValues(alpha: .25)))),
+                        if (used != null && limit != null && limit > 0) Padding(padding: const EdgeInsets.only(top: 8), child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (used / limit).clamp(0.0, 1.0), minHeight: 7, color: t.brand, backgroundColor: t.brandSoft))),
                       ],
                     ]),
                   ),

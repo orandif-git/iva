@@ -219,6 +219,10 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.textContaining('Smart alerts ('));
     await t.pumpAndSettle();
+    expect(find.text('Billing queue'), findsNothing, reason: 'the areas are folded away until you open the alert');
+    expect(find.text('1 area'), findsOneWidget, reason: 'how many areas the alert watches, beside its name');
+    await t.tap(find.text('Long queue'));
+    await t.pumpAndSettle();
     expect(find.text('Billing queue'), findsOneWidget, reason: 'the camera the queue alert is watching');
     expect(find.textContaining('When more than 6 people waiting'), findsOneWidget);
     expect(find.text('Add another area'), findsWidgets);
