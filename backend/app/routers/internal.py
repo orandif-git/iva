@@ -79,6 +79,8 @@ class DiskIn(Strict):
     status: int = Field(ge=0)
     state: int = Field(ge=0, le=15)           # the low four bits of status: 0 asleep, 1 working, 2 faulty
     life_percent: float | None = Field(None, ge=0, le=100)      # how much of the disk's life is left, when the recorder says
+    model: str | None = Field(None, max_length=40)              # the make and serial number of the disk, when the recorder gives them
+    serial: str | None = Field(None, max_length=40)
 
 
 class ClockIn(Strict):
@@ -101,6 +103,7 @@ class HealthIn(Strict):
     disks: list[DiskIn] | None = Field(None, max_length=64)        # None: could not be read; []: read, and there are none
     clock: ClockIn | None = None
     recording: dict[str, ChannelRecordings] = Field(default_factory=dict, max_length=256)
+    recording_now: dict[str, bool] = Field(default_factory=dict, max_length=256)       # for each channel, is the recorder saving its video this moment
     days_held: int | None = Field(None, ge=0, le=3650)             # about how many days of video the recorder holds (None: could not be found out)
     uptime_seconds: int | None = Field(None, ge=0)                 # how long since the recorder last started
     channel_online: dict[str, bool] = Field(default_factory=dict, max_length=256)     # for each channel, does the recorder see its camera

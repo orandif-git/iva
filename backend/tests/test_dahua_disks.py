@@ -114,3 +114,41 @@ def test_the_survey_writes_the_raw_answers_to_the_log_and_never_raises(driver, m
     text = caplog.text
     assert "ONLINE (53) -> result True, 1 bytes in use" in text and "SOFTWARE could not be asked: TypeError" in text
     assert "'szName': 'sda'" in text and "'fLifePercent': 87.5" in text
+
+
+def test_the_recording_state_of_each_channel_is_read_from_one_byte_each(driver, monkeypatch):
+    enum_mod = sys.modules["NetSDK.SDK_Enum"]
+
+    class Kinds(enum.IntEnum):
+        RECORDING = 3
+    enum_mod.EM_QUERY_DEV_STATE_TYPE = Kinds
+
+    def query(login, kind, buf, size, got, wait):
+        ctypes.c_int(got)
+        assert kind == 3
+        buf.raw = bytes([1, 1, 0, 1]) + bytes(4092)
+        return 1
+
+    driver._sdk.QueryDevState = query
+    assert driver._recording_now(7, 6) == {"1": True, "2": True, "3": False, "4": True, "5": False, "6": False}
+
+
+def test_each_disk_gets_its_make_and_serial_number_when_the_recorder_names_its_disks(driver, monkeypatch):
+    class Storage(ctypes.Structure):
+        _fields_ = [("dwSize", ctypes.c_uint), ("szName", ctypes.c_char * 16), ("szModule", ctypes.c_char * 40), ("szSerial", ctypes.c_char * 40)]
+    sys.modules["NetSDK.SDK_Struct"].SDK_STORAGE_DEVICE = Storage
+    asked = []
+
+    def info(login, name, dev, wait):
+        asked.append((name, dev.dwSize))
+        if name != b"/dev/sda":
+            return 0
+        dev.szName, dev.szModule, dev.szSerial = b"/dev/sda", b"WDCWD43PURZ", b"WX72D43MN17T"
+        return 1
+
+    driver._sdk.GetStorageDeviceInfo = info
+    driver._sdk.QueryDevState = lambda *a: (a[2].__setattr__("dwDiskNum", 1), a[2].stDisks.__setitem__(0, DiskState(4_000_000, 1_000_000, 1, 0, 1, 0)), True)[2]
+    (d,) = driver._disks(7)
+    assert d["model"] == "WDCWD43PURZ" and d["serial"] == "WX72D43MN17T" and d["total_mb"] == 4_000_000
+    assert all(size > 0 for _, size in asked), "the structure carries its own size"
+    assert [n for n, _ in asked] == [b"/dev/sda", b"/dev/sdb"], "stops at the first disk that is not there"

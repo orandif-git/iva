@@ -361,7 +361,7 @@ export async function recorderDetail(X, id) {
   const healthRows = !hl ? [kv("Checked", "Not yet. The recorder is asked ten minutes after it connects")] : [
     kv("Checked", r.health_at ? ago(r.health_at) : "—"),
     ...(hl.disks == null ? [kv("Disks", "The recorder did not say")] : hl.disks.length === 0 ? [kv("Disks", "None found", "Video cannot be saved")]
-      : hl.disks.map((d) => kv(`Disk ${d.num + 1}`, `${size(d.total_mb)}, ${d.total_mb ? Math.round(100 * (d.total_mb - d.free_mb) / d.total_mb) : 0}% full`, d.state === 2 ? "Faulty" : d.life_percent != null ? `${Math.round(d.life_percent)}% of its life left` : d.state === 0 ? "Asleep" : "Working"))),
+      : hl.disks.map((d) => kv(`Disk ${d.num + 1}`, `${size(d.total_mb)}, ${d.total_mb ? Math.round(100 * (d.total_mb - d.free_mb) / d.total_mb) : 0}% full`, [d.state === 2 ? "Faulty" : d.life_percent != null ? `${Math.round(d.life_percent)}% of its life left` : d.state === 0 ? "Asleep" : "Working", d.model, d.serial && `serial ${d.serial}`].filter(Boolean).join(" · ")))),
     ...(hl.percent_full != null ? [kv("Storage", `${hl.percent_full}% full`)] : []),
     ...(hl.days_held != null ? [kv("Video kept", `about ${hl.days_held} days`)] : []),
     ...(hl.clock_out_minutes != null ? [kv("Clock", hl.clock_out_minutes < 1 ? "Right" : `${hl.clock_out_minutes} minutes out`)] : []),

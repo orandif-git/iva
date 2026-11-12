@@ -122,7 +122,7 @@ class NetSdkDriver:
         """Disks, clock and, for each channel, how many recordings it holds for the last two hours and the last day. Every part is read on its own and a part that cannot
         be read is None, so one unsupported call never hides the others. The first answer from each recorder is written to the log, to check the readings against the
         recorder's own screen."""
-        out = {"disks": None, "clock": None, "recording": {}}
+        out = {"disks": None, "clock": None, "recording": {}, "recording_now": {}}
         for name, read in (("disks", self._disks), ("clock", self._clock)):
             try:
                 out[name] = read(login_id)
@@ -132,6 +132,10 @@ class NetSdkDriver:
             out["recording"] = self._recordings(login_id, channels, out["clock"])
         except Exception:
             log.exception("could not read the recordings of login %s", login_id)
+        try:
+            out["recording_now"] = self._recording_now(login_id, channels)
+        except Exception:
+            log.exception("could not read the recording state of login %s", login_id)
         try:
             out["days_held"] = self._days_held(login_id, out["clock"], out["recording"])
         except Exception:
@@ -161,8 +165,39 @@ class NetSdkDriver:
         res = self._query_state(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), st, sizeof(st))
         if not (res[0] if isinstance(res, tuple) and res else res):
             return None
-        return [{"num": int(d.bDiskNum), "total_mb": int(d.dwVolume), "free_mb": int(d.dwFreeSpace), "status": int(d.dwStatus), "state": int(d.dwStatus) & 0x0F}
-                for d in (st.stDisks[i] for i in range(min(int(st.dwDiskNum), 256)))]
+        disks = [{"num": int(d.bDiskNum), "total_mb": int(d.dwVolume), "free_mb": int(d.dwFreeSpace), "status": int(d.dwStatus), "state": int(d.dwStatus) & 0x0F}
+                 for d in (st.stDisks[i] for i in range(min(int(st.dwDiskNum), 256)))]
+        try:                                                      # the make and serial number of each disk, when the recorder gives them (it names its disks /dev/sda, /dev/sdb ...)
+            names = self._disk_names(login_id)
+            if len(names) == len(disks):
+                for d, (model, serial) in zip(disks, names):
+                    d["model"], d["serial"] = model, serial
+        except Exception:
+            log.exception("could not read the disk models of login %s", login_id)
+        return disks
+
+    def _disk_names(self, login_id):
+        from ctypes import sizeof
+        from NetSDK.SDK_Struct import SDK_STORAGE_DEVICE
+        found = []
+        for letter in "abcdefgh":
+            dev = SDK_STORAGE_DEVICE()
+            dev.dwSize = sizeof(dev)                              # the structure must carry its own size, or the recorder leaves it empty
+            if not self._sdk.GetStorageDeviceInfo(login_id, f"/dev/sd{letter}".encode(), dev, 3000) or not dev.szName:
+                break
+            found.append((bytes(dev.szModule).split(b"\x00")[0].decode("ascii", "replace").strip()[:40] or None, bytes(dev.szSerial).split(b"\x00")[0].decode("ascii", "replace").strip()[:40] or None))
+        return found
+
+    def _recording_now(self, login_id, channels):
+        """For each channel (from 1), is the recorder saving video from it this very moment? One byte for each channel, 1 meaning yes. A channel that is not in use reads 0 too,
+        so the server only judges a channel it knows has recorded."""
+        from ctypes import create_string_buffer, sizeof
+        from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
+        buf = create_string_buffer(4096)
+        res = self._query_state(login_id, int(EM_QUERY_DEV_STATE_TYPE.RECORDING), buf, sizeof(buf))
+        if not (res[0] if isinstance(res, tuple) and res else res):
+            return {}
+        return {str(i + 1): buf.raw[i] == 1 for i in range(min(channels, 256))}
 
     def _clock(self, login_id):
         from NetSDK.SDK_Struct import NET_TIME_EX

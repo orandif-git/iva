@@ -11,6 +11,7 @@ from .alerts import raise_alert
 DISK_ERROR = 2                    # the low four bits of a disk's status: 0 asleep, 1 working, 2 faulty
 RECENT_HOURS = 2
 DAY_COOLDOWN = 24 * 60
+HISTORY, STEADY, STOPPED = 12, 4, 2     # readings kept; a channel that recorded in each of the last 4 and in neither of the last 2 has stopped (about 20 minutes)
 RESTART_SLACK = 120               # seconds of uptime that can go backwards between two readings without it meaning a restart
 
 
@@ -54,6 +55,10 @@ async def apply(conn, rec, h: dict) -> list[str]:
     if restarted:
         restarts.append(now.isoformat())
     h["restarts"] = restarts
+    # which channels are being recorded this moment, remembered for the last twelve readings (two hours): a channel that has recorded steadily and then stops is a fault, whereas a
+    # channel that only records on motion switches on and off all day and is never judged this way
+    hist = {c: (prev.get("rec_history") or {}).get(c, "")[-(HISTORY - 1):] + ("1" if on else "0") for c, on in (h.get("recording_now") or {}).items()}
+    h["rec_history"] = hist
     await conn.execute("UPDATE app.recorders SET health=$2, health_at=now() WHERE id=$1", rec["id"], h)
 
     async def alert(kind, **kw):
@@ -84,6 +89,8 @@ async def apply(conn, rec, h: dict) -> list[str]:
             await alert("clock_wrong", body=f"{name}'s clock is {h['clock_out_minutes']} minutes out, so its recordings and reports show the wrong times.",
                         details={"recorder": name, "minutes_out": h["clock_out_minutes"]}, dedupe_key=f"clock:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
     silent = [c for c, v in (h.get("recording") or {}).items() if (v.get("day") or 0) > 0 and v.get("recent") == 0]
+    stopped = [c for c, s in hist.items() if len(s) >= STEADY + STOPPED and s[-STOPPED:] == "0" * STOPPED and s[-(STEADY + STOPPED):-STOPPED] == "1" * STEADY]
+    silent = sorted(set(silent) | set(stopped), key=int)
     if silent:
         await alert("recording_stopped", body=f"{name} has not saved any video from {len(silent)} camera{'s' if len(silent) != 1 else ''} in the last {RECENT_HOURS} hours, although it did earlier. "
                     "Please check the recorder's disk and recording schedule.", details={"recorder": name}, dedupe_key=f"recording:{rec['id']}", cooldown_minutes=12 * 60)

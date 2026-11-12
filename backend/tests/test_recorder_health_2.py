@@ -110,3 +110,30 @@ async def test_a_customer_sees_what_the_recorder_last_said_about_itself(client, 
     staff = (await make.staff("support"))["headers"]
     mine = [x for x in (await client.get("/admin/v1/recorders", headers=staff)).json() if x["device_id"] == dev]
     assert mine and mine[0]["health"]["percent_full"] == 75
+
+
+async def test_a_channel_that_recorded_steadily_and_then_stops_is_noticed_in_twenty_minutes(client, make, su):
+    t, dev = await recorder(client, make, su)
+
+    async def reading(on):
+        return await report(client, make, dev, {"recording_now": {"1": on, "2": True}})
+
+    for _ in range(4):
+        assert await reading(True) == []
+    assert await reading(False) == [], "one reading without recording could be a gap"
+    assert await reading(False) == ["recording_stopped"], "two in a row after a steady hour: it has stopped"
+    a = await su.fetchrow("SELECT body FROM app.alerts WHERE tenant_id=$1 AND rule_type='recording_stopped'", t)
+    assert "1 camera" in a["body"]
+
+
+async def test_a_channel_that_only_records_on_motion_is_never_judged_by_the_moment(client, make, su):
+    t, dev = await recorder(client, make, su)
+    for on in (True, False, False, True, False, False, False, True, False, False, False, False):
+        assert await report(client, make, dev, {"recording_now": {"1": on}}) == []
+
+
+async def test_a_disks_make_and_serial_number_are_kept_for_staff(client, make, su):
+    t, dev = await recorder(client, make, su)
+    await report(client, make, dev, {"disks": [{**disk(0), "model": "WDCWD43PURZ", "serial": "WX72D43MN17T"}]})
+    (r,) = (await client.get("/v1/recorders", headers=(await make.user(t))["headers"])).json()
+    assert r["health"]["disks"][0]["model"] == "WDCWD43PURZ" and r["health"]["disks"][0]["serial"] == "WX72D43MN17T"

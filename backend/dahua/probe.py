@@ -3,6 +3,7 @@
 Run it from a folder that is not the wrapper's own, with the same Python the gateway uses:
     cd /tmp && PYTHONPATH=/www/wwwroot/iva/backend /www/wwwroot/iva/backend/.venv/bin/python -m dahua.probe            (what the kit offers; no recorder is contacted)
     ... -m dahua.probe --detail          (also the exact calls, structure fields and state types)
+    ... -m dahua.probe --events          (what the kit offers for alarms, restarts, heat and the state of each camera)
     cd /tmp && /opt/gateinsight/backend/.venv/bin/python -m dahua.probe IP PORT USER PASSWORD     (also asks one recorder, if it can be reached directly)
 It changes nothing and prints no password. Send its whole output back."""
 import sys
@@ -27,6 +28,33 @@ def main(argv) -> int:
     print("== Enumerations about device state")
     for n in names(SDK_Enum, "DEVSTATE", "DEV_STATE", "DISK", "RECORD", "SYSTEM_INFO"):
         print("  ", n)
+    if "--events" in argv:
+        import inspect
+        from NetSDK import SDK_Callback
+        print("== What the kit offers for listening to a recorder's own alarms")
+        for n in names(NetSDK.NetClient, "Listen", "MessCallBack", "SetDVRMess", "Subscribe", "Attach", "Alarm", "Event"):
+            f = getattr(NetSDK.NetClient, n, None)
+            try:
+                print(f"   {n}{inspect.signature(f)}")
+            except Exception:
+                print(f"   {n}")
+        print("== Callback types")
+        for n in names(SDK_Callback, "Mess", "Alarm", "Event"):
+            print("  ", n)
+        print("== Alarm and event kinds about disks, video, restarts, heat")
+        for mod in (SDK_Enum, SDK_Struct):
+            for n in names(mod, "STORAGE", "DISK", "VIDEOLOSS", "VIDEO_LOSS", "VIDEOBLIND", "BLIND", "TAMPER", "REBOOT", "POWER", "TEMPERATURE", "FAN", "POE", "SMART", "HEALTH"):
+                print("  ", mod.__name__.split(".")[-1], n)
+        print("== Calls that might tell the state of each camera or the device log")
+        for n in names(NetSDK.NetClient, "RemoteDevice", "Digital", "Channel", "DeviceLog", "RunTime", "WorkState", "SysInfo", "SystemInfo"):
+            f = getattr(NetSDK.NetClient, n, None)
+            try:
+                print(f"   {n}{inspect.signature(f)}")
+            except Exception:
+                print(f"   {n}")
+        print("== Structures about remote (network) cameras, logs, or work state")
+        for n in names(SDK_Struct, "REMOTE_DEVICE", "DIGITAL_CHANNEL", "CHANNEL_STATE", "DEVICE_LOG", "QUERY_LOG", "WORKSTATE", "RUN_TIME", "UPTIME"):
+            print("  ", n)
     if "--detail" in argv:
         import inspect
         print("== Call signatures")
