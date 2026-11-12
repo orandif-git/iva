@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 
 from ..deps import ServiceCtx, service_ctx
-from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PlateBatch, Rejected, ZoneBatch
-from ..services import areas as area_rules
+from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PictureBatch, PlateBatch, Rejected, ZoneBatch
+from ..services import areas as area_rules, picture_checks
 from ..services.alerts import raise_alert
 from ..services.plate_events import alert_if_blocked, alert_if_possibly_blocked, find_entry
 from ..services.plates import clean_plate
@@ -134,6 +134,27 @@ async def ingest_plates(body: PlateBatch, ctx: ServiceCtx = Depends(service_ctx)
             latest[e.camera_id] = max(latest.get(e.camera_id, e.seen_at), e.seen_at)
     await _touch(conn, latest)
     return IngestResult(accepted=accepted, duplicates=dups, rejected=rejected, clips=clips)
+
+
+@router.post("/pictures", response_model=IngestResult)
+async def ingest_pictures(body: PictureBatch, ctx: ServiceCtx = Depends(service_ctx)):
+    """How each camera's own picture looks (brightness, sharpness, an outline sketch), every few minutes. Compared with that camera's usual view; an alert is raised
+    only when something has been wrong for a good while (see services/picture_checks.py). Measurements are applied in time order."""
+    cams = {r["id"]: r for r in await ctx.conn.fetch(_CAMS, list({e.camera_id for e in body.events}))}
+    now = datetime.now(timezone.utc)
+    rejected, accepted = [], 0
+    for i, e in sorted(enumerate(body.events), key=lambda x: x[1].at):
+        cam = cams.get(e.camera_id)
+        reason = _why_rejected(cam, e.at, now, "enabled")
+        sketch = picture_checks.decode(e.edges) if reason is None else None
+        if reason is None and sketch is None:
+            reason = "bad_picture"
+        if reason:
+            rejected.append(Rejected(index=i, reason=reason))
+            continue
+        await picture_checks.apply(ctx.conn, cam, {"at": e.at, "brightness": e.brightness, "contrast": e.contrast, "sharpness": e.sharpness, "sketch": sketch})
+        accepted += 1
+    return IngestResult(accepted=accepted, duplicates=0, rejected=rejected)
 
 
 @router.post("/zones", response_model=IngestResult)

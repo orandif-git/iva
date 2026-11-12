@@ -29,6 +29,7 @@ class BackendSink:
         self.footfall: dict = {}                       # (camera_id, minute) -> [in, out]; later values replace earlier ones
         self.plates: deque = deque()
         self.zones: deque = deque()                    # what was seen in marked areas
+        self.pictures: dict = {}                       # camera_id -> the newest measurement of its picture (brightness, sharpness, outline sketch)
         self.stats: Counter = Counter()
         self.rejected: Counter = Counter()
         self.fatal: str | None = None
@@ -77,9 +78,16 @@ class BackendSink:
                 self.zones.popleft()
                 self.stats["dropped"] += 1
 
+    def add_picture(self, camera_id: str, sample: dict) -> None:
+        """The newest measurement of a camera's own picture. Only the latest is kept: a measurement that could not be sent is replaced by the next one."""
+        with self._lk:
+            if camera_id in self.fatal_cameras:
+                return
+            self.pictures[camera_id] = {"camera_id": camera_id, **sample}
+
     @property
     def pending(self) -> int:
-        return len(self.footfall) + len(self.plates) + len(self.zones)
+        return len(self.footfall) + len(self.plates) + len(self.zones) + len(self.pictures)
 
     def view(self, camera_id: str) -> "SinkView":
         """What one camera's pipeline uses when several cameras share this sink."""
@@ -164,6 +172,8 @@ class BackendSink:
                 self.plates = deque(p for p in self.plates if p["camera_id"] not in self.fatal_cameras)
             if any(z["camera_id"] in self.fatal_cameras for z in self.zones):
                 self.zones = deque(z for z in self.zones if z["camera_id"] not in self.fatal_cameras)
+            for k in [k for k in self.pictures if k in self.fatal_cameras]:
+                del self.pictures[k]
 
     async def flush(self, force: bool = False) -> bool:
         """Try to send everything pending. Returns True when nothing is left to send. Only one flush runs at a time."""
@@ -237,6 +247,20 @@ class BackendSink:
             with self._lk:
                 self.zones = deque(z for z in self.zones if id(z) not in sent)
             self._drop_fatal()
+        if ok and self.pictures and not self.fatal:
+            with self._lk:
+                chunk = list(self.pictures.values())[:200]
+            res = await self._post("/internal/v1/events/pictures", chunk)
+            if res is None:
+                ok = False
+            else:
+                self._note(res, [it["camera_id"] for it in chunk])
+                self.stats["pictures_measured_sent"] += res.get("accepted", 0)
+                with self._lk:
+                    for it in chunk:                         # keep a measurement that was replaced while the request was in flight
+                        if self.pictures.get(it["camera_id"]) is it:
+                            del self.pictures[it["camera_id"]]
+                self._drop_fatal()
         if ok:
             self._failures, self._next = 0, 0.0
         elif not self.fatal:
@@ -268,6 +292,9 @@ class SinkView:
 
     def add_zone(self, *a, **k):
         self._sink.add_zone(*a, **k)
+
+    def add_picture(self, *a, **k):
+        self._sink.add_picture(*a, **k)
 
     @property
     def fatal(self):
@@ -315,6 +342,7 @@ class MemorySink:
         self.footfall: dict = {}
         self.plates: list = []
         self.zones: list = []
+        self.pictures: list = []
         self.fatal = None
         self.stats: Counter = Counter()
 
@@ -333,6 +361,9 @@ class MemorySink:
 
     def add_zone(self, camera_id, sample, snapshot=None):
         self.zones.append({"camera_id": camera_id, **sample, "has_picture": bool(snapshot)})
+
+    def add_picture(self, camera_id, sample):
+        self.pictures.append({"camera_id": camera_id, **sample})
 
     async def flush(self, force=False):
         return True

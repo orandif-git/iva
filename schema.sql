@@ -421,6 +421,25 @@ CREATE TABLE app.footfall_counts (
 );
 CREATE INDEX footfall_tenant_time_idx ON app.footfall_counts (tenant_id, bucket_start DESC);
 
+-- What each camera's picture usually looks like, so a camera that has been moved, turned or covered, or whose picture has stayed too dark or too blurry, can be noticed.
+CREATE TABLE app.camera_picture_state (
+  camera_id       uuid PRIMARY KEY REFERENCES app.cameras(id) ON DELETE CASCADE,
+  tenant_id       uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  ref_day         bytea,                          -- the outline sketch of the usual view in daylight, and at night (the sketch changes when the camera switches to infrared)
+  ref_day_at      timestamptz,
+  ref_night       bytea,
+  ref_night_at    timestamptz,
+  baseline_sharp  real,                           -- how sharp its picture usually is in daylight (a slow average)
+  day_samples     integer NOT NULL DEFAULT 0,
+  bad_view_since  timestamptz,                    -- since when the view has not matched ('moved') or has been flat ('covered')
+  bad_view_kind   text,
+  poor_since      timestamptz,                    -- since when the picture has been 'blurry' or 'dark'
+  poor_kind       text,
+  last_at         timestamptz,
+  last_brightness real,
+  last_sharpness  real
+);
+
 -- Plate reads. Partitioned by month so old data can be dropped cheaply (retention).
 CREATE TABLE app.plate_events (
   id             bigint GENERATED ALWAYS AS IDENTITY,

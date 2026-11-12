@@ -7,23 +7,40 @@
 | **System Alerts** | Keep the cameras, recorders and account healthy: a recorder or camera goes offline, storage is nearly full, and so on | no icon |
 | **Smart Alerts** | Come from the AI on the camera pictures or from rules about the customer's business: a blocked vehicle, too many people, a vehicle that stayed too long | the AI sparkle icon |
 
-The catalogue lives in `app/services/alert_catalog.py`: 20 alerts, each with its family, group, title, severity, settings, shortcodes and
-whether it is **built**. Thirteen are built today; the rest are listed so staff can see what is coming, but nothing can raise them and no
-customer sees them.
+The catalogue lives in `app/services/alert_catalog.py`: 20 alerts for customers (every one is built) and two system events that are not customer alerts (*Report ready*,
+*Video analysis stopped*). **Critical** alerts (blocked vehicle, recorder offline, after-hours activity, disk failure, recording stopped) are always sent: quiet hours and the
+hourly flood guard never hold them. There is **no monthly WhatsApp message limit**. The alerts found by looking at the data on a clock are checked **every minute** unless
+Platform Admin sets another time for one of them (Alerts page, "Checked").
 
 | Alert | Family | What makes it fire | Settings the customer can change |
 |---|---|---|---|
-| Recorder offline | System | No heartbeat for `GI_HEARTBEAT_TIMEOUT_SECONDS` | none |
-| Camera offline | System | The worker stopped reporting for a minute | none |
-| Connection keeps dropping | System | The recorder went offline `drops` times in the last hour (connection history) | `drops` (5; 2 to 20). Once every 6 hours at most |
-| Back to normal | System | A recorder or camera is working again **and the customer was told it was down in the last 24 hours** | none |
-| Plan limit nearly reached | System | Enabled cameras reach `percent` of the plan's limit | `percent` (90; 50 to 100). Once a month at most |
-| Message allowance nearly used | System | This month's WhatsApp messages reach `percent` of the customer's cap (only for a customer with a cap) | `percent` (80; 50 to 100). Once a month at most |
-| Payment due or overdue | System | An issued invoice is due within `days`, and again when it is overdue. Paid and void invoices never | `days` (3; 0 to 14) |
-| New sign-in on your account | System | A person signs in from a browser and system they have not used before (the first one ever is not reported) | none |
-| Daily health summary | System | Once a day at `hour`, in the customer's time zone: cameras working, recorders online, alerts in 24 hours | `hour` (8; 0 to 23). **Off until the customer turns it on** |
-| Blocked vehicle, Vehicle stayed too long, Plate needs checking | Smart | Number plates | see the Smart Alerts section |
-| Too many people | Smart | People counting | `people` |
+| Recorder offline | System | No heartbeat for `GI_HEARTBEAT_TIMEOUT_SECONDS`. Said again every 6 hours while it stays down | none |
+| Camera offline | System | The worker stopped reporting for a minute. Not said when our own analysis has stopped, nor when the recorder is already reported offline | none |
+| Unstable connection | System | The recorder went offline `drops` times in the last hour | `drops` (3; 2 to 20) |
+| Service restored | System | A recorder or camera is working again **and the customer was told it was down in the last 7 days** | none |
+| Recorder time incorrect | System | The recorder's clock is `minutes_out` or more away from the true time | `minutes_out` (5; 1 to 120) |
+| Daily system summary | System | Once a day at `hour`, in the customer's time zone | `hour` (8). **Off until the customer turns it on** |
+| Recorder storage low | System | The recorder's disks are `percent` full together | `percent` (90; 50 to 99) |
+| Recorder disk failure | System | A disk reports a fault, or the recorder has no disk | none |
+| Recording stopped | System | A camera recorded earlier today but nothing in the last 2 hours | none |
+| Camera position changed or covered | System | The camera's outline sketch no longer matches its usual view for 30 minutes (or the picture has been flat for 15 minutes). Daylight and night keep separate usual views | none |
+| Poor image quality | System | Much less sharp than usual for 2 hours, or almost black for 1 hour while the premises are open | none |
+| Counting stopped | System | An online camera that counts people has counted nobody for `hours` while the premises are open. Needs opening hours | `hours` (2; 1 to 12) |
+| Occupancy limit exceeded | Smart | People counted inside, **for each place** (site, or recorder), reach `people` | `people` |
+| After-hours activity | Smart | People counted at a door while closed, after the first `grace_minutes` after closing. Needs opening hours | `grace_minutes` (30; 0 to 180) |
+| Blocked vehicle detected, Vehicle overstay, Number plate needs review | Smart | Number plates (an unclear read within one character of a blocked plate is reported as *Possible blocked vehicle*; allowed vehicles are never reported as overstaying) | see the Smart Alerts section |
+
+How the data behind the new alerts is gathered:
+
+* **Recorder readings.** The Dahua gateway asks each connected recorder every 10 minutes (`GI_DAHUA_HEALTH_INTERVAL`) for its disks, its clock and, per channel, how many
+  recordings it holds for the last 2 hours and the last day, and posts them to `/internal/v1/recorders/{id}/health`. What a recorder cannot answer is sent as unknown, and
+  unknown never raises an alert. The first reading of each recorder is written to the gateway log. `python -m dahua.probe` shows what the installed Dahua kit can read.
+* **Picture checks.** Every 5 minutes the worker measures each camera's picture (brightness, contrast, sharpness and a 64 x 36 outline sketch: `worker/picture.py`) and posts
+  it to `/internal/v1/events/pictures`. The backend compares it with that camera's own usual view (`app.camera_picture_state`) and only alerts when something has lasted.
+  Nothing about any person is kept.
+* **Opening hours** are set by the customer in Settings (`/v1/opening-hours`). With none set, *Counting stopped* and *After-hours activity* never fire.
+* **Platform faults.** If one of our own analysis workers stops asking for its cameras, a platform fault is opened (Platform Admin, Maintenance) and the chosen staff are
+  told through the `system.platform_fault` webhook. Customers are not told their cameras are offline while it lasts.
 
 ## Smart Alerts on marked areas
 
@@ -33,9 +50,9 @@ condition is met**, and the same area is not reported again for `repeat_minutes`
 
 | Alert | Area kind | Condition (the customer sets the numbers) | Shortcodes |
 |---|---|---|---|
-| Too many people in an area | `area_count` | The count stays at `limit` or more for `minutes` (every report in that time) | `{area} {people} {limit} {minutes}` |
-| Queue too long | `queue_area` | The queue stays at `length` or more for `minutes`, **or** the longest wait reaches `wait_minutes` (0 turns the wait off) | `{area} {length} {limit} {minutes} {wait_minutes}` |
-| Possible phone use in a staff area | `staff_area` | A phone has been in use for `seconds` without a break. Comes with a picture | `{area} {seconds}` and `{image_url}` |
+| Area occupancy limit exceeded | `area_count` | The count stays at `limit` or more for `minutes` (every report in that time) | `{area} {people} {limit} {minutes}` |
+| Long queue | `queue_area` | The queue stays at `length` or more for `minutes`, **or** the longest wait reaches `wait_minutes` (0 turns the wait off). `staff` (0 to 20) people who work inside the shape are left out | `{area} {length} {limit} {minutes} {wait_minutes}` |
+| Possible phone use (staff area) | `staff_area` | A phone has been in use for `seconds` without a break. Comes with a picture | `{area} {seconds}` and `{image_url}` |
 
 * **Staff area.** Anyone standing in it counts as staff, so nobody is identified. The customer must confirm that **staff have been told the area is watched**
   (who confirmed, and when, is stored). The alert says "possible phone use" and names the area, never a person.
@@ -90,7 +107,7 @@ notifications for the mobile app come later.
 
 * **Customers** choose which alerts are on, who is told, the alert's own settings, and quiet hours (`GET/PUT /v1/alert-types`, `/v1/recipients`).
   Entering a phone number requires ticking *"this person agreed to receive WhatsApp messages"*; who ticked it and when is stored.
-* **The platform owner** sets up the webhooks (below), can switch WhatsApp off or set a monthly cap for one customer
+* **The platform owner** sets up the webhooks (below), can switch WhatsApp off for one customer (there is no monthly cap)
   (`/admin/v1/messaging/tenants/{id}`), and sees every event in the delivery log.
 
 ## Webhooks (owner only)

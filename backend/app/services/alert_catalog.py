@@ -47,8 +47,9 @@ CATALOG: dict[str, dict] = {
     "recording_stopped": _a(SYSTEM, "Recording", "Recording stopped", "A camera is online but the recorder is not saving its video.", built=True, severity="critical",
                             shortcodes=["recorder"], needs="Reading from the recorder"),
     # ---- System Alerts: camera health
-    "view_changed": _a(SYSTEM, "Camera health", "Camera position changed or covered", "A camera has been moved, turned or covered.", media="image", needs="Picture comparison", uses_evidence=True),
-    "picture_poor": _a(SYSTEM, "Camera health", "Poor image quality", "A camera's picture is too dark or blurry to be useful, for example a dirty lens.", media="image",
+    "view_changed": _a(SYSTEM, "Camera health", "Camera position changed or covered", "A camera has been moved, turned or covered.", built=True, media="image", shortcodes=["what"],
+                       needs="Picture comparison", uses_evidence=True),
+    "picture_poor": _a(SYSTEM, "Camera health", "Poor image quality", "A camera's picture is too dark or blurry to be useful, for example a dirty lens.", built=True, media="image", shortcodes=["what"],
                        needs="Picture comparison", uses_evidence=True),
     "counting_stopped": _a(SYSTEM, "Camera health", "Counting stopped", "A camera that counts people is online but has counted nobody for hours while you are open.", built=True,
                            needs="People counting and opening hours", params={"hours": {"type": "integer", "default": 2, "min": 1, "max": 12}}),

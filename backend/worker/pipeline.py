@@ -67,7 +67,7 @@ class Visit:
 
 class CameraPipeline:
     def __init__(self, cfg: CameraConfig, detector, plate_reader, sink, *, snapshot_dir=None, run_id: str = "run", anchor: str = "center",
-                 min_read_interval: float = 0.35, max_reads: int = 6, min_vehicle_area: float = 0.02, ffmpeg: str = "ffmpeg"):
+                 min_read_interval: float = 0.35, max_reads: int = 6, min_vehicle_area: float = 0.02, ffmpeg: str = "ffmpeg", picture_every: float = 300.0):
         self.cfg, self.detector, self.reader, self.sink = cfg, detector, plate_reader, sink
         self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else None
         self.run_id, self.anchor = run_id, anchor
@@ -86,6 +86,7 @@ class CameraPipeline:
             if hasattr(sink, "clip_handler"):
                 sink.clip_handler = self.clips.request
         self.frame_no = 0
+        self.picture_every, self._picture_at = picture_every, -1e9           # the camera's own picture is measured every few minutes (see worker/picture.py)
         self.totals = {"in": 0, "out": 0}
         self.stats = {"frames": 0, "detect_ms": 0.0, "plate_ms": 0.0, "plate_reads": 0, "plates_emitted": 0, "skipped_plates": 0}
 
@@ -95,6 +96,7 @@ class CameraPipeline:
         self.stats["frames"] += 1
         if self.clips is not None:
             self.clips.add(frame, ts)
+        self._measure_picture(frame, ts)
         h, w = frame.shape[:2]
         if not (self.counter or self.areas or (self.cfg.use_anpr and self.reader)):
             return Observation()
@@ -121,6 +123,18 @@ class CameraPipeline:
             for tr in self.vehicles.drain_finished():
                 self._emit(tr.id)
         return Observation(relevant, len(self.people.tracks) + len(self.vehicles.tracks), len(self.visits))
+
+    def _measure_picture(self, frame, ts: datetime) -> None:
+        """Every `picture_every` seconds: how bright and sharp the picture is and what it looks at, for the camera-health alerts. Never stops the analysis."""
+        add, t = getattr(self.sink, "add_picture", None), ts.timestamp()
+        if add is None or t - self._picture_at < self.picture_every:
+            return
+        self._picture_at = t
+        try:
+            from .picture import measure
+            add(self.cfg.camera_id, {"at": iso(ts), **measure(frame)})
+        except Exception:
+            log.exception("could not measure the picture of %s", self.cfg.name)
 
     def _areas(self, frame, ts: datetime, dets: list, w: int, h: int) -> None:
         people = [t for t in self.people.tracks if t.confirmed]
