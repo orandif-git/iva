@@ -3,7 +3,7 @@
 Run it from a folder that is not the wrapper's own, with the same Python the gateway uses:
     cd /tmp && PYTHONPATH=/www/wwwroot/iva/backend /www/wwwroot/iva/backend/.venv/bin/python -m dahua.probe            (what the kit offers; no recorder is contacted)
     ... -m dahua.probe --detail          (also the exact calls, structure fields and state types)
-    ... -m dahua.probe --events          (what the kit offers for alarms, restarts, heat and the state of each camera)
+    ... -m dahua.probe --codes           (the number codes and structure layouts for alarm listening, the device log and hardware status)\n    ... -m dahua.probe --events          (what the kit offers for alarms, restarts, heat and the state of each camera)
     cd /tmp && /opt/gateinsight/backend/.venv/bin/python -m dahua.probe IP PORT USER PASSWORD     (also asks one recorder, if it can be reached directly)
 It changes nothing and prints no password. Send its whole output back."""
 import sys
@@ -55,6 +55,50 @@ def main(argv) -> int:
         print("== Structures about remote (network) cameras, logs, or work state")
         for n in names(SDK_Struct, "REMOTE_DEVICE", "DIGITAL_CHANNEL", "CHANNEL_STATE", "DEVICE_LOG", "QUERY_LOG", "WORKSTATE", "RUN_TIME", "UPTIME"):
             print("  ", n)
+    if "--codes" in argv:
+        import inspect
+        import pkgutil
+        import NetSDK as pkg
+        mods = {m.name: __import__(m.name, fromlist=["x"]) for m in pkgutil.iter_modules(pkg.__path__, "NetSDK.")}
+        print("== Modules of the kit:", ", ".join(sorted(mods)))
+        words = ("STORAGE", "HDD", "DISK", "FRONTDISCONNECT", "FRONTDISCONNET", "VIDEOBLIND", "VIDEOLOST", "VIDEO_LOSS", "SHELTER", "POWERFAULT", "OVER_TEMPERATURE", "FAN", "REBOOT", "DEVICE_LOG", "ALARM_RECORD")
+        print("== Number codes for the alarms we care about (name = value in hex)")
+        seen = set()
+        for mn, m in sorted(mods.items()):
+            for n in dir(m):
+                v = getattr(m, n, None)
+                if n.startswith("_") or not any(w in n.upper() for w in words):
+                    continue
+                if isinstance(v, int) and not isinstance(v, bool) and not isinstance(v, type):
+                    key = (n, v)
+                    if key not in seen:
+                        seen.add(key)
+                        print(f"   {mn.split('.')[-1]}.{n} = {v:#x}")
+                elif isinstance(v, type) and hasattr(v, "__members__"):
+                    for mem, val in v.__members__.items():
+                        if any(w in mem.upper() for w in words) and (mem, int(val)) not in seen:
+                            seen.add((mem, int(val)))
+                            print(f"   {n}.{mem} = {int(val):#x}")
+        print("== The alarm callback")
+        cb = getattr(mods["NetSDK.SDK_Callback"], "fMessCallBackEx1", None)
+        print("  ", getattr(cb, "_argtypes_", None), getattr(cb, "_restype_", None))
+        print("== Structure fields")
+        for n in ("NET_CLIENT_ALARM_STATE", "ALARM_HDD_HEALTHALARM_INFO", "ALARM_HDD_TEMPERATUREALARM_INFO", "ALARM_STORAGE_FAILURE_EX", "ALARM_STORAGE_LOW_SPACE_INFO", "ALARM_FRONTDISCONNET_INFO",
+                  "NET_A_ALARM_VIDEO_LOSS_INFO", "NET_A_DEV_EVENT_ALARM_VIDEOBLIND", "NET_ALARM_OVER_TEMPERATURE_INFO", "NET_A_ALARM_POWERFAULT_INFO", "NET_HDDSMART_INFO", "SDK_FAN_STATUS", "SDK_POWER_STATUS",
+                  "SDK_TEMPERATURE_STATUS", "NET_A_QUERY_DEVICE_LOG_PARAM", "NET_A_DEVICE_LOG_ITEM", "NET_A_REMOTE_DEVICE", "NET_REMOTE_DEVICE_EX", "NET_IN_GET_CHANNEL_INFO", "NET_OUT_GET_CHANNEL_INFO"):
+            st = getattr(SDK_Struct, n, None)
+            fields = [f[0] + ":" + getattr(f[1], "__name__", str(f[1])) for f in getattr(st, "_fields_", [])]
+            print(f"   {n}: {', '.join(fields)[:700] if fields else '(not found)'}")
+        print("== Meanings of storage states")
+        for n in ("EM_STORAGE_HEALTH_TYPE", "EM_STORAGE_DEVICE_STATUS", "EM_STORAGE_ERROR"):
+            e = getattr(SDK_Enum, n, None)
+            print(f"   {n}:", {k: int(v) for k, v in getattr(e, "__members__", {}).items()})
+        print("== Call signatures")
+        for n in ("StartListenEx", "SetDVRMessCallBackEx1", "QueryDeviceLog", "GetChannelInfo", "QueryNewSystemInfo"):
+            try:
+                print(f"   {n}{inspect.signature(getattr(NetSDK.NetClient, n))}")
+            except Exception as e:
+                print(f"   {n}: {type(e).__name__}")
     if "--detail" in argv:
         import inspect
         print("== Call signatures")
