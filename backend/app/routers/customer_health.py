@@ -79,3 +79,40 @@ async def health_summary(ctx: CustomerCtx = Depends(customer_ctx())):
         "messages": {"sent_24h": msg["sent"], "failed_24h": msg["failed"], "waiting_too_long": msg["stuck"], "last_sent": msg["last_sent"]},
         "data": {"newest_seconds_ago": age},
     }
+
+
+HEALTH_RULES = ("camera_offline", "recorder_offline", "connection_unstable", "disk_fault", "disk_wear", "recording_stopped", "clock_wrong", "recorder_restarted", "hardware_fault",
+                "storage_full", "view_changed", "picture_poor")
+
+
+@router.get("/health-detail")
+async def health_detail(ctx: CustomerCtx = Depends(customer_ctx())):
+    """For the Health tab, one line per camera (is it recording, when did it last send a picture, is its picture fine) and how many problems each of the last seven days had."""
+    c = ctx.conn
+    now = datetime.now(timezone.utc)
+    rows = await c.fetch(
+        """SELECT c.id, c.name, c.channel_no, c.recorder_id, c.stream_state, c.last_frame_at, c.stream_seen_at, r.status::text AS recorder_status, r.health AS rec_health,
+                  p.bad_view_kind, p.bad_view_since, p.poor_kind, p.poor_since
+           FROM app.cameras c LEFT JOIN app.recorders r ON r.id = c.recorder_id LEFT JOIN app.camera_picture_state p ON p.camera_id = c.id
+           WHERE c.enabled ORDER BY c.name""")
+    cams = []
+    for k in rows:
+        h = k["rec_health"] if isinstance(k["rec_health"], dict) else {}
+        now_rec = (h.get("recording_now") or {}).get(str(k["channel_no"])) if k["channel_no"] is not None else None
+        seen = k["last_frame_at"] or k["stream_seen_at"]
+        issue = k["bad_view_kind"] or k["poor_kind"]
+        cams.append({"id": k["id"], "name": k["name"], "recorder_id": k["recorder_id"], "online": k["recorder_status"] != "offline" and k["stream_state"] == "streaming",
+                     "seconds_since_picture": int((now - seen).total_seconds()) if seen else None,
+                     "picture": issue,                      # moved, covered, blurry, dark, or nothing
+                     "recording": None if now_rec is None else bool(now_rec)})
+    days = await c.fetch(
+        """SELECT (a.created_at AT TIME ZONE t.timezone)::date AS day, count(*)::int AS n
+           FROM app.alerts a JOIN app.tenants t ON t.id = a.tenant_id
+           WHERE a.rule_type = ANY($1) AND a.created_at > now() - interval '8 days' AND NOT coalesce((a.details->>'test')::boolean, false)
+           GROUP BY 1""", list(HEALTH_RULES))
+    tz = await c.fetchval("SELECT timezone FROM app.tenants LIMIT 1") or "Asia/Kolkata"
+    today = now.astimezone(ZoneInfo(tz)).date()
+    by_day = {d["day"]: d["n"] for d in days}
+    from datetime import timedelta
+    strip = [{"date": (today - timedelta(days=i)).isoformat(), "problems": by_day.get(today - timedelta(days=i), 0)} for i in range(6, -1, -1)]
+    return {"cameras": cams, "days": strip}

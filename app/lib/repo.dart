@@ -17,6 +17,7 @@ class LiveSession {
 /// Everything the screens need from the server. [ApiRepository] talks to the real backend; [MockRepository] runs the same screens with demo data.
 abstract class Repository {
   Future<Health> health();
+  Future<HealthDetail> healthDetail();
   Future<Me> me();
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
@@ -91,6 +92,8 @@ class ApiRepository implements Repository {
 
   @override
   Future<Health> health() async => Health.fromJson(await api.call('GET', '/v1/health-summary'));
+  @override
+  Future<HealthDetail> healthDetail() async => HealthDetail.fromJson(await api.call('GET', '/v1/health-detail') as Map<String, dynamic>);
 
   @override
   Future<Me> me() async => Me.fromJson(await api.call('GET', '/v1/me') as Map<String, dynamic>);
@@ -466,6 +469,15 @@ class ApiRepository implements Repository {
 
 /// Demo data, like the clickable prototype. [problems] switches on a camera that is offline and a recorder that keeps dropping.
 class MockRepository implements Repository {
+  @override
+  Future<HealthDetail> healthDetail() async {
+    final today = DateTime.now();
+    return HealthDetail(
+      [const CameraHealth('c1', 'Front door', recorderId: 'r1', recording: true, secondsSincePicture: 6), const CameraHealth('c2', 'Billing counter', recorderId: 'r1', recording: true, secondsSincePicture: 9, picture: 'dark')],
+      [for (var i = 6; i >= 0; i--) DayProblems(DateTime(today.year, today.month, today.day - i), i == 2 ? 3 : 0)],
+    );
+  }
+
   MockRepository({this.problems = false});
   bool problems;
   final Map<String, AlertState> _state = {};

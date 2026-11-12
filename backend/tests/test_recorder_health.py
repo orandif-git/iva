@@ -92,3 +92,14 @@ async def test_the_readings_must_come_from_the_gateway_and_be_well_formed(client
     assert bad.status_code == 422
     assert (await client.post(f"/internal/v1/recorders/{dev}/health", json={})).status_code in (401, 403)
     assert (await client.post("/internal/v1/recorders/NOPE/health", json={}, headers=make.service())).status_code == 404
+
+
+async def test_the_health_tab_gets_one_line_per_camera_and_a_week_of_days(client, make, su):
+    t, u, _, _ = await setup_cameras(client, make)
+    dev = await su.fetchval("SELECT device_id FROM app.recorders WHERE tenant_id=$1", t)
+    now = datetime.now(timezone.utc)
+    await report(client, make, dev, {"disks": [disk(total=1000, free=600)], "clock": {"utc": int(now.timestamp()), "local": None}, "recording_now": {"1": True, "2": False}})
+    d = (await client.get("/v1/health-detail", headers=u["headers"])).json()
+    assert len(d["days"]) == 7 and d["days"][-1]["problems"] == 0
+    assert d["cameras"] and all({"name", "online", "recording", "picture", "seconds_since_picture"} <= set(c) for c in d["cameras"])
+    assert {c["recording"] for c in d["cameras"]} <= {True, False, None}

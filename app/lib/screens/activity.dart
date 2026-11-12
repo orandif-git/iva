@@ -425,12 +425,12 @@ class HealthSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return FutureBuilder<(Health, List<AlertCount>, List<RecorderItem>)>(
-      future: Future.wait([repo.health(), repo.alertCounts(period), repo.recorders()]).then((r) => (r[0] as Health, r[1] as List<AlertCount>, r[2] as List<RecorderItem>)),
+    return FutureBuilder<(Health, List<AlertCount>, List<RecorderItem>, HealthDetail)>(
+      future: Future.wait([repo.health(), repo.alertCounts(period), repo.recorders(), repo.healthDetail()]).then((r) => (r[0] as Health, r[1] as List<AlertCount>, r[2] as List<RecorderItem>, r[3] as HealthDetail)),
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}');
         if (!snap.hasData) return const SkeletonRows();
-        final (h, counts, recorders) = snap.data!;
+        final (h, counts, recorders, detail) = snap.data!;
         final reporting = recorders.where((r) => r.health != null).toList();
         final incidents = counts.where((c) => _healthAlerts.contains(c.rule) && c.rule != 'back_to_normal').toList()..sort((a, b) => b.count.compareTo(a.count));
         String title(String rule) => defs.where((d) => d.type == rule).firstOrNull?.title ?? rule.replaceAll('_', ' ');
@@ -452,6 +452,12 @@ class HealthSection extends StatelessWidget {
             card('Recorders online', '${h.recordersOnline} of ${h.recordersTotal}', bad: h.recordersOnline < h.recordersTotal),
           ]),
           for (final r in reporting) ...[GroupLabel('${r.name} · disks, clock and footage'), RecorderHealthCard(r.health!)],
+          if (detail.cameras.isNotEmpty) ...[
+            const GroupLabel('Cameras'),
+            Group(children: [for (final c in detail.cameras) _CameraRow(c)]),
+          ],
+          const GroupLabel('Last 7 days'),
+          Group(children: [Padding(padding: EdgeInsets.all(cardPad(context)), child: _WeekStrip(detail.days))]),
           GroupLabel('Problems · ${period.label.toLowerCase()}'),
           if (incidents.isEmpty)
             Group(children: [Padding(padding: EdgeInsets.all(cardPad(context)), child: Row(children: [Icon(Icons.check_circle_rounded, color: t.okInk), const SizedBox(width: 12), const Expanded(child: Text('No problems in this period.', style: TextStyle(fontWeight: FontWeight.w600)))]))])
@@ -474,5 +480,71 @@ class HealthSection extends StatelessWidget {
         ]);
       },
     );
+  }
+}
+
+/// One camera: online or not, whether the recorder is saving its video, when it last sent a picture, and what is wrong with its picture, if anything.
+class _CameraRow extends StatelessWidget {
+  const _CameraRow(this.c);
+  final CameraHealth c;
+
+  static const _picture = {
+    'moved': 'Its view has changed. Check that it has not been knocked.',
+    'covered': 'Something is in front of it.',
+    'blurry': 'The picture is blurry. Clean the lens.',
+    'dark': 'The picture is too dark to be useful.',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    final level = !c.online || c.recording == false ? Level.bad : (c.picture != null ? Level.warn : Level.ok);
+    final (bg, fg) = levelColors(t, level);
+    final recording = c.recording == null ? null : (c.recording! ? 'Recording' : 'Not recording');
+    final lines = <String>[
+      c.online ? 'Online' : 'Offline',
+      if (recording != null) recording,
+      if (c.secondsSincePicture != null) 'Picture ${shortAgo(c.secondsSincePicture)}',
+    ];
+    return Padding(
+      padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
+      child: Row(children: [
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)), child: Icon(c.online ? Icons.videocam_outlined : Icons.videocam_off_outlined, color: fg, size: 21)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          Text(lines.join(' · '), style: TextStyle(color: t.fg2, fontSize: 12.5)),
+          if (c.picture != null) Text(_picture[c.picture] ?? '', style: TextStyle(color: t.warnInk, fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ])),
+      ]),
+    );
+  }
+}
+
+/// Seven dots, oldest first: green for a day with no problems, amber for a few, red for many, with the day's first letter under each.
+class _WeekStrip extends StatelessWidget {
+  const _WeekStrip(this.days);
+  final List<DayProblems> days;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      for (final d in days)
+        Semantics(
+          label: '${d.day.day}/${d.day.month}: ${d.problems == 0 ? 'no problems' : '${d.problems} problems'}',
+          child: Column(children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: d.problems == 0 ? t.okSoft : (d.problems < 4 ? t.warnSoft : t.critSoft), shape: BoxShape.circle),
+              child: d.problems == 0 ? Icon(Icons.check_rounded, size: 18, color: t.okInk) : Text('${d.problems}', style: TextStyle(fontWeight: FontWeight.w700, color: d.problems < 4 ? t.warnInk : t.crit)),
+            ),
+            const SizedBox(height: 4),
+            Text(letters[d.day.weekday - 1], style: TextStyle(color: t.fg2, fontSize: 12)),
+          ]),
+        ),
+    ]);
   }
 }

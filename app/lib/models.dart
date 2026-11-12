@@ -93,14 +93,16 @@ class AlertCount {
 class RecorderHealth {
   final List<DiskInfo> disks;
   final int? percentFull, daysHeld, clockOutMinutes, uptimeSeconds;
+  final int restartsToday;                       // times it has started again in the last day
   final DateTime? checkedAt;
-  const RecorderHealth({this.disks = const [], this.percentFull, this.daysHeld, this.clockOutMinutes, this.uptimeSeconds, this.checkedAt});
+  const RecorderHealth({this.disks = const [], this.percentFull, this.daysHeld, this.clockOutMinutes, this.uptimeSeconds, this.restartsToday = 0, this.checkedAt});
   factory RecorderHealth.fromJson(Map<String, dynamic> h, String? at) => RecorderHealth(
-        disks: [for (final d in (h['disks'] as List? ?? const [])) DiskInfo((d['num'] as num).toInt(), (d['total_mb'] as num).toInt(), (d['free_mb'] as num).toInt(), (d['state'] as num).toInt(), (d['life_percent'] as num?)?.toDouble())],
+        disks: [for (final d in (h['disks'] as List? ?? const [])) DiskInfo((d['num'] as num).toInt(), (d['total_mb'] as num).toInt(), (d['free_mb'] as num).toInt(), (d['state'] as num).toInt(), (d['life_percent'] as num?)?.toDouble(), model: ((d['model'] ?? '') as String).trim(), serial: ((d['serial'] ?? '') as String).trim())],
         percentFull: (h['percent_full'] as num?)?.toInt(),
         daysHeld: (h['days_held'] as num?)?.toInt(),
         clockOutMinutes: (h['clock_out_minutes'] as num?)?.toInt(),
         uptimeSeconds: (h['uptime_seconds'] as num?)?.toInt(),
+        restartsToday: (h['restarts'] as List? ?? const []).length,
         checkedAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
       );
 }
@@ -108,7 +110,8 @@ class RecorderHealth {
 class DiskInfo {
   final int number, totalMb, freeMb, state;       // state: 0 asleep, 1 working, 2 faulty
   final double? lifePercent;
-  const DiskInfo(this.number, this.totalMb, this.freeMb, this.state, this.lifePercent);
+  final String model, serial;
+  const DiskInfo(this.number, this.totalMb, this.freeMb, this.state, this.lifePercent, {this.model = '', this.serial = ''});
   bool get faulty => state == 2;
 }
 
@@ -435,4 +438,33 @@ String repeatsLine(AlertGroup g) {
   if (g.count == 1) return [g.latest.where, g.latest.when].where((x) => x.isNotEmpty).join(' · ');
   final last = g.latest.at == null ? '' : ', last ${friendlyWhen(g.latest.at!.toIso8601String())}';
   return [g.latest.where, '${g.count} times$last'].where((x) => x.isNotEmpty).join(' · ');
+}
+
+/// One camera on the Health tab: is it online, is the recorder saving its video, when did it last send a picture, and is its picture fine.
+class CameraHealth {
+  final String id, name;
+  final String? recorderId, picture;       // picture: moved, covered, blurry, dark, or nothing when it is fine
+  final bool online;
+  final bool? recording;                   // null when the recorder has not said
+  final int? secondsSincePicture;
+  const CameraHealth(this.id, this.name, {this.recorderId, this.online = true, this.recording, this.secondsSincePicture, this.picture});
+  factory CameraHealth.fromJson(Map<String, dynamic> j) => CameraHealth(j['id'] as String, j['name'] as String,
+      recorderId: j['recorder_id'] as String?, online: j['online'] == true, recording: j['recording'] as bool?, secondsSincePicture: (j['seconds_since_picture'] as num?)?.toInt(), picture: j['picture'] as String?);
+}
+
+/// How many problems a day had, for the strip of the last seven days.
+class DayProblems {
+  final DateTime day;
+  final int problems;
+  const DayProblems(this.day, this.problems);
+}
+
+class HealthDetail {
+  final List<CameraHealth> cameras;
+  final List<DayProblems> days;
+  const HealthDetail(this.cameras, this.days);
+  factory HealthDetail.fromJson(Map<String, dynamic> j) => HealthDetail(
+        [for (final c in (j['cameras'] as List)) CameraHealth.fromJson(c as Map<String, dynamic>)],
+        [for (final d in (j['days'] as List)) DayProblems(DateTime.parse(d['date'] as String), (d['problems'] as num).toInt())],
+      );
 }
