@@ -433,13 +433,14 @@ class RecorderHealthCard extends StatelessWidget {
       if (h.disks.isNotEmpty)
         row(Icons.storage_rounded, faulty.isNotEmpty ? Level.bad : (worn.isNotEmpty ? Level.warn : Level.ok),
             faulty.isNotEmpty ? 'A disk has a fault' : (worn.isNotEmpty ? 'A disk is wearing out' : (h.disks.length == 1 ? 'The disk is healthy' : 'All ${h.disks.length} disks are healthy')),
-            faulty.isNotEmpty ? 'Have the recorder checked: video may not be saved.' : (worn.isNotEmpty ? 'About ${worn.first.lifePercent!.round()}% of its life is left. Replace it soon.' : '${_size(total)} in all')),
+            faulty.isNotEmpty ? 'Have the recorder checked: video may not be saved.' : (worn.isNotEmpty ? 'About ${worn.first.lifePercent!.round()}% of its life is left. Replace it soon.' : [if (h.disks.any((d) => d.model.isNotEmpty)) h.disks.map((d) => d.model).where((m) => m.isNotEmpty).toSet().join(', '), '${_size(total)} in all'].join(' · '))),
       if (full != null)
         // A recorder that records all the time replaces its oldest video when its disk is full, so a full disk is normal and never shown as a problem.
         row(Icons.pie_chart_outline_rounded, Level.ok, full >= 95 ? 'The disk is full, as it should be' : '$full% of the disk is in use',
             full >= 95 ? 'The recorder replaces its oldest video with the newest.' : '${_size(total - free)} used of ${_size(total)}'),
       if (h.daysHeld != null) row(Icons.history_rounded, Level.ok, 'About ${h.daysHeld} days of video kept', 'How far back you can look'),
       if (h.clockOutMinutes != null) row(Icons.schedule_rounded, h.clockOutMinutes! >= 5 ? Level.warn : Level.ok, h.clockOutMinutes! >= 5 ? 'The clock is ${h.clockOutMinutes} minutes out' : 'The clock is right', h.clockOutMinutes! >= 5 ? 'Recordings and reports show the wrong times.' : 'Recordings show the right times.'),
+      if (h.restartsToday > 0) row(Icons.restart_alt_rounded, h.restartsToday >= 3 ? Level.bad : Level.warn, h.restartsToday == 1 ? 'Restarted once today' : 'Restarted ${h.restartsToday} times today', h.restartsToday >= 3 ? 'Often a power problem. Check the power supply.' : 'It switched itself off and on.'),
       if (h.uptimeSeconds != null) row(Icons.power_settings_new_rounded, Level.mute, _uptime(h.uptimeSeconds!), 'Since it last started'),
     ];
     return Group(children: [

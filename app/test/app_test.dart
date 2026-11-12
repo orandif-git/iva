@@ -1068,7 +1068,9 @@ void profileTests() {
     await t.tap(find.text('Health'));
     await t.pumpAndSettle();
     expect(find.text('Cameras working'), findsOneWidget);
-    expect(find.textContaining('Problems'.toUpperCase(), skipOffstage: false), findsOneWidget);
+    await t.scrollUntilVisible(find.textContaining('Problems'.toUpperCase()), 300, scrollable: find.byType(Scrollable).last);
+    expect(find.textContaining('Problems'.toUpperCase()), findsOneWidget);
+    expect(find.text('Last 7 days'.toUpperCase()), findsOneWidget);
     expect(find.text('Stockroom', skipOffstage: false), findsOneWidget);
   });
 
