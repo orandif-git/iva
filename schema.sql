@@ -107,6 +107,18 @@ CREATE TABLE platform.alert_checks (
   changed_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- The daily and weekly summary, sent to the owner's WhatsApp straight from the server (Direct Send) instead of through a webhook template.
+-- One row: how to reach the provider, when summaries go out, and what they say. The provider's key is kept encrypted and never read back.
+CREATE TABLE platform.summary_settings (
+  id             boolean PRIMARY KEY DEFAULT true CHECK (id),
+  config         jsonb NOT NULL DEFAULT '{}',
+  key_ciphertext bytea,
+  key_hint       text,                      -- the last four characters, so Platform Admin can say which key is in use
+  key_changed_at timestamptz,
+  key_changed_by text,
+  updated_at     timestamptz NOT NULL DEFAULT now()
+);
+
 -- Our own video analysis: when each analysis worker last asked for its cameras, and the faults we have had.
 CREATE TABLE platform.worker_seen (
   shard   integer NOT NULL,
@@ -862,7 +874,7 @@ GRANT SELECT ON platform.plans, platform.alert_switches TO app_user, service_wor
 GRANT SELECT ON platform.messaging_providers, platform.storage_settings, platform.webhook_endpoints, platform.webhook_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
 GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints, platform.alert_checks TO platform_admin;
-GRANT SELECT ON platform.alert_checks, platform.fault_notify TO service_worker;
+GRANT SELECT ON platform.alert_checks, platform.fault_notify, platform.summary_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON platform.worker_seen TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;
 GRANT SELECT ON platform.faults TO app_user;

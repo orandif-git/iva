@@ -13,8 +13,8 @@ import logging
 from ..config import get_settings
 from ..crypto import vault
 from ..db import db
-from . import evidence, webhook
-from ..services import alert_catalog as cat
+from . import direct, evidence, webhook
+from ..services import alert_catalog as cat, summary_config
 
 log = logging.getLogger("gateinsight.delivery")
 
@@ -106,6 +106,7 @@ async def process(n) -> str:
     """Sends one claimed notification. Returns the status it ended in."""
     s = get_settings()
     rep = None
+    direct_send = None            # for a summary: (settings, key, text), sent straight to the provider instead of through a webhook
     async with db.service_tx() as conn:
         c = await _context(conn, n)
         if c is None or n["recipient_id"] is None or not c["r_active"]:       # no recipient_id means the person was deleted after this was queued
@@ -127,6 +128,12 @@ async def process(n) -> str:
         elif n["channel"] != "whatsapp" or c["rule_type"] not in cat.CATALOG:
             await conn.execute("UPDATE app.notifications SET status='cancelled', error='Alerts are sent by WhatsApp only.', locked_until=NULL WHERE id=$1", n["id"])
             return "cancelled"
+        elif c["rule_type"] in cat.DIRECT_SEND:
+            scfg, skey = await summary_config.load(conn), await summary_config.key(conn)
+            if not summary_config.ready(scfg, bool(skey), "daily" if c["rule_type"] == "daily_summary" else "weekly"):
+                await conn.execute("UPDATE app.notifications SET status='cancelled', error='WhatsApp summaries are not set up or are switched off.', locked_until=NULL WHERE id=$1", n["id"])
+                return "cancelled"
+            direct_send = (scfg, skey, c["body"] or "")
         else:
             ep = await conn.fetchrow("SELECT * FROM platform.webhook_endpoints WHERE alert_type=$1", c["rule_type"])
             if not ep or not ep["active"]:
@@ -134,6 +141,11 @@ async def process(n) -> str:
                 return "cancelled"
             cfg = await webhook_settings(conn)
             headers = endpoint_headers(ep)
+    if direct_send is not None:
+        scfg, skey, text = direct_send
+        res = await direct.send(scfg, skey, n["recipient"], text, allow_private=s.messaging_allow_private_hosts, ssl_context=_ssl_context)
+        await asyncio.sleep(max(0.0, float(scfg["gap"])))          # spreads out the customers who share a send hour
+        return await _finish(n, res, event=cat.event_name(c["rule_type"]), max_attempts=1 + int(scfg["retries"]))
     if rep is not None:
         body, event = report_event_body(ep, rep, n, c["tenant_name"], c["r_name"], cfg["link_hours"])
     else:
@@ -146,13 +158,13 @@ async def process(n) -> str:
     return await _finish(n, res, event=event, endpoint=ep["id"])
 
 
-async def _finish(n, res, *, event=None, endpoint=None) -> str:
+async def _finish(n, res, *, event=None, endpoint=None, max_attempts: int = MAX_ATTEMPTS) -> str:
     async with db.service_tx() as conn:
         if res.ok:
             await conn.execute("UPDATE app.notifications SET status='sent', sent_at=now(), provider_message_id=$2, event=$3, endpoint_id=$4, response_status=$5, error=NULL, locked_until=NULL WHERE id=$1",
                                n["id"], res.message_id, event, endpoint, res.status)
             return "sent"
-        final = res.permanent or n["attempts"] >= MAX_ATTEMPTS
+        final = res.permanent or n["attempts"] >= max_attempts
         err = (res.error or "Failed")[:300]
         if not final:
             await conn.execute("UPDATE app.notifications SET next_attempt_at = now() + make_interval(secs => $2), error=$3, event=coalesce($4, event), endpoint_id=coalesce($5, endpoint_id), "

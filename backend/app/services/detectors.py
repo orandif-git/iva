@@ -256,32 +256,6 @@ async def connection_unstable() -> int:
 
 
 async def daily_summary() -> int:
-    """One short message a day, at the hour the customer chose (8 unless changed), for a customer who has turned it on."""
-    n = 0
-    async with db.service_tx() as conn:
-        rules = await conn.fetch("SELECT r.tenant_id, r.params, t.timezone FROM app.alert_rules r JOIN app.tenants t ON t.id = r.tenant_id "
-                                 "WHERE r.rule_type='daily_summary' AND r.enabled AND t.status::text IN ('trial','active','past_due')")
-        for rule in rules:
-            local = datetime.now(ZoneInfo(rule["timezone"]))
-            if local.hour != int((rule["params"] or {}).get("hour", 8)):
-                continue
-            s = await conn.fetchrow(
-                """SELECT (SELECT count(*) FROM app.cameras WHERE tenant_id=$1 AND enabled)::int AS cams,
-                          (SELECT count(*) FROM app.cameras WHERE tenant_id=$1 AND enabled AND stream_state='streaming')::int AS streaming,
-                          (SELECT count(*) FROM app.recorders WHERE tenant_id=$1)::int AS recs, (SELECT count(*) FROM app.recorders WHERE tenant_id=$1 AND status='online')::int AS online,
-                          (SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type <> 'daily_summary' AND created_at > now() - interval '24 hours')::int AS alerts,
-                          (SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type <> 'daily_summary' AND acknowledged_at IS NULL)::int AS unseen""", rule["tenant_id"])
-            text = (f"{s['streaming']} of {s['cams']} cameras working, {s['online']} of {s['recs']} recorders online. "
-                    f"{s['alerts']} alert{'' if s['alerts'] == 1 else 's'} in the last 24 hours, {s['unseen']} not yet seen.")
-            # what the recorders say about themselves, when they have said it (see services/recorder_health.py): how full the disks are and how many days of video are kept
-            hs = [r["health"] for r in await conn.fetch("SELECT health FROM app.recorders WHERE tenant_id=$1 AND health IS NOT NULL AND health_at > now() - interval '2 hours'", rule["tenant_id"])]
-            kept = [h["days_held"] for h in hs if h.get("days_held") is not None]
-            ta = (f"{s['streaming']}/{s['cams']} கேமரா வேல செய்யுது, {s['online']}/{s['recs']} ரெக்கார்டர் ஆன்லைன்ல இருக்கு. "
-                  f"கடந்த 24 மணி நேரத்துல {s['alerts']} அலர்ட், {s['unseen']} இன்னும் பாக்கல.")
-            if kept:
-                text += f" Recorders keep about {min(kept)} days of video."
-                ta += f" ரெக்கார்டர்ல சுமார் {min(kept)} நாள் வீடியோ இருக்கு."
-            if await raise_alert(conn, rule["tenant_id"], "daily_summary", title="Daily system summary", body=text, camera_name="All cameras", details={"summary": text, "summary_ta": ta},
-                                 dedupe_key=f"daily:{local.date()}", cooldown_minutes=20 * 60):
-                n += 1
-    return n
+    """The daily and the weekly summary, for every customer whose hour it is (see services/summaries.py)."""
+    from . import summaries
+    return await summaries.run()

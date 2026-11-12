@@ -19,11 +19,11 @@ async def titles(su, t, rule=None):
     return [r["title"] for r in rows]
 
 
-def test_every_system_alert_that_uses_existing_data_is_built_and_the_daily_summary_is_opt_in():
+def test_every_system_alert_that_uses_existing_data_is_built_and_the_summaries_are_on_by_default():
     system = {k for k in cat.BUILT if cat.CATALOG[k]["family"] == "system"}
-    assert system == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "daily_summary", "clock_wrong", "storage_full", "disk_fault", "recording_stopped", "view_changed", "picture_poor", "recorder_restarted", "hardware_fault", "disk_wear", "retention_low"}
-    assert len(cat.BUILT) == 24                                                                       # the three area alerts are Smart Alerts, in test_area_alerts.py
-    assert alerts_svc.OPT_IN == {"daily_summary", "retention_low"} and not alerts_svc.OPT_IN & alerts_svc.DEFAULT_ENABLED and system - alerts_svc.OPT_IN <= alerts_svc.DEFAULT_ENABLED
+    assert system == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "daily_summary", "weekly_summary", "clock_wrong", "storage_full", "disk_fault", "recording_stopped", "view_changed", "picture_poor", "recorder_restarted", "hardware_fault", "disk_wear", "retention_low"}
+    assert len(cat.BUILT) == 25                                                                       # the three area alerts are Smart Alerts, in test_area_alerts.py
+    assert alerts_svc.OPT_IN == {"retention_low"} and not alerts_svc.OPT_IN & alerts_svc.DEFAULT_ENABLED and system - alerts_svc.OPT_IN <= alerts_svc.DEFAULT_ENABLED
     assert all(v["built"] for v in cat.CATALOG.values()), "every alert in the catalogue is built: the review is complete"
 
 

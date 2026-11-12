@@ -97,6 +97,8 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 14),
               health,
             ],
+            const SizedBox(height: 14),
+            _SummaryCard(repo: widget.repo),
             const SizedBox(height: 24),
             if (!wide) Center(child: Text(tagline, style: TextStyle(color: t.fg2.withValues(alpha: .7), fontSize: 12, fontStyle: FontStyle.italic))),
           ]),
@@ -471,6 +473,40 @@ class _Health extends StatelessWidget {
         row(Icons.chat_outlined, 'WhatsApp alerts', h.failed24h == 0 ? 'Working' : '${h.failed24h} failed in 24 h', h.failed24h == 0 ? Level.ok : Level.warn),
         row(Icons.update_rounded, 'Latest data', ago(h.dataSecondsAgo), (h.dataSecondsAgo ?? 999) < 120 ? Level.ok : Level.warn),
       ]),
+    );
+  }
+}
+
+/// The newest daily or weekly summary, the same text that goes to WhatsApp. Left out when there has not been one yet or it cannot be loaded.
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.repo});
+  final Repository repo;
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    return FutureBuilder<SummaryItem?>(
+      future: repo.summary(),
+      builder: (context, snap) {
+        final s = snap.data;
+        if (s == null) return const SizedBox();
+        final when = s.at == null ? '' : ' · ${ago(DateTime.now().difference(s.at!).inSeconds.clamp(0, 1 << 30))}';
+        return Section(
+          icon: Icons.summarize_outlined,
+          title: s.kind == 'weekly' ? 'Weekly summary' : 'Daily summary',
+          subtitle: 'The latest one$when.',
+          child: Group(children: [
+            for (final (heading, lines) in s.blocks)
+              if (!(heading.isEmpty && lines.length == 1 && lines.first.startsWith('Open the ')))
+                Padding(
+                  padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (heading.isNotEmpty) Text(heading, style: TextStyle(color: heading == 'NEEDS A LOOK' ? t.warnInk : t.fg2, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: .6)),
+                    for (final l in lines) Padding(padding: EdgeInsets.only(top: heading.isEmpty ? 0 : 6), child: Text(l, style: TextStyle(fontSize: 14.5, fontWeight: heading.isEmpty ? FontWeight.w600 : FontWeight.w500))),
+                  ]),
+                ),
+          ]),
+        );
+      },
     );
   }
 }

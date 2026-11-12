@@ -233,3 +233,31 @@ The newest answers are shown on the customer's recorder page and in Platform Adm
 
 **Survey mode.** Setting `GI_DH_SURVEY=true` for the Dahua gateway makes it ask each recorder, once, a set of read-only questions and write the raw answers to the log
 (`journalctl -u gi-dahua | grep -E 'survey|alarm from'`): the state questions, the recorder's own event log for the last three days, and each kind of alarm the recorder announces (written the first time it arrives, with its number). It changes nothing on the recorder. It is for finding out which readings a given recorder model really gives.
+
+## Daily and weekly summaries (WhatsApp Direct Send)
+
+The daily and weekly summary are written by the server for each customer and sent straight to WhatsApp (`messaging/direct.py`). They have no webhook and no template: the provider's
+Direct Send address takes the whole text, with its line breaks, and Meta matches or creates the template itself. Every other alert still goes by webhook.
+
+**What is in it** (`services/summaries.py`; the wording of every line is a setting):
+- BUSINESS: visitors, busiest hour, most inside at once, vehicles, longest queue (weekly: visitors, busiest day and hour, vehicles). A line appears only when the customer has the feature,
+  set up and switched on (people counting; a number-plate camera and a vehicle alert; a queue area and the Long queue alert). With none, the block is left out.
+- SYSTEM: cameras and recorders, days of video kept, disks, clocks, alerts in 24 hours, opening hours. Everyone gets it. A line with no reading behind it is left out.
+- NEEDS A LOOK: problems from the alerts the customer has on (offline, disks, recording, clock, restarts, heat, picture), worst and newest first, at most the set number and then "+N more".
+  When there are none the message says everything is fine.
+
+**When:** at the customer's hour (their alert setting, default 08:00). The weekly summary goes on the weekly day (Monday) instead of the daily one; a customer with the weekly summary off still
+gets the daily one. Both are on for everyone unless Platform Admin or the customer switches them off. **Who:** the customer's own recipients; with none chosen, the account owner (the first admin, if
+their number is on the People list), all admins, or nobody, as Platform Admin says.
+
+**Sending:** one `POST` per person: `{"source", "to", "content", "category": "utility"}` with `Authorization: Bearer <key>`. Any 2xx counts as accepted (the provider answers 202 and delivers a little
+later; its `message_id` is kept). A 5xx, 408/425/429 or a connection failure is tried again up to the set number of times; any other 4xx is final. It never retries after an accepted answer. The gap
+setting spaces out customers who share a send hour. The queue, locks and "Send again" are the same as for webhooks (`messaging/delivery.py`).
+
+**Platform Admin → WhatsApp summaries** holds the address, the key (encrypted, never shown again), source label, category, wait time, retries, gap, longest message, the schedule, the recipients rule
+and the wording of every line, with a live preview from a real customer, a test send to any number, and the recent sends. The key is checked only by a test message: the provider has no way to
+test a key without sending one.
+
+**Phone:** the alert's title is "Daily system summary" or "Weekly system summary"; the text is a short headline and its Tamil line. **App:** the Home screen shows the newest summary whole (`GET /v1/summary`).
+
+**Check one customer without sending:** `python -m scripts.print_summary --customer "Jas Office" [--kind weekly]`.

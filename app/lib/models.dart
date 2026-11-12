@@ -468,3 +468,25 @@ class HealthDetail {
         [for (final d in (j['days'] as List)) DayProblems(DateTime.parse(d['date'] as String), (d['problems'] as num).toInt())],
       );
 }
+
+/// The newest daily or weekly summary, as it was written for WhatsApp: a title, then blocks that each have a heading (BUSINESS, SYSTEM, NEEDS A LOOK) and lines that start with a dash.
+class SummaryItem {
+  final String kind, text;
+  final DateTime? at;
+  const SummaryItem(this.kind, this.text, this.at);
+  factory SummaryItem.fromJson(Map<String, dynamic> j) => SummaryItem(j['kind'] as String, j['text'] as String, DateTime.tryParse((j['created_at'] ?? '') as String)?.toLocal());
+
+  String get title => text.split('\n').first;
+  /// Each block of the text after the title: its heading (empty when it has none, for example "Everything is fine.") and its lines without the dash.
+  List<(String, List<String>)> get blocks {
+    final out = <(String, List<String>)>[];
+    for (final b in text.split('\n\n').skip(1)) {
+      final lines = b.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      if (lines.isEmpty) continue;
+      final heading = RegExp(r'^[A-Z][A-Z ]+$').hasMatch(lines.first) ? lines.first : '';
+      final body = (heading.isEmpty ? lines : lines.skip(1)).map((l) => l.replaceFirst(RegExp(r'^[-•]\s*'), '')).toList();
+      out.add((heading, body));
+    }
+    return out;
+  }
+}

@@ -18,6 +18,7 @@ class LiveSession {
 abstract class Repository {
   Future<Health> health();
   Future<HealthDetail> healthDetail();
+  Future<SummaryItem?> summary();
   Future<Me> me();
   Future<List<AlertItem>> alerts();
   Future<Footfall> today();
@@ -92,6 +93,11 @@ class ApiRepository implements Repository {
 
   @override
   Future<Health> health() async => Health.fromJson(await api.call('GET', '/v1/health-summary'));
+  @override
+  Future<SummaryItem?> summary() async {
+    final j = (await api.call('GET', '/v1/summary') as Map<String, dynamic>)['summary'];
+    return j == null ? null : SummaryItem.fromJson(j as Map<String, dynamic>);
+  }
   @override
   Future<HealthDetail> healthDetail() async => HealthDetail.fromJson(await api.call('GET', '/v1/health-detail') as Map<String, dynamic>);
 
@@ -469,6 +475,8 @@ class ApiRepository implements Repository {
 
 /// Demo data, like the clickable prototype. [problems] switches on a camera that is offline and a recorder that keeps dropping.
 class MockRepository implements Repository {
+  @override
+  Future<SummaryItem?> summary() async => SummaryItem('daily', '📊 Daily summary · 12-11-2026 · Jas Office\n\nBUSINESS\n- 412 visitors yesterday (+8% on last Wednesday)\n- Busiest hour: 6 to 7 PM (58 people)\n\nSYSTEM\n- 8 of 8 cameras working · 3 of 3 recorders online\n- Video kept: 14 days\n\nNEEDS A LOOK\n- Back Gate: picture too dark since 9 PM\n\nOpen the Jas iVision app for details.', DateTime.now());
   @override
   Future<HealthDetail> healthDetail() async {
     final today = DateTime.now();

@@ -39,6 +39,8 @@ CATALOG: dict[str, dict] = {
     "back_to_normal": _a(SYSTEM, "Devices", "Service restored", "Tell me when a problem has fixed itself.", built=True, severity="info", shortcodes=["what_recovered"], needs="Already available"),
     "daily_summary": _a(SYSTEM, "Devices", "Daily system summary", "One short message each day: what is working, what needs a look.", built=True, severity="info",
                         shortcodes=["summary"], needs="Already available", params={"hour": {"type": "integer", "default": 8, "min": 0, "max": 23}}),
+    "weekly_summary": _a(SYSTEM, "Devices", "Weekly system summary", "One message a week: the week's visitors, what is working, what needs a look.", built=True, severity="info",
+                         shortcodes=["summary"], needs="Already available", params={"hour": {"type": "integer", "default": 8, "min": 0, "max": 23}}),
     "recorder_restarted": _a(SYSTEM, "Devices", "Recorder restarted", "The recorder switched itself off and on. Several restarts in a day usually mean a power problem.", built=True,
                              shortcodes=["recorder", "times"], needs="Reading from the recorder"),
     "hardware_fault": _a(SYSTEM, "Devices", "Recorder hardware warning", "The recorder reports it is too hot, a fan has stopped, or a camera power port has failed.", built=True,
@@ -82,7 +84,9 @@ CATALOG: dict[str, dict] = {
 }
 ALERT_TYPES = CATALOG                       # the name the rest of the code already uses
 BUILT = [k for k, v in CATALOG.items() if v["built"] and not v["internal"]]               # alerts a customer can have
-WEBHOOK_TYPES = [k for k, v in CATALOG.items() if v["built"]]                                  # everything that sends a webhook event: the alerts and the system events
+# The two summaries are written by the server and sent straight to WhatsApp (Direct Send, see services/summaries.py), so they have no webhook.
+DIRECT_SEND = {"daily_summary", "weekly_summary"}
+WEBHOOK_TYPES = [k for k, v in CATALOG.items() if v["built"] and k not in DIRECT_SEND]                                  # everything that sends a webhook event: the alerts and the system events
 LISTED = [k for k, v in CATALOG.items() if not v["internal"]]                                   # what the owner's alert and plan screens show
 EVENT_PREFIX = {SYSTEM: "system.", SMART: "smart."}
 # Alerts a customer must never miss. They are sent whatever the hour and however many messages have gone before (quiet hours and the flood guard do not hold them).

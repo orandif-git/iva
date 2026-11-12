@@ -5,9 +5,10 @@ import { ago, back, CUS_STATUS, fmtDateTime, gh, group, hero, initials, kv, mone
 import { dataTable } from "../app/table.js";
 import { moneyScreens, invoiceSheet } from "./money.js";
 import { alertScreens, customerAlerts } from "./alerts.js";
+import { summaryScreens } from "./summaries.js";
 import { adminScreens } from "./admin.js";
 
-export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", alerts: "Alerts", webhooks: "Webhooks", maintenance: "Maintenance", storage: "Storage", audit: "Audit log", staff: "Staff and roles", more: "More" };
+export const TITLES = { today: "Today", customers: "Customers", fleet: "Fleet", billing: "Billing", plans: "Plans", alerts: "Alerts", webhooks: "Webhooks", summaries: "WhatsApp summaries", maintenance: "Maintenance", storage: "Storage", audit: "Audit log", staff: "Staff and roles", more: "More" };
 
 const noaccess = () => empty("lock", "Not available for your role", "Ask an owner if you need this.");
 
@@ -384,5 +385,5 @@ async function more(X) {
     gh("Account"), group(row({ icon: "x", title: "Sign out", sub: "Staff sessions also end when the window closes", danger: true, onclick: () => X.signOut() }))];
 }
 
-export const SCREENS = { today, customers, fleet, more, ...moneyScreens, ...alertScreens, ...adminScreens };
+export const SCREENS = { today, customers, fleet, more, ...moneyScreens, ...alertScreens, ...summaryScreens, ...adminScreens };
 export { noaccess, back, chips, skeleton, sec };
