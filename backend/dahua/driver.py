@@ -300,6 +300,24 @@ class NetSdkDriver:
                 log.info("survey %s: %s (%s) -> result %r, %s bytes in use, first bytes %s", login_id, member.name, int(member), res, used, raw[:96].hex())
             except Exception as e:
                 log.info("survey %s: %s could not be asked: %s: %s", login_id, member.name, type(e).__name__, e)
+        # The older, simpler questions: 1 is the state of the alarm inputs, motion and video loss for each channel; 2 is which cameras are blocked (video blind). On a recorder,
+        # a camera that has dropped off shows as video loss, so these may tell the state of each camera.
+        for code, what in ((1, "common alarm state (video loss, motion)"), (2, "blocked cameras"), (5, "resources"), (7, "connections"), (10, "SD card")):
+            try:
+                buf = create_string_buffer(4096)
+                res = self._query_state(login_id, code, buf, sizeof(buf))
+                raw = bytes(buf.raw)
+                log.info("survey %s: state %s, %s -> result %r, %s bytes in use, first bytes %s", login_id, code, what, res, len(raw.rstrip(b"\x00")), raw[:96].hex())
+            except Exception as e:
+                log.info("survey %s: state %s (%s) could not be asked: %s: %s", login_id, code, what, type(e).__name__, e)
+        try:
+            self._survey_log(login_id)
+        except Exception as e:
+            log.info("survey %s: the device log could not be read: %s: %s", login_id, type(e).__name__, e)
+        try:
+            self._observe_alarms(login_id)
+        except Exception as e:
+            log.info("survey %s: alarm listening could not be started: %s: %s", login_id, type(e).__name__, e)
         for name in ("/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"):          # the recorder accepted /dev/sda in the first survey; its structure must carry its own size
             try:
                 dev = SDK_STORAGE_DEVICE()
@@ -308,6 +326,60 @@ class NetSdkDriver:
                 log.info("survey %s: GetStorageDeviceInfo(%r) -> %r %s", login_id, name, res, self._dump(dev))
             except Exception as e:
                 log.info("survey %s: GetStorageDeviceInfo(%r) failed: %s: %s", login_id, name, type(e).__name__, e)
+
+    def _survey_log(self, login_id) -> None:
+        """The recorder's own event log for the last three days, as written: when, who, and the text. A restart, a disk problem or a power cut shows up here."""
+        from ctypes import byref, c_int, create_string_buffer, sizeof
+        from datetime import datetime, timedelta
+        from NetSDK.SDK_Struct import NET_A_DEVICE_LOG_ITEM, NET_A_QUERY_DEVICE_LOG_PARAM, NET_TIME
+        clock = self._clock(login_id)
+        if not clock or not clock.get("local"):
+            return
+        end = datetime.fromisoformat(clock["local"])
+
+        def stamp(d):
+            t = NET_TIME()
+            t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return t
+
+        q, wanted = NET_A_QUERY_DEVICE_LOG_PARAM(), 100
+        q.emLogType, q.stuStartTime, q.stuEndTime, q.nStartNum, q.nEndNum, q.nLogStuType = 0, stamp(end - timedelta(days=3)), stamp(end), 0, wanted, 0
+        size = sizeof(NET_A_DEVICE_LOG_ITEM)
+        buf, res, last = create_string_buffer(size * wanted), None, None
+        for got in (0, c_int(0), byref(c_int(0))):
+            try:
+                res = self._sdk.QueryDeviceLog(login_id, q, buf, len(buf), got, 5000)
+                break
+            except TypeError as e:
+                last = e
+        else:
+            raise last
+        count = res[1] if isinstance(res, tuple) and len(res) > 1 and isinstance(res[1], int) else wanted
+        log.info("survey %s: device log -> result %r, %s entries", login_id, res, count)
+        items = (NET_A_DEVICE_LOG_ITEM * wanted).from_buffer(buf)
+        for i in range(max(0, min(int(count), wanted, 60))):
+            log.info("survey %s: log %s %s", login_id, i, self._dump(items[i]))
+
+    def _observe_alarms(self, login_id) -> None:
+        """Starts listening to what the recorder announces by itself and writes each KIND of alarm to the log the first time it arrives (with its number and its first bytes), then
+        every 200th time. Nothing is changed on the recorder and nothing is reported on: this is for learning which numbers mean which alarm."""
+        from ctypes import string_at
+        from NetSDK.SDK_Callback import fMessCallBackEx1
+        if getattr(self, "_alarm_cb", None) is None:
+            seen = self._alarm_seen = {}
+
+            def on_alarm(command, login, buf, length, ip, port, ack, event_id, user):
+                try:
+                    n = seen[command] = seen.get(command, 0) + 1
+                    if n == 1 or n % 200 == 0:
+                        data = string_at(buf, min(int(length), 48)) if buf and length else b""
+                        log.info("alarm from login %s: command %#x seen %d times, %d bytes, first bytes %s", login, int(command), n, int(length), data.hex())
+                except Exception:
+                    log.exception("an alarm could not be read")
+
+            self._alarm_cb = fMessCallBackEx1(on_alarm)           # kept alive: the SDK holds a pointer to it
+            self._sdk.SetDVRMessCallBackEx1(self._alarm_cb, 0)
+        log.info("survey %s: listening for alarms: %r", login_id, self._sdk.StartListenEx(login_id))
 
     @staticmethod
     def _dump(struct, depth=0) -> dict:
