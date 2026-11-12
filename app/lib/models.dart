@@ -89,11 +89,35 @@ class AlertCount {
   const AlertCount(this.rule, this.place, this.count, this.last);
 }
 
+/// What a recorder last said about itself: its disks, how many days of video it holds, its clock, how long it has been running.
+class RecorderHealth {
+  final List<DiskInfo> disks;
+  final int? percentFull, daysHeld, clockOutMinutes, uptimeSeconds;
+  final DateTime? checkedAt;
+  const RecorderHealth({this.disks = const [], this.percentFull, this.daysHeld, this.clockOutMinutes, this.uptimeSeconds, this.checkedAt});
+  factory RecorderHealth.fromJson(Map<String, dynamic> h, String? at) => RecorderHealth(
+        disks: [for (final d in (h['disks'] as List? ?? const [])) DiskInfo((d['num'] as num).toInt(), (d['total_mb'] as num).toInt(), (d['free_mb'] as num).toInt(), (d['state'] as num).toInt(), (d['life_percent'] as num?)?.toDouble())],
+        percentFull: (h['percent_full'] as num?)?.toInt(),
+        daysHeld: (h['days_held'] as num?)?.toInt(),
+        clockOutMinutes: (h['clock_out_minutes'] as num?)?.toInt(),
+        uptimeSeconds: (h['uptime_seconds'] as num?)?.toInt(),
+        checkedAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
+      );
+}
+
+class DiskInfo {
+  final int number, totalMb, freeMb, state;       // state: 0 asleep, 1 working, 2 faulty
+  final double? lifePercent;
+  const DiskInfo(this.number, this.totalMb, this.freeMb, this.state, this.lifePercent);
+  bool get faulty => state == 2;
+}
+
 class RecorderItem {
   final String id, name, status; // status: online, offline, never
   final int channels;
   final int? seenAgo;
-  const RecorderItem(this.id, this.name, this.status, this.channels, {this.seenAgo});
+  final RecorderHealth? health;
+  const RecorderItem(this.id, this.name, this.status, this.channels, {this.seenAgo, this.health});
   bool get online => status == 'online';
 }
 

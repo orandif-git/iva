@@ -16,7 +16,7 @@ CUSTOMER_PROTOCOLS = (None, "auto_register")
 # Columns safe to return. The encrypted key is never selected into API responses.
 RECORDER_COLS = """r.id, r.tenant_id, r.site_id, r.device_id, r.brand::text AS brand, r.protocol::text AS protocol,
   r.status::text AS status, r.last_heartbeat_at, host(r.last_ip) AS last_ip, r.channel_count, r.preview_ok_at,
-  r.firmware, r.created_at, r.name"""
+  r.firmware, r.created_at, r.name, r.health, r.health_at"""
 
 _ID_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"        # no look-alikes, because customers type this on a recorder
 

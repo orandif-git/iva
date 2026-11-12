@@ -43,6 +43,9 @@ class FakeDriver:
             return LoginResult(error="wrong user or password")
         return LoginResult(login_id=next(self._ids), channels=rec["channels"], serial=rec.get("serial", "SER123"))
 
+    def survey(self, login_id, channels):
+        self.surveyed = getattr(self, "surveyed", []) + [login_id]
+
     def health(self, login_id, channels):
         return self.health_reports.get(login_id) or self.health_reports.get("any")
 

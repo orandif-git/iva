@@ -27,6 +27,7 @@ class Driver(Protocol):
     def play(self, login_id: int, channel_index: int, main: bool, on_data: Callable[[bytes], None]) -> int: ...      # 0 on failure
     def stop_play(self, play_id: int) -> None: ...
     def logout(self, login_id: int) -> None: ...
+    def survey(self, login_id: int, channels: int) -> None: ...      # writes what the recorder answers to a set of read-only questions to the log
     def health(self, login_id: int, channels: int) -> dict | None: ...      # disks, clock and recordings; what could not be read is None
     def stop(self) -> None: ...
 
@@ -50,6 +51,7 @@ class NetSdkDriver:
         self._keep: dict = {}          # the SDK holds pointers to callbacks: keep every one alive until it is no longer used
         self._server = 0
         self._reported: set = set()
+        self._days: dict = {}          # login id -> (when it was worked out, days): the answer changes slowly, so it is looked for every few hours
         self._on_disconnect: Callable[[int], None] = lambda _id: None
 
     def start(self, bind, port, on_register, on_disconnect) -> bool:
@@ -130,6 +132,10 @@ class NetSdkDriver:
             out["recording"] = self._recordings(login_id, channels, out["clock"])
         except Exception:
             log.exception("could not read the recordings of login %s", login_id)
+        try:
+            out["days_held"] = self._days_held(login_id, out["clock"], out["recording"])
+        except Exception:
+            log.exception("could not find out how many days of video login %s holds", login_id)
         if login_id not in self._reported:
             self._reported.add(login_id)
             log.info("first health reading of login %s: %s", login_id, out)
@@ -154,6 +160,55 @@ class NetSdkDriver:
         if not self._sdk.QueryDeviceTimeEx(login_id, t, 3000):
             return None
         return {"utc": int(t.dwUTC) or None, "local": f"{t.dwYear:04d}-{t.dwMonth:02d}-{t.dwDay:02d}T{t.dwHour:02d}:{t.dwMinute:02d}:{t.dwSecond:02d}"}
+
+    DAY_STEPS = (1, 3, 7, 14, 21, 30, 45, 60, 90, 120, 180)
+    DAYS_EVERY = 6 * 3600
+
+    def _days_held(self, login_id, clock, recording):
+        """About how many days of video the recorder holds: the largest of a set of ages (1, 3, 7, 14, 21, 30, 45, 60, 90 ... days) at which it still has a recording, found by asking
+        for a day's worth of files that long ago on the channels that record. A rough answer, in those steps; None when it cannot be found out. Asked every six hours."""
+        import time
+        from datetime import datetime, timedelta
+        from NetSDK.SDK_Struct import NET_TIME
+        kept = self._days.get(login_id)
+        if kept and time.monotonic() - kept[0] < self.DAYS_EVERY:
+            return kept[1]
+        if not clock or not clock.get("local"):
+            return None
+        end = datetime.fromisoformat(clock["local"])
+        sample = [int(c) - 1 for c, v in (recording or {}).items() if (v.get("day") or 0) > 0][:2]       # a couple of channels that really record
+        if not sample:
+            return None
+
+        def stamp(d):
+            t = NET_TIME()
+            t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return t
+
+        def has_video(index, days):
+            start = end - timedelta(days=days)
+            res = self._sdk.QueryRecordFile(login_id, index, 0, stamp(start), stamp(start + timedelta(days=1)), "", 3000, False)
+            if not isinstance(res, tuple) or not res or not res[0]:
+                return None
+            for part in res[1:]:
+                if isinstance(part, (list, tuple)):
+                    return len(part) > 0
+                if isinstance(part, int) and not isinstance(part, bool):
+                    return part > 0
+            return None
+
+        best = None
+        for index in sample:
+            for days in self.DAY_STEPS:
+                seen = has_video(index, days)
+                if seen is None:
+                    break                                   # the recorder would not say: stop asking about this channel
+                if not seen:
+                    break
+                best = max(best or 0, days)
+        if best is not None:
+            self._days[login_id] = (time.monotonic(), best)
+        return best
 
     def _recordings(self, login_id, channels, clock):
         """Per channel (numbered from 1): recordings held for the last two hours and the last day. Needs the recorder's own clock to name the period."""
@@ -180,6 +235,49 @@ class NetSdkDriver:
             return None
 
         return {str(i + 1): {"recent": count(i, end - timedelta(hours=2)), "day": count(i, end - timedelta(hours=24))} for i in range(min(channels, 32))}
+
+    # ------------------------------------------------------------------ survey: what do the recorder's answers look like?
+    def survey(self, login_id, channels) -> None:
+        """Read-only. Writes to the log what the recorder answers to the questions the remaining health alerts depend on (is each camera online, how worn is each disk, how long
+        has it been running, how hot is it, which alarms does it announce), as raw values, so they can be built from real answers. Nothing is changed on the recorder."""
+        from ctypes import c_int, create_string_buffer, sizeof
+        from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
+        from NetSDK.SDK_Struct import SDK_STORAGE_DEVICE
+        log.info("survey %s: state types the kit knows: %s", login_id, {m.name: int(m) for m in EM_QUERY_DEV_STATE_TYPE})
+        for member in EM_QUERY_DEV_STATE_TYPE:
+            if member.name in ("PTZ_LOCATION", "PTZ_PRESET_LIST", "PTZ_VIEW_RANGE", "SCADA_DEVICE_LIST", "SCADA_INFO", "SCADA_INFO_BY_ID", "DISK"):
+                continue                                           # not about the recorder's health, or already read
+            try:
+                buf, got = create_string_buffer(4096), c_int(0)
+                res = self._sdk.QueryDevState(login_id, int(member), buf, sizeof(buf), got, 3000)
+                raw = bytes(buf.raw[:96])
+                log.info("survey %s: %s (%s) -> result %r, %s bytes, first bytes %s", login_id, member.name, int(member), res, got.value, raw.hex())
+            except Exception as e:
+                log.info("survey %s: %s could not be asked: %s: %s", login_id, member.name, type(e).__name__, e)
+        for name in ("", "Disk0", "Disk 0", "/dev/sda", "dev/sda", "SATA0"):
+            try:
+                dev = SDK_STORAGE_DEVICE()
+                res = self._sdk.GetStorageDeviceInfo(login_id, name.encode(), dev, 3000)
+                log.info("survey %s: GetStorageDeviceInfo(%r) -> %r %s", login_id, name, res, self._dump(dev))
+            except Exception as e:
+                log.info("survey %s: GetStorageDeviceInfo(%r) failed: %s: %s", login_id, name, type(e).__name__, e)
+
+    @staticmethod
+    def _dump(struct, depth=0) -> dict:
+        """The fields of a ctypes structure as plain values, for the survey log. Long arrays are cut short."""
+        out = {}
+        for f in getattr(struct, "_fields_", []):
+            key = f[0]
+            val = getattr(struct, key, None)
+            if hasattr(val, "_fields_") and depth < 2:
+                out[key] = NetSdkDriver._dump(val, depth + 1)
+            elif hasattr(val, "_length_"):
+                items = list(val)[:6]
+                out[key] = [NetSdkDriver._dump(x, depth + 1) if hasattr(x, "_fields_") and depth < 2 else (x.hex() if isinstance(x, bytes) else x) for x in items] if items and hasattr(items[0], "_fields_") else \
+                    (bytes(val).split(b"\x00")[0].decode("gbk", "replace") if isinstance(val, (bytes, bytearray)) or getattr(val, "_type_", None).__name__ == "c_char" else items)
+            else:
+                out[key] = val.decode("gbk", "replace") if isinstance(val, bytes) else val
+        return out
 
     def logout(self, login_id) -> None:
         self._sdk.Logout(login_id)

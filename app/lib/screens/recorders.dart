@@ -362,6 +362,7 @@ class _RecorderPageState extends State<RecorderPage> {
                   ),
                 ]),
                 if (note != null) Padding(padding: const EdgeInsets.fromLTRB(6, 10, 6, 0), child: Text(note!, style: TextStyle(color: t.okInk, fontWeight: FontWeight.w600))),
+                if (r.health != null) ...[const GroupLabel('How the recorder is doing'), RecorderHealthCard(r.health!)],
                 const GroupLabel('Cameras'),
                 Group(children: [ChannelsPanel(repo: widget.repo, recorderId: r.id, channels: channels, onAdded: _reload, canAdd: widget.canEdit)]),
                 const GroupLabel('What is typed into the recorder'),
@@ -392,5 +393,59 @@ class _RecorderPageState extends State<RecorderPage> {
         ),
       ),
     );
+  }
+}
+
+
+/// What the recorder last said about itself, in plain words: are the disks all right, how full, how many days of video are kept, is its clock right. Each line is green when
+/// fine, amber when it needs a look and red when it needs fixing.
+class RecorderHealthCard extends StatelessWidget {
+  const RecorderHealthCard(this.h, {super.key});
+  final RecorderHealth h;
+
+  String _size(int mb) => mb >= 1000000 ? '${(mb / 1000000).toStringAsFixed(mb >= 10000000 ? 0 : 1)} TB' : '${(mb / 1000).round()} GB';
+
+  String _uptime(int s) {
+    final d = s ~/ 86400;
+    return d >= 2 ? 'Running for $d days' : (s >= 3600 ? 'Running for ${s ~/ 3600} hours' : 'Started ${(s ~/ 60).clamp(1, 59)} minutes ago');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context);
+    Widget row(IconData icon, Level level, String title, String sub) {
+      final (bg, fg) = levelColors(t, level);
+      return Padding(
+        padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
+        child: Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: fg, size: 21)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)), Text(sub, style: TextStyle(color: t.fg2, fontSize: 12.5))])),
+        ]),
+      );
+    }
+
+    final faulty = h.disks.where((d) => d.faulty).toList();
+    final worn = h.disks.where((d) => !d.faulty && d.lifePercent != null && d.lifePercent! <= 20).toList();
+    final total = h.disks.fold<int>(0, (s, d) => s + d.totalMb), free = h.disks.fold<int>(0, (s, d) => s + d.freeMb);
+    final full = h.percentFull;
+    final rows = <Widget>[
+      if (h.disks.isNotEmpty)
+        row(Icons.storage_rounded, faulty.isNotEmpty ? Level.bad : (worn.isNotEmpty ? Level.warn : Level.ok),
+            faulty.isNotEmpty ? 'A disk has a fault' : (worn.isNotEmpty ? 'A disk is wearing out' : (h.disks.length == 1 ? 'The disk is healthy' : 'All ${h.disks.length} disks are healthy')),
+            faulty.isNotEmpty ? 'Have the recorder checked: video may not be saved.' : (worn.isNotEmpty ? 'About ${worn.first.lifePercent!.round()}% of its life is left. Replace it soon.' : '${_size(total)} in all')),
+      if (full != null)
+        Column(children: [
+          row(Icons.pie_chart_outline_rounded, full >= 90 ? Level.bad : (full >= 80 ? Level.warn : Level.ok), '$full% full', '${_size(total - free)} used of ${_size(total)}'),
+          Padding(padding: EdgeInsets.fromLTRB(cardPad(context), 0, cardPad(context), 12), child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: full / 100, minHeight: 8, backgroundColor: t.brandSoft, color: full >= 90 ? t.crit : (full >= 80 ? t.warnInk : t.brand)))),
+        ]),
+      if (h.daysHeld != null) row(Icons.history_rounded, Level.ok, 'About ${h.daysHeld} days of video kept', 'How far back you can look'),
+      if (h.clockOutMinutes != null) row(Icons.schedule_rounded, h.clockOutMinutes! >= 5 ? Level.warn : Level.ok, h.clockOutMinutes! >= 5 ? 'The clock is ${h.clockOutMinutes} minutes out' : 'The clock is right', h.clockOutMinutes! >= 5 ? 'Recordings and reports show the wrong times.' : 'Recordings show the right times.'),
+      if (h.uptimeSeconds != null) row(Icons.power_settings_new_rounded, Level.mute, _uptime(h.uptimeSeconds!), 'Since it last started'),
+    ];
+    return Group(children: [
+      if (rows.isEmpty) Padding(padding: EdgeInsets.all(cardPad(context)), child: Text('The recorder has not reported yet. It is asked every ten minutes.', style: TextStyle(color: t.fg2))) else ...rows,
+      if (h.checkedAt != null) Padding(padding: EdgeInsets.fromLTRB(cardPad(context), 10, cardPad(context), 10), child: Text('Checked ${shortAgo(DateTime.now().difference(h.checkedAt!).inSeconds.clamp(0, 1 << 30))}', style: TextStyle(color: t.fg2, fontSize: 12.5))),
+    ]);
   }
 }

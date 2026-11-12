@@ -298,3 +298,14 @@ async def test_the_first_picture_is_reported_to_the_backend_once(env):
         await read_all(env, (await play(env)).json()["url"], limit=1000)
     await until(lambda: env.backend.previews)
     assert env.backend.previews == ["SHARMA-AB3K"]                             # once, however many streams
+
+
+async def test_survey_mode_asks_each_recorder_once_and_normal_mode_never(env):
+    await online(env)
+    await asyncio.sleep(0.5)
+    assert getattr(env.driver, "surveyed", []) == [], "off unless it is switched on"
+    surveyor = asyncio.create_task(env.gw._surveys())
+    await until(lambda: getattr(env.driver, "surveyed", []), timeout=20)
+    await asyncio.sleep(0.5)
+    surveyor.cancel()
+    assert len(env.driver.surveyed) == 1, "once for the recorder, not every time round"

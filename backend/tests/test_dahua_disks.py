@@ -56,3 +56,59 @@ def test_a_disk_state_carries_the_disk_type_in_its_high_bits_and_the_state_in_it
 def test_a_recorder_that_cannot_be_asked_gives_none_and_not_a_fault(driver):
     driver._sdk.answer = False
     assert driver._disks(7) is None
+
+
+def test_how_many_days_of_video_a_recorder_holds_is_found_in_steps_and_remembered(driver, monkeypatch):
+    class Time(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_uint) for n in ("dwYear", "dwMonth", "dwDay", "dwHour", "dwMinute", "dwSecond")]
+    structs = sys.modules["NetSDK.SDK_Struct"]
+    structs.NET_TIME = Time
+    asked = []
+
+    def query(login, index, kind, start, end, card, wait, by_time):
+        asked.append((start.dwYear, start.dwMonth, start.dwDay))
+        from datetime import date
+        age = (date(2026, 11, 12) - date(start.dwYear, start.dwMonth, start.dwDay)).days
+        return (True, [object()] * 3) if age <= 25 else (True, [])                 # the recorder holds 25 days: footage 21 days ago, none 30 days ago
+
+    driver._sdk.QueryRecordFile = query
+    driver._days = {}
+    clock = {"utc": None, "local": "2026-11-12T08:00:00"}
+    rec = {"1": {"recent": 3, "day": 20}, "2": {"recent": None, "day": None}}
+    assert driver._days_held(7, clock, rec) == 21, "found in steps: 21 days has video, 30 has none"
+    n = len(asked)
+    assert driver._days_held(7, clock, rec) == 21 and len(asked) == n, "asked again only after hours, not every ten minutes"
+    assert driver._days_held(8, clock, {"1": {"recent": None, "day": None}}) is None, "no channel that records: no answer"
+    assert driver._days_held(9, None, rec) is None
+
+
+def test_the_survey_writes_the_raw_answers_to_the_log_and_never_raises(driver, monkeypatch, caplog):
+    import logging
+    enum_mod, struct_mod = sys.modules["NetSDK.SDK_Enum"], sys.modules["NetSDK.SDK_Struct"]
+
+    class Kinds(enum.IntEnum):
+        DISK = 4
+        ONLINE = 53
+        SOFTWARE = 15
+    enum_mod.EM_QUERY_DEV_STATE_TYPE = Kinds
+
+    class Storage(ctypes.Structure):
+        _fields_ = [("szName", ctypes.c_char * 8), ("fLifePercent", ctypes.c_float)]
+    struct_mod.SDK_STORAGE_DEVICE = Storage
+
+    def query(login, kind, buf, size, got, wait):
+        if kind == 15:
+            raise TypeError("a call this recorder does not support")
+        buf.value = b"\x01\x00"
+        return True
+
+    def storage(login, name, dev, wait):
+        dev.szName, dev.fLifePercent = b"sda", 87.5
+        return 1
+
+    driver._sdk.QueryDevState, driver._sdk.GetStorageDeviceInfo = query, storage
+    with caplog.at_level(logging.INFO, logger="dahua.driver"):
+        driver.survey(7, 4)
+    text = caplog.text
+    assert "ONLINE (53) -> result True" in text and "SOFTWARE could not be asked: TypeError" in text
+    assert "'szName': 'sda'" in text and "'fLifePercent': 87.5" in text

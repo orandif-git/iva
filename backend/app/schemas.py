@@ -94,6 +94,8 @@ class RecorderOut(BaseModel):
     preview_ok_at: datetime | None
     firmware: str | None
     created_at: datetime
+    health: dict | None = None            # what it last said about its disks, clock and recordings (services/recorder_health.py)
+    health_at: datetime | None = None
 
 
 class AdminRecorderOut(RecorderOut):
