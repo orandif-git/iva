@@ -43,10 +43,10 @@ class PrefsTokenStore implements TokenStore {
 /// The protected store, with a preferences fallback for a machine that has no secret service (some Linux desktops, a test
 /// harness). The fallback remembers which one worked, so a token written to one is read from the same one.
 class SecureTokenStore implements TokenStore {
-  SecureTokenStore({TokenStore? fallback}) : _fallback = fallback ?? _PrefsFallback();
+  SecureTokenStore({TokenStore? fallback, FlutterSecureStorage? secure}) : _fallback = fallback ?? _PrefsFallback(), _secure = secure ?? const FlutterSecureStorage();
   static const _key = 'gi_next_rt';
   // The default Android options are already AES-GCM with RSA-wrapped keys in the Keystore; nothing extra to ask for.
-  final FlutterSecureStorage _secure = const FlutterSecureStorage();
+  final FlutterSecureStorage _secure;
   final TokenStore _fallback;
   bool _usingFallback = false;
 
@@ -54,7 +54,15 @@ class SecureTokenStore implements TokenStore {
   Future<String?> read() async {
     if (!_usingFallback) {
       try {
-        return await _secure.read(key: _key).timeout(const Duration(seconds: 3));
+        final t = await _secure.read(key: _key).timeout(const Duration(seconds: 3));
+        if (t != null) return t;
+        // Signed in by an earlier version, which kept the token in preferences: move it into the protected store and erase the old copy, so nobody has to sign in again.
+        final old = await _fallback.read();
+        if (old != null) {
+          await _secure.write(key: _key, value: old).timeout(const Duration(seconds: 3));
+          await _fallback.clear();
+        }
+        return old;
       } catch (_) {
         _usingFallback = true;
       }
