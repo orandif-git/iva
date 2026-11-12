@@ -22,7 +22,8 @@ async def ensure_partitions(months_ahead: int = 2) -> int:
 
 # The alerts that are found by looking at the data on a clock (every other alert is raised the moment its event arrives), and the check that finds each.
 # Each is checked every DEFAULT_CHECK_SECONDS unless Platform Admin sets another time for it (platform.alert_checks).
-TIMED = {"vehicle_overstay": "vehicle_overstay", "crowding": "crowding", "connection_unstable": "connection_unstable", "daily_summary": "daily_summary"}
+TIMED = {"vehicle_overstay": "vehicle_overstay", "crowding": "crowding", "connection_unstable": "connection_unstable", "daily_summary": "daily_summary",
+         "counting_stopped": "counting_stopped", "after_hours": "after_hours"}
 DEFAULT_CHECK_SECONDS, TICK_SECONDS = 60, 15
 _last_run: dict[str, float] = {}
 

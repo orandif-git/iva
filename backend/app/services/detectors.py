@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from ..db import db
 from ..messaging import evidence
 from . import snapshot
+from .opening_hours import Hours
 from .alerts import raise_alert
 
 log = logging.getLogger("gateinsight.detectors")
@@ -134,6 +135,96 @@ async def crowding() -> int:
                                      body=f"About {inside} people are inside{' ' + where if several else ''}. Your limit is {limit}.",
                                      camera_name=where if several else "All cameras", details={"people": int(inside), "limit": limit},
                                      dedupe_key=f"crowding:{key}" if several else "crowding", cooldown_minutes=60, evidence_id=pic):
+                    n += 1
+    return n
+
+
+# ------------------------------------------------------------------------------------------------ alerts that need the opening hours
+async def _camera_picture(conn, tenant_id, camera_id):
+    """A picture from one camera, taken now, kept as evidence. None when the camera cannot be reached: an alert is never held back for its picture."""
+    cam = await conn.fetchrow(
+        """SELECT c.id, c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol, t.retention_snapshots_days
+           FROM app.cameras c LEFT JOIN app.recorders r ON r.id = c.recorder_id JOIN app.tenants t ON t.id = c.tenant_id WHERE c.id=$1 AND c.tenant_id=$2""", camera_id, tenant_id)
+    if not cam:
+        return None
+    try:
+        def decrypt():
+            from ..crypto import vault
+            return vault().decrypt(bytes(cam["source_ciphertext"]), str(cam["id"]))
+        url, fmt = await asyncio.wait_for(snapshot.source_for(cam, decrypt), 20)
+        jpeg = await asyncio.wait_for(snapshot.grab(url, fmt), snapshot.GRAB_TIMEOUT + 5)
+        return await evidence.save_image(conn, tenant_id, cam["id"], jpeg, cam["retention_snapshots_days"])
+    except Exception as e:
+        log.info("no picture for the alert: %s", type(e).__name__)
+        return None
+
+
+def _local_now(tz: str) -> datetime:
+    return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
+
+
+async def counting_stopped() -> int:
+    """A camera that counts people, is online and sending video, yet has counted nobody for `hours` (2 unless changed) while the place has been open all that time.
+    Usually the counting line no longer sits on the doorway (the camera was moved) or the door is no longer used. Once a day for a camera.
+    Needs the customer's opening hours: with none set, an empty shop at night cannot be told from a fault, so nothing is said. Nothing is said either while our own
+    analysis is stopped: then nothing is being counted anywhere, and that is ours to fix."""
+    n = 0
+    async with db.service_tx() as conn:
+        if await conn.fetchval("SELECT EXISTS (SELECT 1 FROM platform.faults WHERE ended_at IS NULL)"):
+            return 0
+        tenants = await conn.fetch("SELECT id, timezone, open_time, close_time, closed_days FROM app.tenants WHERE open_time IS NOT NULL AND close_time IS NOT NULL AND status::text IN ('trial','active','past_due')")
+        for t in tenants:
+            hours, local = Hours.of(t), _local_now(t["timezone"])
+            session = hours.session(local)
+            if not session:
+                continue
+            need = int(await _param(conn, t["id"], "counting_stopped", "hours", 2))
+            if local - session[0] < timedelta(hours=need):                 # not open long enough yet to say anything
+                continue
+            cams = await conn.fetch(
+                """SELECT c.id, c.name FROM app.cameras c WHERE c.tenant_id=$1 AND c.enabled AND c.use_footfall AND c.stream_state='streaming'
+                     AND c.stream_state_at < now() - make_interval(hours => $2) AND c.stream_seen_at > now() - interval '3 minutes'
+                     AND NOT EXISTS (SELECT 1 FROM app.footfall_counts f WHERE f.camera_id = c.id AND f.bucket_start > now() - make_interval(hours => $2) AND (f.people_in > 0 OR f.people_out > 0))""",
+                t["id"], need)
+            for c in cams:
+                if await raise_alert(conn, t["id"], "counting_stopped", body=f"{c['name']} is online but has counted nobody in the last {need} hours while you are open. Check that the camera still looks at the doorway.",
+                                     camera_id=c["id"], camera_name=c["name"], details={}, dedupe_key=f"nocount:{c['id']}", cooldown_minutes=20 * 60):
+                    n += 1
+    return n
+
+
+async def after_hours() -> int:
+    """People counted at a door while the place is closed. The first `grace_minutes` after closing (30 unless changed) and the last 30 minutes before opening are
+    ignored: staff locking up and arriving. One alert for a camera in half an hour, with a picture taken at that moment. It is an urgent alert: always sent.
+    It sees only what a counting camera sees, a person crossing its counting line. It is not a motion detector for the whole room."""
+    n = 0
+    async with db.service_tx() as conn:
+        rules = await conn.fetch(
+            """SELECT r.tenant_id, r.params, t.timezone, t.open_time, t.close_time, t.closed_days FROM app.alert_rules r JOIN app.tenants t ON t.id = r.tenant_id
+               WHERE r.rule_type='after_hours' AND r.enabled AND t.open_time IS NOT NULL AND t.close_time IS NOT NULL AND t.status::text IN ('trial','active','past_due')""")
+        for rule in rules:
+            hours, local = Hours.of(rule), _local_now(rule["timezone"])
+            closed_at = hours.closed_since(local)
+            if closed_at is None:
+                continue
+            grace = int((rule["params"] or {}).get("grace_minutes", 30))
+            opens = hours.opens_next(local)
+            if local < closed_at + timedelta(minutes=grace) or (opens is not None and local > opens - timedelta(minutes=30)):
+                continue
+            # counts of the last ten minutes that fall after the grace time
+            quiet_for = min(10, int((local - (closed_at + timedelta(minutes=grace))).total_seconds() // 60))
+            if quiet_for < 1:
+                continue
+            rows = await conn.fetch(
+                """SELECT c.id, c.name, sum(f.people_in + f.people_out)::int AS people FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id
+                   WHERE f.tenant_id=$1 AND f.bucket_start > now() - make_interval(mins => $2) GROUP BY c.id, c.name HAVING sum(f.people_in + f.people_out) > 0""", rule["tenant_id"], quiet_for)
+            for r in rows:
+                if await conn.fetchval("SELECT 1 FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - interval '30 minutes'", rule["tenant_id"], f"afterhours:{r['id']}"):
+                    continue                                # already told: do not take another picture for nothing
+                pic = await _camera_picture(conn, rule["tenant_id"], r["id"])
+                if await raise_alert(conn, rule["tenant_id"], "after_hours", title=f"After-hours activity at {r['name']}",
+                                     body=f"{r['people']} {'person was' if r['people'] == 1 else 'people were'} counted at {r['name']} while you are closed.",
+                                     camera_id=r["id"], camera_name=r["name"], details={"people": r["people"]}, dedupe_key=f"afterhours:{r['id']}", cooldown_minutes=30, evidence_id=pic):
                     n += 1
     return n
 

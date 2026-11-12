@@ -357,6 +357,33 @@ void main() {
     expect(find.text('Payment was due on 15 Nov 2026'), findsOneWidget);
   });
 
+  testWidgets('Settings has opening hours, off until set, with plain words about what needs them', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2800 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('More').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Settings'));
+    await t.pumpAndSettle();
+    expect(find.text('Opening hours'.toUpperCase()), findsOneWidget);
+    expect(find.text('Not set'), findsOneWidget);
+    expect(find.textContaining('Without your hours, neither can work'), findsOneWidget);
+    await t.tap(find.byWidgetPredicate((w) => w is Switch && !w.value).first);
+    await t.pumpAndSettle();
+    expect(repo.hours.open, 9);
+    expect(repo.hours.close, 21);
+    expect(find.text('Open 9 am to 9 pm'), findsOneWidget);
+    await t.tap(find.byTooltip('Closes at: one hour later'));
+    await t.pumpAndSettle();
+    expect(repo.hours.close, 22);
+    await t.tap(find.text('Sun'));
+    await t.pumpAndSettle();
+    expect(repo.hours.closedDays, [6]);
+  });
+
   testWidgets('the sign-in screen asks for email and password and shows the server\'s message', (t) async {
     final client = ApiClient(base: 'http://x', prefs: await SharedPreferences.getInstance(), client: MockClient((r) async => http.Response('{"error":{"code":"invalid_credentials","message":"That email or password is not right."}}', 401)));
     await t.pumpWidget(IVisionApp(client: client));

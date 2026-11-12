@@ -200,6 +200,8 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depend
     for p in people:
         if not p["phone"]:
             warnings.append(f"{p['name']} has no mobile number, so will not get WhatsApp messages.")
+    if body.enabled and rule_type in ("counting_stopped", "after_hours") and not await ctx.conn.fetchval("SELECT open_time IS NOT NULL AND close_time IS NOT NULL FROM app.tenants WHERE id=$1", ctx.tenant_id):
+        warnings.append("Set your opening hours in Settings first. This alert needs them and does nothing until they are set.")
     if body.enabled and not ids:
         warnings.append("No one will be messaged yet. The alert will only appear in the app until you choose people.")
     row = await ctx.conn.fetchrow(
