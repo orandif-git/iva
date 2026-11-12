@@ -108,14 +108,23 @@ async def test_the_health_tab_gets_one_line_per_camera_and_a_week_of_days(client
 def test_the_phone_gets_the_alert_name_and_one_plain_fact_without_limits_or_orders():
     from app.services.push_text import compose
     now = "11:42 PM"
-    assert compose("crowding", "Occupancy limit exceeded", "Jas Office", {"people": 4, "limit": 3, "minutes": 2}, now, "t", "b") == ("Occupancy limit exceeded", "Jas Office: 4 people inside for the last 2 minutes.")
-    assert compose("queue_long", "Long queue", "Cam 1", {"area": "Billing Counter", "length": 8, "limit": 5}, now, "t", "b")[1] == "Billing Counter: 8 people waiting."
-    assert compose("disk_wear", "Recorder disk health low", "", {"recorder": "Warehouse", "disk": "Disk 2", "percent_left": 12}, now, "t", "b")[1] == "Warehouse: Disk 2 has about 12% life left."
-    assert compose("recorder_restarted", "Recorder restarted", "", {"recorder": "Warehouse", "times": 1}, now, "t", "b")[1] == "Warehouse: restarted once."
-    assert compose("blocked_plate", "Blocked vehicle detected", "Main Gate", {"plate": "GJ05AB1234"}, now, "t", "b")[1] == "Main Gate: GJ05AB1234 arrived at 11:42 PM."
-    assert compose("daily_summary", "Daily system summary", "", {"summary": "7 cameras working, 1 needs a look."}, now, "t", "b")[1] == "7 cameras working, 1 needs a look."
-    assert compose("clock_wrong", "Recorder time incorrect", "", {"recorder": "W"}, now, "t", "the long message") == ("Recorder time incorrect", "the long message"), "a missing number falls back to the full message"
-    assert compose("report_ready", "Report ready", "", {}, now, "own title", "own body") == ("own title", "own body"), "alerts without a short form are unchanged"
+    assert compose("crowding", "Occupancy limit exceeded", "Jas Office", {"people": 4, "limit": 3, "minutes": 2}, now, "t", "b", tamil=False) == ("Occupancy limit exceeded", "Jas Office: 4 people inside for the last 2 minutes.")
+    assert compose("queue_long", "Long queue", "Cam 1", {"area": "Billing Counter", "length": 8, "limit": 5}, now, "t", "b", tamil=False)[1] == "Billing Counter: 8 people waiting."
+    assert compose("disk_wear", "Recorder disk health low", "", {"recorder": "Warehouse", "disk": "Disk 2", "percent_left": 12}, now, "t", "b", tamil=False)[1] == "Warehouse: Disk 2 has about 12% life left."
+    assert compose("recorder_restarted", "Recorder restarted", "", {"recorder": "Warehouse", "times": 1}, now, "t", "b", tamil=False)[1] == "Warehouse: restarted once."
+    assert compose("blocked_plate", "Blocked vehicle detected", "Main Gate", {"plate": "GJ05AB1234"}, now, "t", "b", tamil=False)[1] == "Main Gate: GJ05AB1234 arrived at 11:42 PM."
+    assert compose("daily_summary", "Daily system summary", "", {"summary": "7 cameras working, 1 needs a look."}, now, "t", "b", tamil=False)[1] == "7 cameras working, 1 needs a look."
+    assert compose("clock_wrong", "Recorder time incorrect", "", {"recorder": "W"}, now, "t", "the long message", tamil=False) == ("Recorder time incorrect", "the long message"), "a missing number falls back to the full message"
+    assert compose("report_ready", "Report ready", "", {}, now, "own title", "own body", tamil=False) == ("own title", "own body"), "alerts without a short form are unchanged"
     for rule in ("crowding", "people_in_area", "queue_long", "retention_low", "counting_stopped"):
-        text = compose(rule, "n", "P", {"people": 4, "length": 4, "days": 14, "hours": 3, "limit": 3, "minutes": 2, "area": "A"}, now, "t", "b")[1].lower()
+        text = compose(rule, "n", "P", {"people": 4, "length": 4, "days": 14, "hours": 3, "limit": 3, "minutes": 2, "area": "A"}, now, "t", "b", tamil=False)[1].lower()
         assert "limit" not in text and "target" not in text and "please" not in text and "check" not in text
+
+
+def test_the_phone_text_has_the_tamil_line_under_the_english_one_and_it_can_be_switched_off():
+    from app.services.push_text import compose
+    t, b = compose("recording_stopped", "Recording stopped", "", {"recorder": "Warehouse", "cameras": 2}, "11:42 PM", "t", "b", tamil=True)
+    assert t == "Recording stopped" and b.split("\n") == ["Warehouse: 2 cameras are not saving video.", "Warehouse: 2 கேமரா வீடியோ ரெக்கார்ட் பண்ணல."]
+    assert compose("recording_stopped", "Recording stopped", "", {"recorder": "Warehouse", "cameras": 2}, "11:42 PM", "t", "b", tamil=False)[1] == "Warehouse: 2 cameras are not saving video."
+    assert compose("daily_summary", "Daily system summary", "", {"summary": "7 cameras working.", "summary_ta": "7 கேமரா வேல செய்யுது."}, "", "t", "b", tamil=True)[1] == "7 cameras working.\n7 கேமரா வேல செய்யுது."
+    assert compose("report_ready", "Report ready", "", {}, "", "own", "body", tamil=True) == ("own", "body"), "alerts without a short form stay as they are"

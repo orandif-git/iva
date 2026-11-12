@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     messaging_allow_private_hosts: bool = False         # tests only: lets an integration call a local server
     delivery_poll_seconds: float = 2.0
     rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
+    push_tamil: bool = True                              # add the Tamil line under the English one in phone notifications (GI_PUSH_TAMIL=false to turn off)
     fcm_project_id: str = ""                             # Firebase project for push notifications; push is off while this is empty
     fcm_service_account_file: str = ""                   # path to that project's service-account key (JSON). Never stored in the database.
     live_stream_max: int = 8                             # moving live views running at once on this server; more are told to try again
