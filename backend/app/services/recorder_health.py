@@ -117,7 +117,8 @@ async def apply(conn, rec, h: dict) -> list[str]:
             problems.append("a camera power port has failed")
         if problems:
             await alert("hardware_fault", body=f"{name}: {' and '.join(problems)}. Heat shortens a recorder's life: check the air flow around it.",
-                        details={"recorder": name, "what": ", ".join(problems)}, dedupe_key=f"hardware:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
+                        details={"recorder": name, "what": ", ".join(problems), "hot": bool(hw.get("temperature_c") is not None and hw["temperature_c"] >= limit),
+                                 "fan": hw.get("fan_ok") is False, "poe": hw.get("poe_fault") is True}, dedupe_key=f"hardware:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
     return raised
 
 
