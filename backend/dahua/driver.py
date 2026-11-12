@@ -141,14 +141,24 @@ class NetSdkDriver:
             log.info("first health reading of login %s: %s", login_id, out)
         return out
 
+    def _query_state(self, login_id, kind, buf, size):
+        """QueryDevState the way the installed wrapper wants it. It makes the pointers itself (it does `pointer(pBuf)`), so the buffer is passed as it is, and the length it
+        writes back is a plain number. If a wrapper version wants something else it is tried in the other forms. It may answer with a result or with (result, length)."""
+        from ctypes import byref, c_int
+        last = None
+        for got in (0, c_int(0), byref(c_int(0))):
+            try:
+                return self._sdk.QueryDevState(login_id, kind, buf, size, got, 3000)
+            except TypeError as e:
+                last = e
+        raise last
+
     def _disks(self, login_id):
-        from ctypes import c_int, sizeof
+        from ctypes import sizeof
         from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
         from NetSDK.SDK_Struct import SDK_HARDDISK_STATE
         st = SDK_HARDDISK_STATE()
-        # The wrapper makes the pointers itself (it does `pointer(pBuf)`), so the structure and the length are passed as they are, not as pointers. It may answer with a
-        # plain result or with (result, length): either way the first value says whether it worked.
-        res = self._sdk.QueryDevState(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), st, sizeof(st), c_int(0), 3000)
+        res = self._query_state(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), st, sizeof(st))
         if not (res[0] if isinstance(res, tuple) and res else res):
             return None
         return [{"num": int(d.bDiskNum), "total_mb": int(d.dwVolume), "free_mb": int(d.dwFreeSpace), "status": int(d.dwStatus), "state": int(d.dwStatus) & 0x0F}
@@ -240,7 +250,7 @@ class NetSdkDriver:
     def survey(self, login_id, channels) -> None:
         """Read-only. Writes to the log what the recorder answers to the questions the remaining health alerts depend on (is each camera online, how worn is each disk, how long
         has it been running, how hot is it, which alarms does it announce), as raw values, so they can be built from real answers. Nothing is changed on the recorder."""
-        from ctypes import c_int, create_string_buffer, sizeof
+        from ctypes import create_string_buffer, sizeof
         from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
         from NetSDK.SDK_Struct import SDK_STORAGE_DEVICE
         log.info("survey %s: state types the kit knows: %s", login_id, {m.name: int(m) for m in EM_QUERY_DEV_STATE_TYPE})
@@ -248,15 +258,17 @@ class NetSdkDriver:
             if member.name in ("PTZ_LOCATION", "PTZ_PRESET_LIST", "PTZ_VIEW_RANGE", "SCADA_DEVICE_LIST", "SCADA_INFO", "SCADA_INFO_BY_ID", "DISK"):
                 continue                                           # not about the recorder's health, or already read
             try:
-                buf, got = create_string_buffer(4096), c_int(0)
-                res = self._sdk.QueryDevState(login_id, int(member), buf, sizeof(buf), got, 3000)
-                raw = bytes(buf.raw[:96])
-                log.info("survey %s: %s (%s) -> result %r, %s bytes, first bytes %s", login_id, member.name, int(member), res, got.value, raw.hex())
+                buf = create_string_buffer(4096)
+                res = self._query_state(login_id, int(member), buf, sizeof(buf))
+                raw = bytes(buf.raw)
+                used = len(raw.rstrip(b"\x00"))
+                log.info("survey %s: %s (%s) -> result %r, %s bytes in use, first bytes %s", login_id, member.name, int(member), res, used, raw[:96].hex())
             except Exception as e:
                 log.info("survey %s: %s could not be asked: %s: %s", login_id, member.name, type(e).__name__, e)
-        for name in ("", "Disk0", "Disk 0", "/dev/sda", "dev/sda", "SATA0"):
+        for name in ("/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"):          # the recorder accepted /dev/sda in the first survey; its structure must carry its own size
             try:
                 dev = SDK_STORAGE_DEVICE()
+                dev.dwSize = sizeof(dev)
                 res = self._sdk.GetStorageDeviceInfo(login_id, name.encode(), dev, 3000)
                 log.info("survey %s: GetStorageDeviceInfo(%r) -> %r %s", login_id, name, res, self._dump(dev))
             except Exception as e:

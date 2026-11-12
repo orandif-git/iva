@@ -32,7 +32,8 @@ def driver(monkeypatch):
     class Sdk:
         answer = True
         def QueryDevState(self, login_id, kind, buf, size, ret_len, wait):
-            pointer = ctypes.pointer(buf)                 # what the real wrapper does: a pointer to a pointer (or to a byref) would raise "_type_ must have storage info"
+            ctypes.c_int(ret_len)                         # the real wrapper makes a number of the length itself: given a ctypes number it raises "'c_int' object cannot be interpreted as an integer"
+            pointer = ctypes.pointer(buf)                 # and a pointer of the buffer: a pointer to a pointer (or to a byref) would raise "_type_ must have storage info"
             assert kind == 4 and size == ctypes.sizeof(HardDisks)
             pointer.contents.dwDiskNum = 2
             pointer.contents.stDisks[0] = DiskState(1_000_000, 250_000, 1, 0, 1, 0)
@@ -97,6 +98,7 @@ def test_the_survey_writes_the_raw_answers_to_the_log_and_never_raises(driver, m
     struct_mod.SDK_STORAGE_DEVICE = Storage
 
     def query(login, kind, buf, size, got, wait):
+        ctypes.c_int(got)                                # as the real wrapper does
         if kind == 15:
             raise TypeError("a call this recorder does not support")
         buf.value = b"\x01\x00"
@@ -110,5 +112,5 @@ def test_the_survey_writes_the_raw_answers_to_the_log_and_never_raises(driver, m
     with caplog.at_level(logging.INFO, logger="dahua.driver"):
         driver.survey(7, 4)
     text = caplog.text
-    assert "ONLINE (53) -> result True" in text and "SOFTWARE could not be asked: TypeError" in text
+    assert "ONLINE (53) -> result True, 1 bytes in use" in text and "SOFTWARE could not be asked: TypeError" in text
     assert "'szName': 'sda'" in text and "'fLifePercent': 87.5" in text
