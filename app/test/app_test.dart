@@ -18,6 +18,7 @@ import 'package:ivision_app/theme.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/push.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/screens/rules.dart';
 import 'package:ivision_app/widgets/alert_evidence.dart';
 import 'package:ivision_app/screens/activity.dart';
 import 'package:ivision_app/widgets/camera_picture.dart';
@@ -278,6 +279,34 @@ void main() {
     expect(find.text('Step 2 of 4 · When'), findsOneWidget);
     expect(find.text('Alert when more than'), findsOneWidget);
     expect(find.text('6 people waiting'), findsOneWidget, reason: 'this rule keeps its own queue limit, not the account-wide one');
+  });
+
+  testWidgets('See all rules opens the full list of rules from the real app, not only from a test scope', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2800 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    repo.rulesDemo.addAll([
+      for (final n in [8, 9])
+        Rule(id: 'r$n', name: 'Extra queue $n', type: 'queue_long', title: 'Long queue', description: 'A queue.', family: 'smart', enabled: true, isDefault: false, ai: true,
+            condition: const {'length': 6, 'minutes': 5}, recipientIds: const ['p2'], version: 1, cameraId: 'c8', zoneId: 'z$n', areaKind: 'queue_area', areaLabel: 'Queue'),
+    ]);
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.textContaining('Smart alerts ('));
+    await t.pumpAndSettle();
+    await t.ensureVisible(find.text('See all 4 rules'));
+    await t.tap(find.text('See all 4 rules'));
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull, reason: 'a screen opened with Navigator.push must find the app state too');
+    expect(find.byType(RulesPage), findsOneWidget);
+    expect(find.text('Extra queue 9'), findsOneWidget);
+    await t.tap(find.text('Extra queue 9'));
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+    expect(find.text('Change rule'), findsOneWidget);
   });
 
   testWidgets('a new rule is built in four steps and appears in the list', (t) async {

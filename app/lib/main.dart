@@ -154,7 +154,12 @@ class _IVisionAppState extends State<IVisionApp> {
   @override
   Widget build(BuildContext context) {
     final r = repo;
-    return MaterialApp(
+    // The scope sits above the app, not inside `home`: a screen opened with Navigator.push is a sibling of `home`, not a child of it, and must find the repository too.
+    // It is made again when the signed-in repository changes (signing in or out), so nothing from one person is kept for the next.
+    return ProviderScope(
+      key: ValueKey(r),
+      overrides: r == null ? const [] : [repositoryProvider.overrideWithValue(r)],
+      child: MaterialApp(
       title: 'Jas iVision',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light).copyWith(pageTransitionsTheme: _pageTransitions),
@@ -172,24 +177,13 @@ class _IVisionAppState extends State<IVisionApp> {
                           ? (_viewAs == null && widget.browser.openedByStaff
                               ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text("Could not open the customer's app. Close this tab and try again from the console.", textAlign: TextAlign.center))))
                               : SignInPage(client: widget.client!, onDone: _signedIn, message: note, browser: widget.browser))
-                          : _SignedInScope(
-                              repo: r,
-                              child: AppScope(
-                                onSignedOut: () => _signOut('Please sign in again.'),
-                                child: Shell(repo: r, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push, viewing: _viewAs?.tenant),
-                              ),
+                          : AppScope(
+                              onSignedOut: () => _signOut('Please sign in again.'),
+                              child: Shell(repo: r, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push, viewing: _viewAs?.tenant),
                             ),
+      ),
     );
   }
-}
-
-/// Gives every screen under it the signed-in repository, so a new screen can read it instead of being handed it.
-class _SignedInScope extends StatelessWidget {
-  const _SignedInScope({required this.repo, required this.child});
-  final Repository repo;
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => ProviderScope(overrides: [repositoryProvider.overrideWithValue(repo)], child: child);
 }
 
 class Shell extends StatefulWidget {
