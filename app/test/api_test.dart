@@ -58,7 +58,7 @@ class Fake {
       case 'POST /v1/alerts/x1/snooze':
         return ok({});
       case 'POST /v1/cameras/c1/live':
-        return ok({'id': 's1'}, 201);
+        return ok({'id': 's1', 'smooth': true, 'ice': ['stun:stun.example.test:3478']}, 201);
     }
     return http.Response('{"error":{"code":"not_found","message":"no"}}', 404);
   }
@@ -175,6 +175,8 @@ void main() {
     expect(f.bodies['POST /v1/alerts/x1/snooze'], {'minutes': 30});
     final s = await repo.startLive('c1', LiveMode.ai);
     expect(s.id, 's1');
+    expect(s.smooth, isTrue, reason: 'the server said it has smooth video');
+    expect(s.ice, ['stun:stun.example.test:3478']);
     expect(f.bodies['POST /v1/cameras/c1/live'], {'mode': 'ai'});
   });
 

@@ -53,9 +53,7 @@ class _LiveWebRtcState extends State<LiveWebRtc> {
       await _renderer.initialize();
       if (_done) return;
       final pc = await rtc.createPeerConnection({
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-        ],
+        'iceServers': [for (final a in widget.session.ice) {'urls': a}],
         'sdpSemantics': 'unified-plan',
       });
       _pc = pc;

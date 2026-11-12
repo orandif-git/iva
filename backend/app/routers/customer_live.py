@@ -25,12 +25,18 @@ class StartIn(Strict):
     mode: Literal["live", "ai"] = "live"
 
 
+def _smooth(mode: str) -> dict:
+    """Whether the app should try smooth video first. It is offered only for a live view on a server that has go2rtc, so a server without it costs the app no wait at all."""
+    from ..config import get_settings
+    return {"smooth": mode == "live" and go2rtc.configured(), "ice": [a.strip() for a in get_settings().live_ice_servers.split(",") if a.strip()]}
+
+
 @router.post("/cameras/{camera_id}/live", status_code=201)
 async def start_view(camera_id: UUID, body: StartIn | None = None, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
     mode = (body or StartIn()).mode
     s = await live.start(ctx.conn, ctx.tenant_id, ctx.user_id, camera_id, mode)
     await ctx.audit("camera.live_view", "camera", camera_id, {"mode": mode, "session": str(s["id"])})
-    return s
+    return {**s, **_smooth(mode)}
 
 
 @router.get("/live/{session_id}")

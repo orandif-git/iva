@@ -88,7 +88,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
 
   Future<void> _openVideo(LiveSession s) async {
     // Smooth video first when the app can do it; the picture stream is started by _fallBack if it does not come up.
-    if (widget.repo.smoothVideo) {
+    if (widget.repo.smoothVideo && s.smooth) {
       setState(() => _smooth = LiveWebRtc(key: ValueKey('smooth-${s.id}'), repo: widget.repo, session: s, onFallback: () => _fallBack(s)));
       return;
     }

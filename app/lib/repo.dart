@@ -11,7 +11,10 @@ export 'api_client.dart' show ApiError;
 class LiveSession {
   final String id;
   final LiveMode mode;
-  const LiveSession(this.id, this.mode);
+  /// Whether the server has smooth video for this view, and the STUN/TURN addresses to give it. A server without go2rtc says no, so the app never waits for it.
+  final bool smooth;
+  final List<String> ice;
+  const LiveSession(this.id, this.mode, {this.smooth = false, this.ice = const []});
 }
 
 /// Everything the screens need from the server. [ApiRepository] talks to the real backend; [MockRepository] runs the same screens with demo data.
@@ -462,7 +465,7 @@ class ApiRepository implements Repository {
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async {
     final j = await api.call('POST', '/v1/cameras/$cameraId/live', body: {'mode': mode.name});
-    return LiveSession(j['id'], mode);
+    return LiveSession(j['id'], mode, smooth: j['smooth'] == true, ice: [for (final a in (j['ice'] as List? ?? const [])) a as String]);
   }
 
   @override
