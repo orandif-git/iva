@@ -273,7 +273,8 @@ class ApiRepository implements Repository {
   Future<List<RecorderItem>> recorders() async => [
         for (final r in await api.call('GET', '/v1/recorders') as List)
           RecorderItem(r['id'], ((r['name'] ?? r['device_id']) as String), (r['status'] ?? 'never') as String, (r['channel_count'] ?? 0) as int,
-              seenAgo: r['last_heartbeat_at'] == null ? null : DateTime.now().toUtc().difference(DateTime.parse(r['last_heartbeat_at'] as String).toUtc()).inSeconds.clamp(0, 1 << 30))
+              seenAgo: r['last_heartbeat_at'] == null ? null : DateTime.now().toUtc().difference(DateTime.parse(r['last_heartbeat_at'] as String).toUtc()).inSeconds.clamp(0, 1 << 30),
+              health: r['health'] == null ? null : RecorderHealth.fromJson(r['health'] as Map<String, dynamic>, r['health_at'] as String?))
       ];
 
   @override
@@ -616,7 +617,7 @@ class MockRepository implements Repository {
   @override
   Future<RecorderSetup> newRecorderKey(String id) async => const RecorderSetup('r1', 'connect.example.in', 7681, 'GI-AB12CD', 'giview', key: 'brand-new-key');
   @override
-  Future<List<RecorderItem>> recorders() async => [RecorderItem('r1', 'Store recorder', 'online', 6, seenAgo: 8), RecorderItem('r2', 'Godown recorder', problems ? 'offline' : 'online', 2, seenAgo: problems ? 7800 : 12)];
+  Future<List<RecorderItem>> recorders() async => [RecorderItem('r1', 'Store recorder', 'online', 6, seenAgo: 8, health: RecorderHealth(disks: const [DiskInfo(0, 4000000, 1400000, 1, 64.0)], percentFull: 65, daysHeld: 21, clockOutMinutes: 0, uptimeSeconds: 1900000, checkedAt: DateTime.now())), RecorderItem('r2', 'Godown recorder', problems ? 'offline' : 'online', 2, seenAgo: problems ? 7800 : 12)];
   final List<Person> _people = [const Person('p1', 'Priya (you)', '+91 98•••• 3210', email: 'priya@greenvalley.in'), const Person('p2', 'Ravi, store manager', '+91 97•••• 5521', email: 'ravi@greenvalley.in'), const Person('p3', 'Store phone', '+91 90•••• 0044')];
   @override
   Future<void> addPerson(String name, String phone, {String? email}) async => _people.add(Person('p${_people.length + 1}', name, phone, email: email));

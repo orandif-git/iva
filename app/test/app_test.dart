@@ -384,6 +384,27 @@ void main() {
     expect(repo.hours.closedDays, [6]);
   });
 
+  testWidgets('a recorder page says in plain words how its disks, storage, kept video and clock are', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2400 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    final r = (await repo.recorders()).first;
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: RecorderPage(repo: repo, recorder: r, canEdit: true)));
+    await t.pumpAndSettle();
+    expect(find.text('How the recorder is doing'.toUpperCase()), findsOneWidget);
+    expect(find.text('The disk is healthy'), findsOneWidget);
+    expect(find.text('65% full'), findsOneWidget);
+    expect(find.text('About 21 days of video kept'), findsOneWidget);
+    expect(find.text('The clock is right'), findsOneWidget);
+    expect(find.text('Running for 21 days'), findsOneWidget);
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: RecorderHealthCard(RecorderHealth(disks: const [DiskInfo(0, 4000000, 200000, 2, null)], percentFull: 95, clockOutMinutes: 12)))));
+    await t.pumpAndSettle();
+    expect(find.text('A disk has a fault'), findsOneWidget);
+    expect(find.text('95% full'), findsOneWidget);
+    expect(find.text('The clock is 12 minutes out'), findsOneWidget);
+  });
+
   testWidgets('the sign-in screen asks for email and password and shows the server\'s message', (t) async {
     final client = ApiClient(base: 'http://x', prefs: await SharedPreferences.getInstance(), client: MockClient((r) async => http.Response('{"error":{"code":"invalid_credentials","message":"That email or password is not right."}}', 401)));
     await t.pumpWidget(IVisionApp(client: client));
@@ -705,7 +726,9 @@ void profileTests() {
     await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: RecorderPage(repo: repo, recorder: r, canEdit: true)));
     await t.pumpAndSettle();
     expect(find.text('Connected'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('connect.example.in'), 300, scrollable: find.byType(Scrollable).first);       // below the recorder's health
     expect(find.text('connect.example.in'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Back door'), -300, scrollable: find.byType(Scrollable).first);
     expect(find.text('Back door'), findsOneWidget);
     await t.scrollUntilVisible(find.text('Rename'), 300, scrollable: find.byType(Scrollable).first);
     await t.ensureVisible(find.text('Rename'));
@@ -747,6 +770,7 @@ void profileTests() {
     expect(find.text('Store recorder'), findsOneWidget);
     await t.tap(find.text('Store recorder'));
     await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('What is typed into the recorder'.toUpperCase()), 300, scrollable: find.descendant(of: find.byType(RecorderPage), matching: find.byType(Scrollable)).first);
     expect(find.text('What is typed into the recorder'.toUpperCase()), findsOneWidget);
   });
 

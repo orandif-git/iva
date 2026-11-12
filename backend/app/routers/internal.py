@@ -78,6 +78,7 @@ class DiskIn(Strict):
     free_mb: int = Field(ge=0)
     status: int = Field(ge=0)
     state: int = Field(ge=0, le=15)           # the low four bits of status: 0 asleep, 1 working, 2 faulty
+    life_percent: float | None = Field(None, ge=0, le=100)      # how much of the disk's life is left, when the recorder says
 
 
 class ClockIn(Strict):
@@ -90,10 +91,32 @@ class ChannelRecordings(Strict):
     day: int | None = Field(None, ge=0)       # recordings held for the last day
 
 
+class HardwareIn(Strict):
+    temperature_c: float | None = Field(None, ge=-40, le=150)
+    fan_ok: bool | None = None
+    poe_fault: bool | None = None
+
+
 class HealthIn(Strict):
     disks: list[DiskIn] | None = Field(None, max_length=64)        # None: could not be read; []: read, and there are none
     clock: ClockIn | None = None
     recording: dict[str, ChannelRecordings] = Field(default_factory=dict, max_length=256)
+    days_held: int | None = Field(None, ge=0, le=3650)             # about how many days of video the recorder holds (None: could not be found out)
+    uptime_seconds: int | None = Field(None, ge=0)                 # how long since the recorder last started
+    channel_online: dict[str, bool] = Field(default_factory=dict, max_length=256)     # for each channel, does the recorder see its camera
+    hardware: HardwareIn | None = None
+
+
+class AlarmIn(Strict):
+    kind: str = Field(pattern="^(disk_error|disk_missing|storage_low|video_loss|video_tamper|reboot)$")
+    channel: int | None = Field(None, ge=1, le=1024)
+    disk: int | None = Field(None, ge=0, le=255)
+    percent: int | None = Field(None, ge=0, le=100)
+    at: datetime | None = None
+
+
+class AlarmBatch(Strict):
+    events: list[AlarmIn] = Field(min_length=1, max_length=100)
 
 
 @router.post("/recorders/{device_id}/health")
@@ -102,6 +125,15 @@ async def recorder_health_report(device_id: str, body: HealthIn, ctx: ServiceCtx
     r = await _recorder(ctx, device_id)
     rec = await ctx.conn.fetchrow("SELECT r.id, r.tenant_id, r.device_id, r.name, t.timezone FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.id=$1", r["id"])
     raised = await recorder_health.apply(ctx.conn, rec, body.model_dump())
+    return {"raised": raised}
+
+
+@router.post("/recorders/{device_id}/alarms")
+async def recorder_alarms(device_id: str, body: AlarmBatch, ctx: ServiceCtx = Depends(service_ctx)):
+    """What the recorder itself announced (a disk failed, the disk is nearly full, a camera was covered or lost). Turned into the same alerts as the readings, within seconds."""
+    r = await _recorder(ctx, device_id)
+    rec = await ctx.conn.fetchrow("SELECT r.id, r.tenant_id, r.device_id, r.name, t.timezone FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.id=$1", r["id"])
+    raised = await recorder_health.apply_alarms(ctx.conn, rec, [e.model_dump() for e in body.events])
     return {"raised": raised}
 
 

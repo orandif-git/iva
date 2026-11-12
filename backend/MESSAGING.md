@@ -7,7 +7,7 @@
 | **System Alerts** | Keep the cameras, recorders and account healthy: a recorder or camera goes offline, storage is nearly full, and so on | no icon |
 | **Smart Alerts** | Come from the AI on the camera pictures or from rules about the customer's business: a blocked vehicle, too many people, a vehicle that stayed too long | the AI sparkle icon |
 
-The catalogue lives in `app/services/alert_catalog.py`: 20 alerts for customers (every one is built) and two system events that are not customer alerts (*Report ready*,
+The catalogue lives in `app/services/alert_catalog.py`: 24 alerts for customers (every one is built) and two system events that are not customer alerts (*Report ready*,
 *Video analysis stopped*). **Critical** alerts (blocked vehicle, recorder offline, after-hours activity, disk failure, recording stopped) are always sent: quiet hours and the
 hourly flood guard never hold them. There is **no monthly WhatsApp message limit**. The alerts found by looking at the data on a clock are checked **every minute** unless
 Platform Admin sets another time for one of them (Alerts page, "Checked").
@@ -22,6 +22,10 @@ Platform Admin sets another time for one of them (Alerts page, "Checked").
 | Daily system summary | System | Once a day at `hour`, in the customer's time zone | `hour` (8). **Off until the customer turns it on** |
 | Recorder storage low | System | The recorder's disks are `percent` full together | `percent` (90; 50 to 99) |
 | Recorder disk failure | System | A disk reports a fault, or the recorder has no disk | none |
+| Recorder disk health low | System | A disk reports `percent` or less of its life left (the recorder must say so) | `percent` (20; 5 to 50). Once a week for a disk |
+| Recording retention below target | System | The recorder holds fewer than `days` days of video. **Off until the customer turns it on and chooses the number** | `days` (30; 1 to 365) |
+| Recorder restarted | System | The recorder's uptime went back down. The third restart in a day says to check the power supply | none |
+| Recorder hardware warning | System | The recorder reports heat at or above `temperature`, a stopped fan, or a failed camera power port | `temperature` (70; 40 to 100) |
 | Recording stopped | System | A camera recorded earlier today but nothing in the last 2 hours | none |
 | Camera position changed or covered | System | The camera's outline sketch no longer matches its usual view for 30 minutes (or the picture has been flat for 15 minutes). Daylight and night keep separate usual views | none |
 | Poor image quality | System | Much less sharp than usual for 2 hours, or almost black for 1 hour while the premises are open | none |
@@ -217,3 +221,15 @@ A scheduled report is announced as one webhook event per person, `system.report_
 Shortcodes: `{customer}`, `{report}` (for example "Footfall summary"), `{period}` ("3 Nov to 9 Nov"), `{document_url}`, `{to_name}`, `{to_phone}`.
 `{document_url}` opens the Excel file without signing in, for the number of hours set in the webhook settings (4 at most); after that the person opens Reports in the app.
 Only people with a mobile number can be chosen for a report. Report emails are no longer sent; the SMTP provider is not used by reports.
+
+
+## What a recorder tells us about itself
+
+The Dahua gateway asks each recorder every 10 minutes and sends the answers to `/internal/v1/recorders/{id}/health`: `disks` (size, free space, state, life left), `clock`,
+`recording` (per channel), `days_held` (about how many days of video it keeps, found in steps of 1, 3, 7, 14, 21, 30, 45, 60, 90 days every six hours), `uptime_seconds`,
+`channel_online` (does the recorder see each camera) and `hardware` (temperature, fan, camera power ports). The recorder's own alarms (disk error, storage low, a camera covered
+or lost, a restart) go to `/internal/v1/recorders/{id}/alarms` and become alerts at once. A reading the recorder cannot give is left out, and nothing is raised for it.
+The newest answers are shown on the customer's recorder page and in Platform Admin. When the recorder says it cannot see a camera, the "Camera offline" message says so.
+
+**Survey mode.** Setting `GI_DH_SURVEY=true` for the Dahua gateway makes it ask each recorder, once, a set of read-only questions and write the raw answers to the log
+(`journalctl -u gi-dahua | grep survey`). It changes nothing on the recorder. It is for finding out which readings a given recorder model really gives.

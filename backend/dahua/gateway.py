@@ -56,6 +56,8 @@ class Gateway:
         self._spawn(self._intake())
         self._spawn(self._heartbeats())
         self._spawn(self._health_checks())
+        if self.cfg.survey:
+            self._spawn(self._surveys())
         log.info("dahua gateway listening on %s:%s", self.cfg.listen_bind, self.cfg.listen_port)
 
     async def stop(self) -> None:
@@ -167,6 +169,20 @@ class Gateway:
             for s in list(self.sessions.values()):
                 if self.sessions.get(s.device_id) is s:
                     await self._heartbeat(s)
+
+    async def _surveys(self) -> None:
+        """Survey mode (GI_DH_SURVEY=true): once for each recorder that connects, ask it a set of read-only questions and write the raw answers to the log."""
+        done: set = set()
+        while True:
+            await asyncio.sleep(15)
+            for s in list(self.sessions.values()):
+                if s.device_id in done or self.sessions.get(s.device_id) is not s:
+                    continue
+                done.add(s.device_id)
+                try:
+                    await asyncio.to_thread(self.driver.survey, s.login_id, len(s.channels))
+                except Exception:
+                    log.exception("survey of recorder %s failed", s.device_id)
 
     async def _health_checks(self) -> None:
         """Every `health_interval` seconds, ask each recorder about its disks, clock and recordings and tell the backend. A recorder that cannot be asked is simply skipped:

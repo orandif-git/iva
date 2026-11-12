@@ -50,12 +50,16 @@ async def mark_stale_cameras(timeout_seconds: int) -> int:
                       stream_error = coalesce(c.stream_error, 'No video is being received from this camera.')
                WHERE c.stream_state IN ('streaming','reconnecting') AND c.stream_seen_at < now() - make_interval(secs => $1)
                  AND NOT ($2 > 0 AND abs(hashtext(c.id::text)::bigint) % greatest($2, 1) = ANY($3::int[]))
-               RETURNING c.id, c.tenant_id, c.name, (SELECT r.status::text FROM app.recorders r WHERE r.id = c.recorder_id) AS recorder_status""",
+               RETURNING c.id, c.tenant_id, c.name, c.channel_no, c.recorder_id, (SELECT r.status::text FROM app.recorders r WHERE r.id = c.recorder_id) AS recorder_status""",
             float(timeout_seconds), of, silent)
         for r in rows:
             if r["recorder_status"] == "offline":
                 continue
-            await raise_alert(conn, r["tenant_id"], "camera_offline", body="No video is being received.", camera_id=r["id"], camera_name=r["name"],
+            # When the recorder itself says it cannot see the camera (a pulled cable, no power), say so: the customer knows where to look, and it is plainly not us.
+            lost = r["recorder_id"] is not None and r["channel_no"] is not None and await conn.fetchval(
+                """SELECT (health->'channel_online'->>$2::text) = 'false' AND health_at > now() - interval '30 minutes' FROM app.recorders WHERE id=$1""", r["recorder_id"], str(r["channel_no"]))
+            body = (f"The recorder reports that it has lost {r['name']}. Check the camera's power and its cable." if lost else "No video is being received.")
+            await raise_alert(conn, r["tenant_id"], "camera_offline", body=body, camera_id=r["id"], camera_name=r["name"],
                               dedupe_key=f"camera_offline:{r['id']}", cooldown_minutes=60)
     if tell:
         await platform_fault.tell_staff(*tell)

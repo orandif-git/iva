@@ -355,7 +355,19 @@ export async function recorderDetail(X, id) {
   const hint = r.status === "offline" ? note(`Last heard ${ago(r.last_heartbeat_at)}. Usual causes: the recorder is off, its internet is down, or its password was changed.`, "warn")
     : r.status === "never" ? note("This recorder has never reached us. The customer should check Network, Register and the viewer user on the recorder.", "warn") : null;
   const copy = (label, value) => [h("dt", {}, label), h("dd", {}, value), h("button", { class: "btn sm gray", type: "button", "aria-label": "Copy " + label, onclick: async () => { try { await navigator.clipboard.writeText(value); toast(label + " copied"); } catch { toast("Select the text and copy it by hand.", true); } } }, ic("copy"))];
-  return [hero("server", r.name || r.device_id, `${r.tenant_name} · ${REC_STATUS[r.status]?.[0] || r.status}`), hint,
+  // What the recorder last said about itself (the Dahua gateway asks every ten minutes): disks, how full, days of video kept, clock, how long it has been running.
+  const hl = r.health, size = (mb) => (mb >= 1e6 ? `${(mb / 1e6).toFixed(mb >= 1e7 ? 0 : 1)} TB` : `${Math.round(mb / 1e3)} GB`);
+  const upt = (s) => (s >= 172800 ? `${Math.floor(s / 86400)} days` : s >= 3600 ? `${Math.floor(s / 3600)} hours` : `${Math.max(1, Math.floor(s / 60))} minutes`);
+  const healthRows = !hl ? [kv("Checked", "Not yet. The recorder is asked ten minutes after it connects")] : [
+    kv("Checked", r.health_at ? ago(r.health_at) : "—"),
+    ...(hl.disks == null ? [kv("Disks", "The recorder did not say")] : hl.disks.length === 0 ? [kv("Disks", "None found", "Video cannot be saved")]
+      : hl.disks.map((d) => kv(`Disk ${d.num + 1}`, `${size(d.total_mb)}, ${d.total_mb ? Math.round(100 * (d.total_mb - d.free_mb) / d.total_mb) : 0}% full`, d.state === 2 ? "Faulty" : d.life_percent != null ? `${Math.round(d.life_percent)}% of its life left` : d.state === 0 ? "Asleep" : "Working"))),
+    ...(hl.percent_full != null ? [kv("Storage", `${hl.percent_full}% full`)] : []),
+    ...(hl.days_held != null ? [kv("Video kept", `about ${hl.days_held} days`)] : []),
+    ...(hl.clock_out_minutes != null ? [kv("Clock", hl.clock_out_minutes < 1 ? "Right" : `${hl.clock_out_minutes} minutes out`)] : []),
+    ...(hl.uptime_seconds != null ? [kv("Running for", upt(hl.uptime_seconds), (hl.restarts || []).length ? `${hl.restarts.length} restart${hl.restarts.length === 1 ? "" : "s"} in the last day` : "")] : []),
+  ];
+  return [hero("server", r.name || r.device_id, `${r.tenant_name} · ${REC_STATUS[r.status]?.[0] || r.status}`), hint, gh("How it is doing"), group(...healthRows),
     group(kv("Cameras found", String(r.channel_count)), kv("Last heard", r.last_heartbeat_at ? ago(r.last_heartbeat_at) : "never"), kv("Firmware", r.firmware || "—"), kv("Public address", r.last_ip || "—"), kv("Brand", `${cap(r.brand)} · ${conn.protocol}`)),
     gh("Connection details"), h("dl", { class: "cred" }, copy("Server", conn.server), copy("Port", String(conn.port)), copy("Sub-Device ID", conn.device_id), copy("Viewer user", conn.viewer_user || "giview")),
     h("p", { class: "sub" }, "The password is never shown again. The customer can make a new one."),
