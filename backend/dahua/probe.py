@@ -1,7 +1,8 @@
 """A read-only check of what the installed Dahua NetSDK Python wrapper can read from a recorder: disk state, recording state and the recorder's clock.
 
 Run it from a folder that is not the wrapper's own, with the same Python the gateway uses:
-    cd /tmp && /opt/gateinsight/backend/.venv/bin/python -m dahua.probe            (what the kit offers; no recorder is contacted)
+    cd /tmp && PYTHONPATH=/www/wwwroot/iva/backend /www/wwwroot/iva/backend/.venv/bin/python -m dahua.probe            (what the kit offers; no recorder is contacted)
+    ... -m dahua.probe --detail          (also the exact calls, structure fields and state types)
     cd /tmp && /opt/gateinsight/backend/.venv/bin/python -m dahua.probe IP PORT USER PASSWORD     (also asks one recorder, if it can be reached directly)
 It changes nothing and prints no password. Send its whole output back."""
 import sys
@@ -26,7 +27,33 @@ def main(argv) -> int:
     print("== Enumerations about device state")
     for n in names(SDK_Enum, "DEVSTATE", "DEV_STATE", "DISK", "RECORD", "SYSTEM_INFO"):
         print("  ", n)
-    if len(argv) >= 5:
+    if "--detail" in argv:
+        import inspect
+        print("== Call signatures")
+        for n in ("GetStorageDeviceInfo", "QueryDevState", "QueryDeviceTimeEx", "QueryDeviceUTC", "QueryRecordFile", "GetDevConfig", "GetNewDevConfig", "QueryDevInfo"):
+            f = getattr(NetSDK.NetClient, n, None)
+            try:
+                print(f"   {n}{inspect.signature(f)}")
+            except Exception as e:
+                print(f"   {n}: {type(e).__name__}")
+            doc = (inspect.getdoc(f) or "").strip().splitlines()
+            if doc:
+                print("      ", doc[0][:160])
+        print("== Structure fields")
+        for n in ("NET_DEVICE_STORAGE_INFO", "NET_DEV_DISKSTATE", "NET_STORAGE_PARTITION_INFO", "SDK_HARDDISK_STATE", "NET_IN_STORAGE_DEV_INFOS", "NET_OUT_STORAGE_DEV_INFOS",
+                  "NET_TIME_EX", "NET_TIME", "ALARM_STORAGE_FAILURE", "ALARM_STORAGE_LOW_SPACE_INFO"):
+            st = getattr(SDK_Struct, n, None)
+            fields = [f[0] + ":" + getattr(f[1], "__name__", str(f[1])) for f in getattr(st, "_fields_", [])]
+            print(f"   {n}: {', '.join(fields)[:600]}")
+        print("== Members of EM_QUERY_DEV_STATE_TYPE")
+        for m in dir(SDK_Enum.EM_QUERY_DEV_STATE_TYPE):
+            if not m.startswith("_"):
+                print("  ", m, getattr(SDK_Enum.EM_QUERY_DEV_STATE_TYPE, m, ""))
+        print("== Members of EM_QUERY_RECORD_TYPE")
+        for m in dir(SDK_Enum.EM_QUERY_RECORD_TYPE):
+            if not m.startswith("_"):
+                print("  ", m, getattr(SDK_Enum.EM_QUERY_RECORD_TYPE, m, ""))
+    if len(argv) >= 5 and "--detail" not in argv[1:2]:
         ip, port, user, pw = argv[1], int(argv[2]), argv[3], argv[4]
         print("== Asking one recorder")
         try:
