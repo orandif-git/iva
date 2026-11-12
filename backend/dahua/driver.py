@@ -136,11 +136,14 @@ class NetSdkDriver:
         return out
 
     def _disks(self, login_id):
-        from ctypes import byref, c_int, sizeof
+        from ctypes import c_int, sizeof
         from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
         from NetSDK.SDK_Struct import SDK_HARDDISK_STATE
-        st, got = SDK_HARDDISK_STATE(), c_int(0)
-        if not self._sdk.QueryDevState(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), byref(st), sizeof(st), byref(got), 3000):
+        st = SDK_HARDDISK_STATE()
+        # The wrapper makes the pointers itself (it does `pointer(pBuf)`), so the structure and the length are passed as they are, not as pointers. It may answer with a
+        # plain result or with (result, length): either way the first value says whether it worked.
+        res = self._sdk.QueryDevState(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), st, sizeof(st), c_int(0), 3000)
+        if not (res[0] if isinstance(res, tuple) and res else res):
             return None
         return [{"num": int(d.bDiskNum), "total_mb": int(d.dwVolume), "free_mb": int(d.dwFreeSpace), "status": int(d.dwStatus), "state": int(d.dwStatus) & 0x0F}
                 for d in (st.stDisks[i] for i in range(min(int(st.dwDiskNum), 256)))]
