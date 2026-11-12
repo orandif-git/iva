@@ -7,11 +7,24 @@ from datetime import time
 from uuid import UUID
 
 from ..errors import ApiError
-from .alert_catalog import ALERT_TYPES
+from .alert_catalog import ALERT_TYPES, CRITICAL
 from .areas import LABEL, SPEC as AREA_SPEC, alert_for_kind
 
 CHANNELS = ("whatsapp",)
 AREA_KIND = {"people_in_area": "area_count", "queue_long": "queue_area", "phone_use": "staff_area"}
+# The alerts that are about one camera or one marked area, so a rule may be limited to one. Everything else (recorders, disks, the summaries) is about the whole account.
+CAMERA_SCOPED = set(AREA_KIND) | {"crowding", "after_hours", "vehicle_overstay", "blocked_plate", "low_confidence_plate", "counting_stopped", "camera_offline", "view_changed", "picture_poor"}
+
+
+def check_scope(rule_type: str, camera_id, zone_id) -> None:
+    """A rule may be limited to a camera or a marked area only where that means something. A critical alert (a failing disk, recording that has stopped)
+    always applies to the whole account: a rule for one camera must never be able to silence it for the others."""
+    if camera_id is None and zone_id is None:
+        return
+    if rule_type in CRITICAL or rule_type not in CAMERA_SCOPED:
+        raise ApiError(422, "whole_account_only", "This alert always applies to the whole account, so it cannot be limited to one camera or area.")
+    if zone_id is not None and rule_type not in AREA_KIND:
+        raise ApiError(422, "no_area", "This alert is about a camera, not a marked area.")
 
 
 def check_params(rule_type: str, params: dict) -> dict:
@@ -142,8 +155,10 @@ async def effective(conn, tenant_id: UUID, rule_type: str, *, camera_id=None, zo
 
 
 async def for_type(conn, rule_type: str) -> list[dict]:
-    """Every enabled rule of one kind, across customers, for the background detectors. Each row has tenant_id, params,
-    camera_id and zone_id. A customer who has never built a rule of this kind keeps the old one-setting-per-kind row."""
+    """Every enabled rule of one kind, across customers, for the background detectors. Each row has tenant_id, params, camera_id, zone_id and skip_cameras.
+    skip_cameras is for the account-wide rule: the cameras that have a rule of their own (switched on or off). Their own rule decides for them, so a rule that
+    is switched off keeps its camera quiet instead of the account-wide rule counting it anyway. A customer who has never built a rule of this kind keeps the
+    old one-setting-per-kind row."""
     rows = await conn.fetch(
         """SELECT id, tenant_id, condition, camera_id, zone_id FROM app.rules WHERE rule_type=$1 AND enabled
            UNION ALL
@@ -151,8 +166,21 @@ async def for_type(conn, rule_type: str) -> list[dict]:
              FROM app.alert_rules a
             WHERE a.rule_type=$1 AND a.enabled
               AND NOT EXISTS (SELECT 1 FROM app.rules r WHERE r.tenant_id=a.tenant_id AND r.rule_type=$1)""", rule_type)
-    return [{"id": r["id"], "tenant_id": r["tenant_id"], "params": dict(r["condition"] or {}), "camera_id": r["camera_id"], "zone_id": r["zone_id"]}
-            for r in rows]
+    own: dict = {}
+    for r in await conn.fetch("SELECT tenant_id, camera_id FROM app.rules WHERE rule_type=$1 AND camera_id IS NOT NULL AND zone_id IS NULL", rule_type):
+        own.setdefault(r["tenant_id"], []).append(r["camera_id"])
+    return [{"id": r["id"], "tenant_id": r["tenant_id"], "params": dict(r["condition"] or {}), "camera_id": r["camera_id"], "zone_id": r["zone_id"],
+             "skip_cameras": own.get(r["tenant_id"], []) if r["camera_id"] is None and r["zone_id"] is None else []} for r in rows]
+
+
+async def mirror_legacy(conn, row) -> None:
+    """The other direction: a change to an account-wide rule made in the rule builder is written to the old one-setting-per-kind row too, so the old screens, the
+    staff counts and any older app see the same setting."""
+    await conn.execute(
+        """INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params, channels, recipients, quiet_start, quiet_end)
+           VALUES ($1,$2,$3,$4,$5::app.channel_kind[],$6,$7,$8)
+           ON CONFLICT (tenant_id, rule_type) DO UPDATE SET enabled=$3, params=$4, channels=$5::app.channel_kind[], recipients=$6, quiet_start=$7, quiet_end=$8""",
+        row["tenant_id"], row["rule_type"], row["enabled"], row["condition"], row["channels"], row["recipients"], row["quiet_start"], row["quiet_end"])
 
 
 async def mirror_default(conn, tenant_id: UUID, rule_type: str, *, enabled: bool, params: dict, recipients: list, quiet_start, quiet_end) -> None:

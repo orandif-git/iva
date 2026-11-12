@@ -46,8 +46,8 @@ async def vehicle_overstay() -> int:
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events l WHERE l.tenant_id = i.tenant_id AND l.plate_text = i.plate_text AND l.seen_at > i.seen_at
                                      AND l.seen_at > now() - interval '7 days' AND (l.direction = 'in' OR l.direction = 'out'))
                      AND NOT EXISTS (SELECT 1 FROM app.vehicle_lists v WHERE v.tenant_id = i.tenant_id AND v.plate_text = i.plate_text AND v.list_type = 'allowed')
-                     AND ($3::uuid IS NULL OR i.camera_id = $3)
-                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes, rule["camera_id"])
+                     AND ($3::uuid IS NULL OR i.camera_id = $3) AND i.camera_id <> ALL($4::uuid[])
+                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes, rule["camera_id"], rule["skip_cameras"])
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle overstay: {r['plate_text']}",
                                      body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
@@ -116,7 +116,7 @@ async def crowding() -> int:
                           f.bucket_start, f.people_in, f.people_out
                    FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id LEFT JOIN app.sites s ON s.id = c.site_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
                    WHERE f.tenant_id=$1 AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2
-                     AND ($3::uuid IS NULL OR c.id = $3) ORDER BY f.bucket_start""", rule["tenant_id"], rule["timezone"], rule["camera_id"])
+                     AND ($3::uuid IS NULL OR c.id = $3) AND c.id <> ALL($4::uuid[]) ORDER BY f.bucket_start""", rule["tenant_id"], rule["timezone"], rule["camera_id"], rule["skip_cameras"])
             places: dict = {}
             for r in rows:
                 places.setdefault(r["place"], {"name": r["place_name"], "cams": set(), "buckets": {}})
@@ -220,8 +220,8 @@ async def after_hours() -> int:
                 continue
             rows = await conn.fetch(
                 """SELECT c.id, c.name, sum(f.people_in + f.people_out)::int AS people FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id
-                   WHERE f.tenant_id=$1 AND f.bucket_start > now() - make_interval(mins => $2) AND ($3::uuid IS NULL OR c.id=$3)
-                   GROUP BY c.id, c.name HAVING sum(f.people_in + f.people_out) > 0""", rule["tenant_id"], quiet_for, rule["camera_id"])
+                   WHERE f.tenant_id=$1 AND f.bucket_start > now() - make_interval(mins => $2) AND ($3::uuid IS NULL OR c.id=$3) AND c.id <> ALL($4::uuid[])
+                   GROUP BY c.id, c.name HAVING sum(f.people_in + f.people_out) > 0""", rule["tenant_id"], quiet_for, rule["camera_id"], rule["skip_cameras"])
             for r in rows:
                 if await conn.fetchval("SELECT 1 FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - interval '30 minutes'", rule["tenant_id"], f"afterhours:{r['id']}"):
                     continue                                # already told: do not take another picture for nothing

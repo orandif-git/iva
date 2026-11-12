@@ -19,6 +19,7 @@ from ..services.alert_catalog import ALERT_TYPES
 
 router = APIRouter(prefix="/v1", tags=["customer: rules"])
 Channels = Literal["whatsapp"]
+TESTS_PER_HOUR = 10
 
 
 class RuleIn(Strict):
@@ -126,6 +127,7 @@ async def create_rule(body: RuleIn, ctx: CustomerCtx = Depends(customer_ctx("adm
     if body.rule_type not in await alert_catalog.visible(ctx.conn, ctx.tenant_id):
         raise ApiError(404, "alert_type_not_found", "That alert type does not exist.")
     rules.check_quiet(body.quiet_start, body.quiet_end)
+    rules.check_scope(body.rule_type, body.camera_id, body.zone_id)
     condition = rules.check_condition(body.rule_type, body.condition)
     camera, area = await _check_place(ctx.conn, ctx.tenant_id, body.camera_id, body.zone_id)
     people = await _people(ctx.conn, body.recipient_ids)
@@ -152,6 +154,9 @@ async def change_rule(rule_id: UUID, body: RulePatch, ctx: CustomerCtx = Depends
     zone_id = body.zone_id if "zone_id" in fields else before["zone_id"]
     condition = rules.check_condition(before["rule_type"], body.condition) if body.condition is not None else dict(before["condition"] or {})
     people = await _people(ctx.conn, body.recipient_ids) if body.recipient_ids is not None else await _people(ctx.conn, list(before["recipients"]))
+    if before["is_default"] and (camera_id is not None or zone_id is not None):
+        raise ApiError(422, "default_is_account_wide", "This is the setting for every camera. Make a new rule to limit an alert to one camera or area.")
+    rules.check_scope(before["rule_type"], camera_id, zone_id)
     camera, area = await _check_place(ctx.conn, ctx.tenant_id, camera_id, zone_id)
     quiet_start = body.quiet_start if "quiet_start" in fields else before["quiet_start"]
     quiet_end = body.quiet_end if "quiet_end" in fields else before["quiet_end"]
@@ -163,15 +168,20 @@ async def change_rule(rule_id: UUID, body: RulePatch, ctx: CustomerCtx = Depends
             WHERE id=$1 RETURNING *""",
         rule_id, name, camera_id, zone_id, condition, body.channels or before["channels"], [p["id"] for p in people],
         quiet_start, quiet_end, body.enabled if body.enabled is not None else before["enabled"])
+    if row["is_default"]:
+        await rules.mirror_legacy(ctx.conn, row)            # the old one-setting-per-kind row follows, so every screen and count agrees
     await ctx.audit("rule.update", "rule", rule_id, {"type": before["rule_type"], "enabled": row["enabled"], "version": row["version"]})
     return {**rules.out(row), "warnings": await _warnings(ctx.conn, ctx.tenant_id, before["rule_type"], row["enabled"], people)}
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
 async def delete_rule(rule_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admin"))):
-    row = await ctx.conn.fetchrow("DELETE FROM app.rules WHERE id=$1 RETURNING id, rule_type, is_default", rule_id)
-    if row is None:
+    cur = await ctx.conn.fetchrow("SELECT is_default FROM app.rules WHERE id=$1", rule_id)
+    if cur is None:
         raise ApiError(404, "rule_not_found", "That rule was not found.")
+    if cur["is_default"]:
+        raise ApiError(409, "default_cannot_be_deleted", "This is the setting for every camera. Switch it off instead of deleting it.")
+    row = await ctx.conn.fetchrow("DELETE FROM app.rules WHERE id=$1 RETURNING id, rule_type, is_default", rule_id)
     await ctx.audit("rule.delete", "rule", rule_id, {"type": row["rule_type"], "default": row["is_default"]})
 
 
@@ -186,6 +196,8 @@ async def test_rule(rule_id: UUID, ctx: CustomerCtx = Depends(customer_ctx("admi
     people = [p for p in people if p["phone"]]
     if not people:
         raise ApiError(422, "no_recipients", "Choose at least one person with a mobile number first.")
+    if await ctx.conn.fetchval("SELECT count(*) FROM app.alerts WHERE rule_id=$1 AND details->>'test' = 'true' AND created_at > now() - interval '1 hour'", rule_id) >= TESTS_PER_HOUR:
+        raise ApiError(429, "too_many_tests", "You have sent several test messages for this rule. Please try again in an hour.")
     tenant = await ctx.conn.fetchrow("SELECT timezone, msg_whatsapp, msg_clips FROM app.tenants WHERE id=$1", ctx.tenant_id)
     if not tenant["msg_whatsapp"]:
         raise ApiError(409, "whatsapp_off", "WhatsApp messages are switched off for your account. Contact support.")

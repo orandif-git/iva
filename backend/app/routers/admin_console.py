@@ -25,13 +25,13 @@ async def search(
 ):
     """Customers and recorders whose name, city, device id or customer contains what was typed. Pages are matched in the console
     itself, from the one route list, so this only looks at the data."""
-    like = f"%{q}%"
+    like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"          # what was typed is text, never a wildcard
     customers = await ctx.conn.fetch(
-        "SELECT id, name, city FROM app.tenants WHERE name ILIKE $1 OR city ILIKE $1 ORDER BY name LIMIT $2", like, limit)
+        "SELECT id, name, city FROM app.tenants WHERE name ILIKE $1 ESCAPE '\\' OR city ILIKE $1 ESCAPE '\\' ORDER BY name LIMIT $2", like, limit)
     recorders = await ctx.conn.fetch(
         """SELECT r.id, coalesce(r.name, r.device_id) AS name, r.device_id, t.name AS tenant_name
              FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id
-            WHERE coalesce(r.name, '') ILIKE $1 OR r.device_id ILIKE $1 OR t.name ILIKE $1
+            WHERE coalesce(r.name, '') ILIKE $1 ESCAPE '\\' OR r.device_id ILIKE $1 ESCAPE '\\' OR t.name ILIKE $1 ESCAPE '\\'
             ORDER BY coalesce(r.name, r.device_id) LIMIT $2""", like, limit)
     return {
         "customers": [{"id": str(r["id"]), "name": r["name"], "city": r["city"]} for r in customers],

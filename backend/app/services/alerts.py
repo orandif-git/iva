@@ -64,9 +64,9 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
                 rule = dict(r)
                 rule.update({"condition": dict(r["params"] or {}), "camera_id": None, "zone_id": None, "is_default": True})
     elif await rules.has_rules(conn, tenant_id, rule_type):
+        # No rule for this place: the alert behaves as it does for a customer who never touched it (on for the alerts that are on by default, off for the rest).
+        # A rule for one camera must not switch an alert off for the other cameras.
         rule = await rules.effective(conn, tenant_id, rule_type, camera_id=camera_id, zone_id=zone_id)
-        if rule is None:
-            return None
     else:
         r = await conn.fetchrow("SELECT id, tenant_id, rule_type, params, recipients, quiet_start, quiet_end, enabled FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2",
                                 tenant_id, rule_type)
