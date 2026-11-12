@@ -278,6 +278,10 @@ CREATE TABLE app.tenants (
   msg_whatsapp             boolean NOT NULL DEFAULT true,
   msg_email                boolean NOT NULL DEFAULT true,
   msg_clips                boolean NOT NULL DEFAULT true,            -- short video clips with alerts (they cost storage)
+  -- Opening hours, in the customer's own time zone. NULL: not set, so "Counting stopped" and "After-hours activity" cannot fire. closed_days: 0 = Monday ... 6 = Sunday.
+  open_time                time,
+  close_time               time,
+  closed_days              smallint[] NOT NULL DEFAULT '{}',
   msg_monthly_cap          integer CHECK (msg_monthly_cap IS NULL OR msg_monthly_cap >= 0),   -- WhatsApp messages per calendar month, NULL = no cap
   suspended_at             timestamptz,
   suspended_reason         text,

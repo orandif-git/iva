@@ -70,7 +70,7 @@ async def test_staff_choose_who_is_told_about_a_platform_fault(client, make, su)
 
 async def test_each_timed_alert_is_checked_every_minute_unless_platform_admin_sets_another_time(client, make, su):
     owner = (await make.staff("owner"))["headers"]
-    assert maintenance.DEFAULT_CHECK_SECONDS == 60 and set(maintenance.TIMED) == {"vehicle_overstay", "crowding", "connection_unstable", "daily_summary"}
+    assert maintenance.DEFAULT_CHECK_SECONDS == 60 and set(maintenance.TIMED) == {"vehicle_overstay", "crowding", "connection_unstable", "daily_summary", "counting_stopped", "after_hours"}
     items = {i["type"]: i for i in (await client.get("/admin/v1/alert-catalog", headers=owner)).json()["items"]}
     assert items["crowding"]["check_seconds"] == 60 and items["camera_offline"]["check_seconds"] is None and "plan_limit" not in items
     r = await client.put("/admin/v1/alert-catalog/crowding/check", json={"every_seconds": 120, "reason": "less load"}, headers=owner)

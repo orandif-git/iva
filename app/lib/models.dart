@@ -171,6 +171,18 @@ class AreaInfo {
   const AreaInfo(this.id, this.cameraId, this.cameraName, this.kind, this.points, this.params);
 }
 
+/// When the premises are open, in their own time. Counting stopped and After-hours activity need it. Hours are 0 to 23; [closedDays] is 0 = Monday to 6 = Sunday.
+class OpeningHours {
+  final int? open, close;
+  final List<int> closedDays;
+  const OpeningHours({this.open, this.close, this.closedDays = const []});
+  bool get isSet => open != null && close != null;
+  factory OpeningHours.fromJson(Map<String, dynamic> j) => OpeningHours(
+      open: int.tryParse(((j['open'] ?? '') as String).split(':').first),
+      close: int.tryParse(((j['close'] ?? '') as String).split(':').first),
+      closedDays: [for (final d in (j['closed_days'] as List? ?? const [])) (d as num).toInt()]);
+}
+
 class Person {
   final String id, name, phone;
   final String? email;

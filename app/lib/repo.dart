@@ -51,6 +51,8 @@ abstract class Repository {
   Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
+  Future<OpeningHours> openingHours();
+  Future<void> saveOpeningHours(OpeningHours h);
   Future<Uint8List?> snapshot(String cameraId);
   Future<List<AreaInfo>> areas();
   Future<void> saveAlert(NewAlert a);
@@ -312,6 +314,15 @@ class ApiRepository implements Repository {
               recipientIds: [for (final r in (j['recipient_ids'] as List)) r as String]);
         }()
     ];
+  }
+
+  @override
+  Future<OpeningHours> openingHours() async => OpeningHours.fromJson(await api.call('GET', '/v1/opening-hours') as Map<String, dynamic>);
+
+  @override
+  Future<void> saveOpeningHours(OpeningHours h) async {
+    String hh(int? x) => x == null ? '' : '${x.toString().padLeft(2, '0')}:00';
+    await api.call('PUT', '/v1/opening-hours', body: h.isSet ? {'open': hh(h.open), 'close': hh(h.close), 'closed_days': h.closedDays} : <String, dynamic>{});
   }
 
   @override
@@ -615,6 +626,11 @@ class MockRepository implements Repository {
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
   Future<List<Person>> people() async => List.of(_people);
+  OpeningHours hours = const OpeningHours();
+  @override
+  Future<OpeningHours> openingHours() async => hours;
+  @override
+  Future<void> saveOpeningHours(OpeningHours h) async => hours = h;
   @override
   Future<Uint8List?> snapshot(String cameraId) async => null;
   final areaList = <AreaInfo>[

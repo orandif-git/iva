@@ -445,6 +445,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ]),
                   ),
+                  GroupLabel('Opening hours'),
+                  _HoursCard(repo: widget.repo, canEdit: me.role == 'admin'),
                   GroupLabel('People who get alerts', trailing: TextButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add'))),
                   if (people.isEmpty)
                     EmptyState(icon: Icons.person_add_alt_1_outlined, title: 'Nobody yet', text: 'Add people so alerts and reports have somewhere to go. They receive them on WhatsApp.', action: FilledButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded), label: const Text('Add a person')))
@@ -635,6 +637,104 @@ class _AddPersonState extends State<_AddPerson> {
         ),
       ),
       actions: [TextButton(onPressed: busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')), FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Adding…' : 'Add'))],
+    );
+  }
+}
+
+
+/// When the shop is open. Two alerts need it: "Counting stopped" (only expected while open) and "After-hours activity" (only while closed).
+class _HoursCard extends StatefulWidget {
+  const _HoursCard({required this.repo, required this.canEdit});
+  final Repository repo;
+  final bool canEdit;
+  @override
+  State<_HoursCard> createState() => _HoursCardState();
+}
+
+class _HoursCardState extends State<_HoursCard> {
+  OpeningHours? hours;
+  bool saving = false;
+  String? error;
+  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repo.openingHours().then((h) { if (mounted) setState(() => hours = h); }).catchError((_) { if (mounted) setState(() => hours = const OpeningHours()); });
+  }
+
+  String _clock(int h) => h == 0 ? '12 midnight' : (h == 12 ? '12 noon' : (h < 12 ? '$h am' : '${h - 12} pm'));
+
+  Future<void> _save(OpeningHours next) async {
+    final before = hours;
+    setState(() { hours = next; saving = true; error = null; });
+    try {
+      await widget.repo.saveOpeningHours(next);
+    } catch (e) {
+      if (mounted) setState(() { hours = before; error = 'We could not save that. Try again.'; });
+    }
+    if (mounted) setState(() => saving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tok.of(context), h = hours;
+    if (h == null) return const SkeletonRows(rows: 1);
+    final box = BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: t.line));
+    Widget row(String label, int value, ValueChanged<int> on) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
+          child: Row(children: [
+            Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+            IconButton.outlined(onPressed: widget.canEdit && !saving ? () => on((value + 23) % 24) : null, icon: const Icon(Icons.remove), tooltip: '$label: one hour earlier'),
+            SizedBox(width: 108, child: Center(child: Text(_clock(value), style: display(20)))),
+            IconButton.outlined(onPressed: widget.canEdit && !saving ? () => on((value + 1) % 24) : null, icon: const Icon(Icons.add), tooltip: '$label: one hour later'),
+          ]),
+        );
+    return Container(
+      decoration: box,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+          child: Row(children: [
+            Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.schedule_rounded, color: t.brand, size: 21)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('We know when you are open', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              Text(h.isSet ? 'Open ${_clock(h.open!)} to ${_clock(h.close!)}' : 'Not set', style: TextStyle(color: t.fg2, fontSize: 12.5)),
+            ])),
+            Semantics(label: 'Opening hours are ${h.isSet ? 'on' : 'off'}', child: Switch(value: h.isSet, onChanged: widget.canEdit && !saving ? (v) => _save(v ? OpeningHours(open: 9, close: 21, closedDays: h.closedDays) : const OpeningHours()) : null)),
+          ]),
+        ),
+        if (h.isSet) ...[
+          Divider(height: 1, color: t.line),
+          row('Opens at', h.open!, (v) => _save(OpeningHours(open: v, close: h.close, closedDays: h.closedDays))),
+          Divider(height: 1, color: t.line, indent: 16),
+          row('Closes at', h.close!, (v) => _save(OpeningHours(open: h.open, close: v, closedDays: h.closedDays))),
+          Divider(height: 1, color: t.line, indent: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Closed all day on', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 0; i < 7; i++)
+                  FilterChip(
+                    label: Text(_days[i]),
+                    selected: h.closedDays.contains(i),
+                    onSelected: widget.canEdit && !saving && (h.closedDays.contains(i) || h.closedDays.length < 6)
+                        ? (on) => _save(OpeningHours(open: h.open, close: h.close, closedDays: ([...h.closedDays]..remove(i)) + (on ? [i] : const [])))
+                        : null,
+                  ),
+              ]),
+            ]),
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+          child: Text(error ?? 'Used by two alerts: Counting stopped (a camera that counts nobody while you are open) and After-hours activity (people counted while you are closed). Without your hours, neither can work.',
+              style: TextStyle(color: error != null ? t.crit : t.fg2, fontSize: 13, height: 1.4)),
+        ),
+      ]),
     );
   }
 }

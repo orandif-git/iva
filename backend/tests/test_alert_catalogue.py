@@ -29,7 +29,7 @@ def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     fams = {c["family"] for c in cat.CATALOG.values()}
     assert fams == {"system", "smart"}
     assert len(cat.LISTED) == 20 and len(cat.CATALOG) == 22 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready", "platform_fault"]       # system events, not customer alerts
-    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal",
+    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours",
                                                                   "daily_summary", "blocked_plate", "vehicle_overstay", "crowding", "low_confidence_plate", "people_in_area", "queue_long", "phone_use"}
     assert cat.event_name("camera_offline") == "system.camera_offline" and cat.event_name("blocked_plate") == "smart.blocked_plate"
     assert cat.alert_for_event("smart.crowding") == "crowding" and cat.alert_for_event("system.nothing") is None
