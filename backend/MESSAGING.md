@@ -232,4 +232,4 @@ or lost, a restart) go to `/internal/v1/recorders/{id}/alarms` and become alerts
 The newest answers are shown on the customer's recorder page and in Platform Admin. When the recorder says it cannot see a camera, the "Camera offline" message says so.
 
 **Survey mode.** Setting `GI_DH_SURVEY=true` for the Dahua gateway makes it ask each recorder, once, a set of read-only questions and write the raw answers to the log
-(`journalctl -u gi-dahua | grep survey`). It changes nothing on the recorder. It is for finding out which readings a given recorder model really gives.
+(`journalctl -u gi-dahua | grep -E 'survey|alarm from'`): the state questions, the recorder's own event log for the last three days, and each kind of alarm the recorder announces (written the first time it arrives, with its number). It changes nothing on the recorder. It is for finding out which readings a given recorder model really gives.

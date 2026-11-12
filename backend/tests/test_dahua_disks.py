@@ -152,3 +152,44 @@ def test_each_disk_gets_its_make_and_serial_number_when_the_recorder_names_its_d
     assert d["model"] == "WDCWD43PURZ" and d["serial"] == "WX72D43MN17T" and d["total_mb"] == 4_000_000
     assert all(size > 0 for _, size in asked), "the structure carries its own size"
     assert [n for n, _ in asked] == [b"/dev/sda", b"/dev/sdb"], "stops at the first disk that is not there"
+
+
+def test_the_survey_reads_the_device_log_and_listens_for_alarms_writing_each_kind_once(driver, caplog):
+    import logging
+
+    class Time(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_uint) for n in ("dwYear", "dwMonth", "dwDay", "dwHour", "dwMinute", "dwSecond")]
+
+    class Query(ctypes.Structure):
+        _fields_ = [("emLogType", ctypes.c_int), ("stuStartTime", Time), ("stuEndTime", Time), ("nStartNum", ctypes.c_int), ("nEndNum", ctypes.c_int), ("nLogStuType", ctypes.c_ubyte)]
+
+    class Item(ctypes.Structure):
+        _fields_ = [("nLogType", ctypes.c_int), ("szOperator", ctypes.c_char * 16), ("szLogContext", ctypes.c_char * 64)]
+
+    Callback = ctypes.CFUNCTYPE(None, ctypes.c_long, ctypes.c_long, ctypes.POINTER(ctypes.c_char), ctypes.c_uint, ctypes.POINTER(ctypes.c_char), ctypes.c_long, ctypes.c_int, ctypes.c_long, ctypes.c_long)
+    structs, callbacks = sys.modules["NetSDK.SDK_Struct"], types.ModuleType("NetSDK.SDK_Callback")
+    structs.NET_TIME, structs.NET_A_QUERY_DEVICE_LOG_PARAM, structs.NET_A_DEVICE_LOG_ITEM = Time, Query, Item
+    callbacks.fMessCallBackEx1 = Callback
+    sys.modules["NetSDK.SDK_Callback"] = callbacks
+    driver._clock = lambda login: {"utc": None, "local": "2026-11-12T10:00:00"}
+
+    def query_log(login, q, buf, size, got, wait):
+        ctypes.c_int(got)                                                  # as the real wrapper does
+        items = (Item * 100).from_buffer(buf)
+        items[0].nLogType, items[0].szOperator, items[0].szLogContext = 1, b"System", b"Reboot"
+        return (True, 1)
+
+    stored = {}
+    driver._sdk.QueryDeviceLog = query_log
+    driver._sdk.SetDVRMessCallBackEx1 = lambda cb, user: stored.__setitem__("cb", cb)
+    driver._sdk.StartListenEx = lambda login: 1
+    with caplog.at_level(logging.INFO, logger="dahua.driver"):
+        driver._survey_log(7)
+        driver._observe_alarms(7)
+        payload = ctypes.create_string_buffer(b"\x01\x00\x01\x00", 4)
+        for _ in range(3):
+            stored["cb"](0x2103, 7, ctypes.cast(payload, ctypes.POINTER(ctypes.c_char)), 4, None, 0, 0, 0, 0)
+    text = caplog.text
+    assert "device log -> result (True, 1), 1 entries" in text and "'szLogContext': 'Reboot'" in text and "'szOperator': 'System'" in text
+    assert text.count("alarm from login 7: command 0x2103 seen 1 times, 4 bytes, first bytes 01000100") == 1 and "seen 2 times" not in text, "each kind of alarm is written the first time only"
+    assert "listening for alarms: 1" in text
