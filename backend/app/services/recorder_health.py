@@ -71,11 +71,9 @@ async def apply(conn, rec, h: dict) -> list[str]:
             what = f"disk {bad[0]['num'] + 1}" if bad else "any hard disk"
             await alert("disk_fault", body=f"{name} reports a problem with {what}. Video may not be saved. Please have the recorder checked.",
                         details={"recorder": name, "disk": f"Disk {bad[0]['num'] + 1}" if bad else "No disk"}, dedupe_key=f"disk:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
-        full = h["percent_full"]
-        limit = int(await detectors._param(conn, rec["tenant_id"], "storage_full", "percent", 90))
-        if full is not None and full >= limit:
-            await alert("storage_full", body=f"{name} is {full}% full. When it is full it starts to overwrite its oldest video, or stops saving.",
-                        details={"recorder": name, "percent_full": full}, dedupe_key=f"storage:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
+        # How full the disks are is shown, never alerted on: a recorder that records all the time and replaces its oldest video is full by design (both of ours read 0 free). What
+        # matters is whether it keeps saving (the recording alerts) and how far back it can look (the retention alert). "Storage low" comes from the recorder's own alarm,
+        # which it raises only when it is set to stop, not replace, and runs out of room.
         # a disk that is wearing out: warned while it still works, so the video on it can be saved
         worn = int(await detectors._param(conn, rec["tenant_id"], "disk_wear", "percent", 20))
         for d in disks:
@@ -140,8 +138,8 @@ async def apply_alarms(conn, rec, events: list[dict]) -> list[str]:
             await alert("disk_fault", body=f"{name} reports a problem with {which}. Video may not be saved. Please have the recorder checked.",
                         details={"recorder": name, "disk": which.capitalize()}, dedupe_key=f"disk:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
         elif k == "storage_low":
-            pct = f"{e['percent']}% full" if e.get("percent") is not None else "nearly full"
-            await alert("storage_full", body=f"{name} says its storage is {pct}. When it is full it starts to overwrite its oldest video, or stops saving.",
+            pct = f"{e['percent']}% full" if e.get("percent") is not None else "out of room"
+            await alert("storage_full", body=f"{name} says its storage is {pct} and it is not replacing its oldest video, so new video may not be saved.",
                         details={"recorder": name, "percent_full": e.get("percent") or ""}, dedupe_key=f"storage:{rec['id']}", cooldown_minutes=DAY_COOLDOWN)
         elif k in ("video_tamper", "video_loss") and e.get("channel"):
             cam = await conn.fetchrow("SELECT id, name FROM app.cameras WHERE tenant_id=$1 AND recorder_id=$2 AND channel_no=$3", rec["tenant_id"], rec["id"], e["channel"])

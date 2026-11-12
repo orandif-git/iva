@@ -20,7 +20,7 @@ Platform Admin sets another time for one of them (Alerts page, "Checked").
 | Service restored | System | A recorder or camera is working again **and the customer was told it was down in the last 7 days** | none |
 | Recorder time incorrect | System | The recorder's clock is `minutes_out` or more away from the true time | `minutes_out` (5; 1 to 120) |
 | Daily system summary | System | Once a day at `hour`, in the customer's time zone | `hour` (8). **Off until the customer turns it on** |
-| Recorder storage low | System | The recorder's disks are `percent` full together | `percent` (90; 50 to 99) |
+| Recorder storage low | System | The recorder's own warning that it has run out of room **and is not replacing its oldest video**. A full disk by itself is never an alert: a recorder that records all the time is full by design | none |
 | Recorder disk failure | System | A disk reports a fault, or the recorder has no disk | none |
 | Recorder disk health low | System | A disk reports `percent` or less of its life left (the recorder must say so) | `percent` (20; 5 to 50). Once a week for a disk |
 | Recording retention below target | System | The recorder holds fewer than `days` days of video. **Off until the customer turns it on and chooses the number** | `days` (30; 1 to 365) |

@@ -44,8 +44,8 @@ CATALOG: dict[str, dict] = {
     "hardware_fault": _a(SYSTEM, "Devices", "Recorder hardware warning", "The recorder reports it is too hot, a fan has stopped, or a camera power port has failed.", built=True,
                          shortcodes=["recorder", "what"], needs="Reading from the recorder", params={"temperature": {"type": "integer", "default": 70, "min": 40, "max": 100}}),
     # ---- System Alerts: recording
-    "storage_full": _a(SYSTEM, "Recording", "Recorder storage low", "The recorder's disk is nearly full, so new video may overwrite old video or stop.", built=True,
-                       shortcodes=["recorder", "percent_full", "days_left"], needs="Reading from the recorder", params={"percent": {"type": "integer", "default": 90, "min": 50, "max": 99}}),
+    "storage_full": _a(SYSTEM, "Recording", "Recorder storage low", "The recorder warns that it has run out of room and is not replacing its oldest video, so new video may not be saved.", built=True,
+                       shortcodes=["recorder", "percent_full", "days_left"], needs="Reading from the recorder"),
     "disk_wear": _a(SYSTEM, "Recording", "Recorder disk health low", "A disk is wearing out. Replace it before it fails and the video on it is lost.", built=True,
                     shortcodes=["recorder", "disk", "percent_left"], needs="Reading from the recorder", params={"percent": {"type": "integer", "default": 20, "min": 5, "max": 50}}),
     "retention_low": _a(SYSTEM, "Recording", "Recording retention below target", "The recorder keeps fewer days of video than you want to be able to look back on.", built=True,

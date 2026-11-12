@@ -435,10 +435,9 @@ class RecorderHealthCard extends StatelessWidget {
             faulty.isNotEmpty ? 'A disk has a fault' : (worn.isNotEmpty ? 'A disk is wearing out' : (h.disks.length == 1 ? 'The disk is healthy' : 'All ${h.disks.length} disks are healthy')),
             faulty.isNotEmpty ? 'Have the recorder checked: video may not be saved.' : (worn.isNotEmpty ? 'About ${worn.first.lifePercent!.round()}% of its life is left. Replace it soon.' : '${_size(total)} in all')),
       if (full != null)
-        Column(children: [
-          row(Icons.pie_chart_outline_rounded, full >= 90 ? Level.bad : (full >= 80 ? Level.warn : Level.ok), '$full% full', '${_size(total - free)} used of ${_size(total)}'),
-          Padding(padding: EdgeInsets.fromLTRB(cardPad(context), 0, cardPad(context), 12), child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: full / 100, minHeight: 8, backgroundColor: t.brandSoft, color: full >= 90 ? t.crit : (full >= 80 ? t.warnInk : t.brand)))),
-        ]),
+        // A recorder that records all the time replaces its oldest video when its disk is full, so a full disk is normal and never shown as a problem.
+        row(Icons.pie_chart_outline_rounded, Level.ok, full >= 95 ? 'The disk is full, as it should be' : '$full% of the disk is in use',
+            full >= 95 ? 'The recorder replaces its oldest video with the newest.' : '${_size(total - free)} used of ${_size(total)}'),
       if (h.daysHeld != null) row(Icons.history_rounded, Level.ok, 'About ${h.daysHeld} days of video kept', 'How far back you can look'),
       if (h.clockOutMinutes != null) row(Icons.schedule_rounded, h.clockOutMinutes! >= 5 ? Level.warn : Level.ok, h.clockOutMinutes! >= 5 ? 'The clock is ${h.clockOutMinutes} minutes out' : 'The clock is right', h.clockOutMinutes! >= 5 ? 'Recordings and reports show the wrong times.' : 'Recordings show the right times.'),
       if (h.uptimeSeconds != null) row(Icons.power_settings_new_rounded, Level.mute, _uptime(h.uptimeSeconds!), 'Since it last started'),

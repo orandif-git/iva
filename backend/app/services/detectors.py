@@ -275,11 +275,9 @@ async def daily_summary() -> int:
                     f"{s['alerts']} alert{'' if s['alerts'] == 1 else 's'} in the last 24 hours, {s['unseen']} not yet seen.")
             # what the recorders say about themselves, when they have said it (see services/recorder_health.py): how full the disks are and how many days of video are kept
             hs = [r["health"] for r in await conn.fetch("SELECT health FROM app.recorders WHERE tenant_id=$1 AND health IS NOT NULL AND health_at > now() - interval '2 hours'", rule["tenant_id"])]
-            full = [h["percent_full"] for h in hs if h.get("percent_full") is not None]
             kept = [h["days_held"] for h in hs if h.get("days_held") is not None]
-            if full or kept:
-                bits = ([f"disks {max(full)}% full"] if full else []) + ([f"{min(kept)} days of video kept"] if kept else [])
-                text += f" Recorders: {', '.join(bits)}."
+            if kept:
+                text += f" Recorders keep about {min(kept)} days of video."
             if await raise_alert(conn, rule["tenant_id"], "daily_summary", title="Daily system summary", body=text, camera_name="All cameras", details={"summary": text},
                                  dedupe_key=f"daily:{local.date()}", cooldown_minutes=20 * 60):
                 n += 1
