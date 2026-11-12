@@ -394,14 +394,15 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('How the recorder is doing'.toUpperCase()), findsOneWidget);
     expect(find.text('The disk is healthy'), findsOneWidget);
-    expect(find.text('65% full'), findsOneWidget);
+    expect(find.text('65% of the disk is in use'), findsOneWidget);
     expect(find.text('About 21 days of video kept'), findsOneWidget);
     expect(find.text('The clock is right'), findsOneWidget);
     expect(find.text('Running for 21 days'), findsOneWidget);
     await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: RecorderHealthCard(RecorderHealth(disks: const [DiskInfo(0, 4000000, 200000, 2, null)], percentFull: 95, clockOutMinutes: 12)))));
     await t.pumpAndSettle();
     expect(find.text('A disk has a fault'), findsOneWidget);
-    expect(find.text('95% full'), findsOneWidget);
+    expect(find.text('The disk is full, as it should be'), findsOneWidget);
+    expect(find.text('The recorder replaces its oldest video with the newest.'), findsOneWidget);
     expect(find.text('The clock is 12 minutes out'), findsOneWidget);
   });
 

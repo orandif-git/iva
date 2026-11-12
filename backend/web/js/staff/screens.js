@@ -362,7 +362,7 @@ export async function recorderDetail(X, id) {
     kv("Checked", r.health_at ? ago(r.health_at) : "—"),
     ...(hl.disks == null ? [kv("Disks", "The recorder did not say")] : hl.disks.length === 0 ? [kv("Disks", "None found", "Video cannot be saved")]
       : hl.disks.map((d) => kv(`Disk ${d.num + 1}`, `${size(d.total_mb)}, ${d.total_mb ? Math.round(100 * (d.total_mb - d.free_mb) / d.total_mb) : 0}% full`, [d.state === 2 ? "Faulty" : d.life_percent != null ? `${Math.round(d.life_percent)}% of its life left` : d.state === 0 ? "Asleep" : "Working", d.model, d.serial && `serial ${d.serial}`].filter(Boolean).join(" · ")))),
-    ...(hl.percent_full != null ? [kv("Storage", `${hl.percent_full}% full`)] : []),
+    ...(hl.percent_full != null ? [kv("Disk in use", `${hl.percent_full}%`, hl.percent_full >= 95 ? "Full is normal: the recorder replaces its oldest video" : "")] : []),
     ...(hl.days_held != null ? [kv("Video kept", `about ${hl.days_held} days`)] : []),
     ...(hl.clock_out_minutes != null ? [kv("Clock", hl.clock_out_minutes < 1 ? "Right" : `${hl.clock_out_minutes} minutes out`)] : []),
     ...(hl.uptime_seconds != null ? [kv("Running for", upt(hl.uptime_seconds), (hl.restarts || []).length ? `${hl.restarts.length} restart${hl.restarts.length === 1 ? "" : "s"} in the last day` : "")] : []),

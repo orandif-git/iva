@@ -60,16 +60,13 @@ async def test_a_faulty_or_missing_disk_is_a_critical_alert_said_once_a_day(clie
     assert await report(client, make, dev, {"disks": None}) == [], "not being able to read the disks is not a fault"
 
 
-async def test_storage_is_reported_when_the_disks_are_nearly_full_and_the_limit_can_be_changed(client, make, su):
+async def test_a_disk_that_is_full_is_not_an_alert_because_a_recorder_replaces_its_oldest_video(client, make, su):
     t, dev = await recorder(client, make, su)
-    assert await report(client, make, dev, {"disks": [disk(total=1000, free=150)]}) == [], "85% full: under the usual 90"
-    assert await report(client, make, dev, {"disks": [disk(total=1000, free=80)]}) == ["storage_full"]
-    a = await su.fetchrow("SELECT title, body FROM app.alerts WHERE tenant_id=$1", t)
-    assert a["title"] == "Recorder storage low" and "92% full" in a["body"]
-    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
-    u = await make.user(t)
-    await client.put("/v1/alert-types/storage_full", json={"enabled": True, "params": {"percent": 80}}, headers=u["headers"])
-    assert await report(client, make, dev, {"disks": [disk(total=1000, free=150)]}) == ["storage_full"]
+    for free in (150, 80, 0):
+        assert await report(client, make, dev, {"disks": [disk(total=1000, free=free)]}) == [], f"{free} of 1000 free: full by design"
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 0
+    kept = await su.fetchval("SELECT health->>'percent_full' FROM app.recorders WHERE device_id=$1", dev)
+    assert kept == "100", "how full it is is still stored, for display"
 
 
 async def test_a_clock_that_is_out_is_reported(client, make, su):

@@ -94,11 +94,11 @@ async def test_when_the_recorder_cannot_see_a_camera_the_alert_says_so(client, m
 async def test_the_daily_summary_says_how_full_the_disks_are_and_how_many_days_are_kept(client, make, su):
     t, u, _, _ = await setup_cameras(client, make)
     dev = await su.fetchval("SELECT device_id FROM app.recorders WHERE tenant_id=$1", t)
-    await report(client, make, dev, {"disks": [disk(total=1000, free=400)], "days_held": 21})
+    await report(client, make, dev, {"disks": [disk(total=1000, free=0)], "days_held": 21})
     hour = datetime.now(ZoneInfo(await su.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", t))).hour
     await on(client, u, "daily_summary", hour=hour)
     await detectors.daily_summary()
-    assert "Recorders: disks 60% full, 21 days of video kept." in await su.fetchval("SELECT body FROM app.alerts WHERE tenant_id=$1 AND rule_type='daily_summary'", t)
+    assert "Recorders keep about 21 days of video." in await su.fetchval("SELECT body FROM app.alerts WHERE tenant_id=$1 AND rule_type='daily_summary'", t)
 
 
 async def test_a_customer_sees_what_the_recorder_last_said_about_itself(client, make, su):
