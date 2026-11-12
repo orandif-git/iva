@@ -21,10 +21,10 @@ async def titles(su, t, rule=None):
 
 def test_every_system_alert_that_uses_existing_data_is_built_and_the_daily_summary_is_opt_in():
     system = {k for k in cat.BUILT if cat.CATALOG[k]["family"] == "system"}
-    assert system == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "daily_summary"}
-    assert len(cat.BUILT) == 14                                                                       # the three area alerts are Smart Alerts, in test_area_alerts.py
+    assert system == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "daily_summary", "clock_wrong", "storage_full", "disk_fault", "recording_stopped"}
+    assert len(cat.BUILT) == 18                                                                       # the three area alerts are Smart Alerts, in test_area_alerts.py
     assert "daily_summary" not in alerts_svc.DEFAULT_ENABLED and system - {"daily_summary"} <= alerts_svc.DEFAULT_ENABLED
-    assert not [k for k in cat.CATALOG if cat.CATALOG[k]["built"] and cat.CATALOG[k]["needs"].startswith(("Reading", "Picture"))]       # nothing that needs a new recorder reading is claimed
+    assert not [k for k in cat.CATALOG if cat.CATALOG[k]["built"] and cat.CATALOG[k]["needs"].startswith(("Picture",))]       # nothing that needs the picture comparison (stage 5) is claimed before it exists
 
 
 async def recorder_of(su, t):

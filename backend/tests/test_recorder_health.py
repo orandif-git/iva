@@ -1,0 +1,97 @@
+"""What a recorder says about itself (disks, clock, recordings) and the four alerts that come from it."""
+from datetime import datetime, timedelta, timezone
+
+from app.services import recorder_health as rh
+from tests.helpers import setup_cameras
+
+
+def disk(num=0, total=1000, free=500, state=1):
+    return {"num": num, "total_mb": total, "free_mb": free, "status": state, "state": state}
+
+
+def test_how_full_the_disks_are_ignores_a_faulty_or_empty_disk():
+    assert rh.percent_full([disk(total=1000, free=100), disk(1, total=1000, free=300)]) == 80
+    assert rh.percent_full([disk(total=1000, free=100), disk(1, total=4000, free=0, state=2)]) == 90, "a faulty disk is a different alert"
+    assert rh.percent_full([disk(total=0, free=0)]) is None and rh.percent_full([]) is None
+    assert rh.percent_full([disk(total=1000, free=5000)]) == 0, "free space above the size is a misread, not a negative"
+
+
+def test_the_clock_is_compared_by_utc_when_the_recorder_gives_it_and_by_local_time_otherwise():
+    now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+    assert rh.minutes_out({"utc": int((now + timedelta(minutes=12)).timestamp()), "local": None}, "Asia/Kolkata", now) == 12
+    local = (now + timedelta(hours=5, minutes=30, seconds=20)).strftime("%Y-%m-%dT%H:%M:%S")          # India is five and a half hours ahead of UTC
+    assert rh.minutes_out({"utc": None, "local": local}, "Asia/Kolkata", now) == 0
+    assert rh.minutes_out({"utc": 0, "local": "not a time"}, "Asia/Kolkata", now) is None and rh.minutes_out({}, "Asia/Kolkata", now) is None
+
+
+async def report(client, make, device, body):
+    r = await client.post(f"/internal/v1/recorders/{device}/health", json=body, headers=make.service())
+    assert r.status_code == 200, r.text
+    return r.json()["raised"]
+
+
+async def recorder(client, make, su):
+    t, u, _, _ = await setup_cameras(client, make)
+    return t, (await su.fetchval("SELECT device_id FROM app.recorders WHERE tenant_id=$1", t))
+
+
+async def titles(su, t):
+    return sorted(r["title"] for r in await su.fetch("SELECT title FROM app.alerts WHERE tenant_id=$1", t))
+
+
+async def test_a_healthy_recorder_raises_nothing_and_what_it_said_is_kept(client, make, su):
+    t, dev = await recorder(client, make, su)
+    now = datetime.now(timezone.utc)
+    ok = {"disks": [disk(total=1000, free=600)], "clock": {"utc": int(now.timestamp()), "local": None}, "recording": {"1": {"recent": 4, "day": 30}}}
+    assert await report(client, make, dev, ok) == [] and await titles(su, t) == []
+    kept = await su.fetchrow("SELECT health, health_at FROM app.recorders WHERE device_id=$1", dev)
+    assert kept["health_at"] is not None and "disks" in str(kept["health"])
+
+
+async def test_a_faulty_or_missing_disk_is_a_critical_alert_said_once_a_day(client, make, su):
+    t, dev = await recorder(client, make, su)
+    assert await report(client, make, dev, {"disks": [disk(0, state=1), disk(1, state=2)]}) == ["disk_fault"]
+    assert await report(client, make, dev, {"disks": [disk(0, state=1), disk(1, state=2)]}) == [], "not again within the day"
+    a = await su.fetchrow("SELECT title, body, severity FROM app.alerts WHERE tenant_id=$1", t)
+    assert a["title"] == "Recorder disk failure" and a["severity"] == "critical" and "disk 2" in a["body"]
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    assert await report(client, make, dev, {"disks": []}) == ["disk_fault"], "a recorder with no disk at all cannot save video"
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    assert await report(client, make, dev, {"disks": None}) == [], "not being able to read the disks is not a fault"
+
+
+async def test_storage_is_reported_when_the_disks_are_nearly_full_and_the_limit_can_be_changed(client, make, su):
+    t, dev = await recorder(client, make, su)
+    assert await report(client, make, dev, {"disks": [disk(total=1000, free=150)]}) == [], "85% full: under the usual 90"
+    assert await report(client, make, dev, {"disks": [disk(total=1000, free=80)]}) == ["storage_full"]
+    a = await su.fetchrow("SELECT title, body FROM app.alerts WHERE tenant_id=$1", t)
+    assert a["title"] == "Recorder storage low" and "92% full" in a["body"]
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    u = await make.user(t)
+    await client.put("/v1/alert-types/storage_full", json={"enabled": True, "params": {"percent": 80}}, headers=u["headers"])
+    assert await report(client, make, dev, {"disks": [disk(total=1000, free=150)]}) == ["storage_full"]
+
+
+async def test_a_clock_that_is_out_is_reported(client, make, su):
+    t, dev = await recorder(client, make, su)
+    now = datetime.now(timezone.utc)
+    assert await report(client, make, dev, {"clock": {"utc": int((now + timedelta(minutes=3)).timestamp())}}) == []
+    assert await report(client, make, dev, {"clock": {"utc": int((now - timedelta(minutes=40)).timestamp())}}) == ["clock_wrong"]
+    a = await su.fetchrow("SELECT title, body FROM app.alerts WHERE tenant_id=$1", t)
+    assert a["title"] == "Recorder time incorrect" and "minutes out" in a["body"]
+
+
+async def test_recording_stopped_is_said_only_when_a_channel_recorded_earlier_but_not_in_two_hours(client, make, su):
+    t, dev = await recorder(client, make, su)
+    assert await report(client, make, dev, {"recording": {"1": {"recent": 0, "day": 0}, "2": {"recent": None, "day": None}}}) == [], "never recorded, or could not be asked: no claim"
+    assert await report(client, make, dev, {"recording": {"1": {"recent": 5, "day": 30}, "2": {"recent": 0, "day": 22}}}) == ["recording_stopped"]
+    a = await su.fetchrow("SELECT title, body, severity FROM app.alerts WHERE tenant_id=$1", t)
+    assert a["title"] == "Recording stopped" and a["severity"] == "critical" and "1 camera" in a["body"]
+
+
+async def test_the_readings_must_come_from_the_gateway_and_be_well_formed(client, make, su):
+    t, dev = await recorder(client, make, su)
+    bad = await client.post(f"/internal/v1/recorders/{dev}/health", json={"disks": [{"num": 0, "total_mb": -1, "free_mb": 0, "status": 1, "state": 1}]}, headers=make.service())
+    assert bad.status_code == 422
+    assert (await client.post(f"/internal/v1/recorders/{dev}/health", json={})).status_code in (401, 403)
+    assert (await client.post("/internal/v1/recorders/NOPE/health", json={}, headers=make.service())).status_code == 404

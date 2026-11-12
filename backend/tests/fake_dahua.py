@@ -16,6 +16,7 @@ class FakeDriver:
         self.played: list = []                    # (login_id, channel_index, main)
         self.stopped_plays: list = []
         self.refuse_play = False
+        self.health_reports: dict = {}            # ident -> what health() answers
         self.chunks = [bytes([i]) * 1000 for i in range(1, 40)]
         self.chunk_delay = 0.01
         self.stopped = False
@@ -41,6 +42,9 @@ class FakeDriver:
         if not rec or rec["key"] != password or user != "giview":
             return LoginResult(error="wrong user or password")
         return LoginResult(login_id=next(self._ids), channels=rec["channels"], serial=rec.get("serial", "SER123"))
+
+    def health(self, login_id, channels):
+        return self.health_reports.get(login_id) or self.health_reports.get("any")
 
     def play(self, login_id, channel_index, main, on_data):
         if self.refuse_play:
@@ -82,6 +86,7 @@ class FakeBackend:
         self.heartbeats: list = []
         self.offlined: list = []
         self.previews: list = []
+        self.healths: list = []
         self.down = False
 
     async def credentials(self, device_id):
@@ -95,6 +100,11 @@ class FakeBackend:
             raise BackendUnavailable("down")
         self.heartbeats.append((device_id, ip, channels))
         return self.recorders.get(device_id, {}).get("allowed", True)
+
+    async def health(self, device_id, report):
+        if self.down:
+            raise BackendUnavailable("down")
+        self.healths.append((device_id, report))
 
     async def preview_ok(self, device_id):
         if self.down:

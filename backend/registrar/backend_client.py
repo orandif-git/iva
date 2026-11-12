@@ -49,6 +49,12 @@ class BackendClient:
         r.raise_for_status()
         return bool(r.json().get("allowed"))
 
+    async def health(self, device_id: str, report: dict) -> None:
+        """The recorder's disks, clock and recordings (see app/services/recorder_health.py)."""
+        r = await self._call("POST", f"/internal/v1/recorders/{device_id}/health", json=report)
+        if r.status_code != 404:
+            r.raise_for_status()
+
     async def offline(self, device_id: str) -> None:
         await self._call("POST", f"/internal/v1/recorders/{device_id}/offline")
 

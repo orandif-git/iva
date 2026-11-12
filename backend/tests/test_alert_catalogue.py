@@ -29,7 +29,7 @@ def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     fams = {c["family"] for c in cat.CATALOG.values()}
     assert fams == {"system", "smart"}
     assert len(cat.LISTED) == 20 and len(cat.CATALOG) == 22 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready", "platform_fault"]       # system events, not customer alerts
-    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours",
+    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours", "clock_wrong", "storage_full", "disk_fault", "recording_stopped",
                                                                   "daily_summary", "blocked_plate", "vehicle_overstay", "crowding", "low_confidence_plate", "people_in_area", "queue_long", "phone_use"}
     assert cat.event_name("camera_offline") == "system.camera_offline" and cat.event_name("blocked_plate") == "smart.blocked_plate"
     assert cat.alert_for_event("smart.crowding") == "crowding" and cat.alert_for_event("system.nothing") is None
@@ -42,7 +42,7 @@ async def test_staff_see_the_catalogue_with_what_is_built(client, make):
     assert r.status_code == 200
     items = {i["type"]: i for i in r.json()["items"]}
     assert len(items) == len(cat.LISTED) and "report_ready" not in items and items["blocked_plate"]["ai"] is True and items["camera_offline"]["ai"] is False
-    assert items["disk_fault"]["built"] is False and items["disk_fault"]["enabled"] is False
+    assert items["view_changed"]["built"] is False and items["view_changed"]["enabled"] is False
     assert items["camera_offline"]["enabled"] is True and items["camera_offline"]["event"] == "system.camera_offline"
     assert (await client.get("/admin/v1/alert-catalog")).status_code == 401
 
@@ -63,7 +63,7 @@ async def test_only_the_owner_switches_an_alert_and_needs_a_reason_which_is_audi
 
 async def test_an_alert_that_is_not_built_cannot_be_switched_on(client, make):
     owner = await make.staff("owner")
-    r = await client.put("/admin/v1/alert-catalog/disk_fault", json={"enabled": True, "reason": "try it"}, headers=owner["headers"])
+    r = await client.put("/admin/v1/alert-catalog/view_changed", json={"enabled": True, "reason": "try it"}, headers=owner["headers"])
     assert r.status_code == 409 and r.json()["error"]["code"] == "alert_not_built"
 
 
@@ -145,7 +145,7 @@ async def test_an_alert_can_be_added_to_one_customer_and_removed_again(client, m
     base = f"/admin/v1/tenants/{t}/alerts"
     assert (await client.put(f"{base}/blocked_plate", json={"reason": "bought it"}, headers=support["headers"])).status_code == 403
     assert (await client.put(f"{base}/blocked_plate", json={"reason": "no"}, headers=owner["headers"])).status_code == 422
-    assert (await client.put(f"{base}/disk_fault", json={"reason": "not built yet"}, headers=owner["headers"])).status_code == 409
+    assert (await client.put(f"{base}/view_changed", json={"reason": "not built yet"}, headers=owner["headers"])).status_code == 409
     assert (await client.put(f"{base}/camera_offline", json={"reason": "already there"}, headers=owner["headers"])).json()["error"]["code"] == "already_in_plan"
     assert (await client.put(f"{base}/blocked_plate", json={"reason": "customer asked for it"}, headers=owner["headers"])).status_code == 201
     assert (await client.put(f"{base}/blocked_plate", json={"reason": "again please"}, headers=owner["headers"])).json()["error"]["code"] == "already_added"

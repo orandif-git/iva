@@ -27,6 +27,7 @@ class Driver(Protocol):
     def play(self, login_id: int, channel_index: int, main: bool, on_data: Callable[[bytes], None]) -> int: ...      # 0 on failure
     def stop_play(self, play_id: int) -> None: ...
     def logout(self, login_id: int) -> None: ...
+    def health(self, login_id: int, channels: int) -> dict | None: ...      # disks, clock and recordings; what could not be read is None
     def stop(self) -> None: ...
 
 
@@ -48,6 +49,7 @@ class NetSdkDriver:
         self._sdk = NetClient()
         self._keep: dict = {}          # the SDK holds pointers to callbacks: keep every one alive until it is no longer used
         self._server = 0
+        self._reported: set = set()
         self._on_disconnect: Callable[[int], None] = lambda _id: None
 
     def start(self, bind, port, on_register, on_disconnect) -> bool:
@@ -112,6 +114,69 @@ class NetSdkDriver:
     def stop_play(self, play_id) -> None:
         self._sdk.StopRealPlayEx(play_id)
         self._keep.pop(("play", play_id), None)
+
+    # ------------------------------------------------------------------ what the recorder says about itself
+    def health(self, login_id, channels) -> dict | None:
+        """Disks, clock and, for each channel, how many recordings it holds for the last two hours and the last day. Every part is read on its own and a part that cannot
+        be read is None, so one unsupported call never hides the others. The first answer from each recorder is written to the log, to check the readings against the
+        recorder's own screen."""
+        out = {"disks": None, "clock": None, "recording": {}}
+        for name, read in (("disks", self._disks), ("clock", self._clock)):
+            try:
+                out[name] = read(login_id)
+            except Exception:
+                log.exception("could not read the %s of login %s", name, login_id)
+        try:
+            out["recording"] = self._recordings(login_id, channels, out["clock"])
+        except Exception:
+            log.exception("could not read the recordings of login %s", login_id)
+        if login_id not in self._reported:
+            self._reported.add(login_id)
+            log.info("first health reading of login %s: %s", login_id, out)
+        return out
+
+    def _disks(self, login_id):
+        from ctypes import byref, c_int, sizeof
+        from NetSDK.SDK_Enum import EM_QUERY_DEV_STATE_TYPE
+        from NetSDK.SDK_Struct import SDK_HARDDISK_STATE
+        st, got = SDK_HARDDISK_STATE(), c_int(0)
+        if not self._sdk.QueryDevState(login_id, int(EM_QUERY_DEV_STATE_TYPE.DISK), byref(st), sizeof(st), byref(got), 3000):
+            return None
+        return [{"num": int(d.bDiskNum), "total_mb": int(d.dwVolume), "free_mb": int(d.dwFreeSpace), "status": int(d.dwStatus), "state": int(d.dwStatus) & 0x0F}
+                for d in (st.stDisks[i] for i in range(min(int(st.dwDiskNum), 256)))]
+
+    def _clock(self, login_id):
+        from NetSDK.SDK_Struct import NET_TIME_EX
+        t = NET_TIME_EX()
+        if not self._sdk.QueryDeviceTimeEx(login_id, t, 3000):
+            return None
+        return {"utc": int(t.dwUTC) or None, "local": f"{t.dwYear:04d}-{t.dwMonth:02d}-{t.dwDay:02d}T{t.dwHour:02d}:{t.dwMinute:02d}:{t.dwSecond:02d}"}
+
+    def _recordings(self, login_id, channels, clock):
+        """Per channel (numbered from 1): recordings held for the last two hours and the last day. Needs the recorder's own clock to name the period."""
+        from datetime import datetime, timedelta
+        from NetSDK.SDK_Struct import NET_TIME
+        if not clock or not clock.get("local"):
+            return {}
+        end = datetime.fromisoformat(clock["local"])
+
+        def stamp(d):
+            t = NET_TIME()
+            t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return t
+
+        def count(index, since):
+            res = self._sdk.QueryRecordFile(login_id, index, 0, stamp(since), stamp(end), "", 3000, False)
+            if not isinstance(res, tuple) or not res or not res[0]:
+                return None
+            for part in res[1:]:                              # the files, or how many there are: the wrapper gives one of them
+                if isinstance(part, (list, tuple)):
+                    return len(part)
+                if isinstance(part, int) and not isinstance(part, bool):
+                    return part
+            return None
+
+        return {str(i + 1): {"recent": count(i, end - timedelta(hours=2)), "day": count(i, end - timedelta(hours=24))} for i in range(min(channels, 32))}
 
     def logout(self, login_id) -> None:
         self._sdk.Logout(login_id)

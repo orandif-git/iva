@@ -12,6 +12,7 @@ class DahuaSettings(BaseSettings):
     listen_port: int = 7000               # the port the customer types into the recorder's Register page
     viewer_user: str = "giview"           # the viewer-only user the customer creates on the recorder; its password is the recorder's key
 
+    health_interval: float = 600.0        # how often each recorder is asked about its disks, clock and recordings
     heartbeat_interval: float = 30.0      # must be well under the backend's heartbeat_timeout_seconds (90)
     login_backoff_min: float = 30.0       # after a refused sign-in, ignore that recorder this long (a recorder locks the account after a few tries)
     login_backoff_max: float = 900.0

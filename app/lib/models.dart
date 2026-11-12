@@ -280,6 +280,9 @@ const settingWords = {
   'max_hours': ('Alert when a vehicle stays more than', 'hours'),
   'max_minutes': ('Alert when a vehicle stays more than', 'minutes'),
   'percent': ('Alert at', '% used'),
+  'minutes_out': ('Alert when the clock is out by', 'minutes'),
+  'hours': ('Alert after', 'hours with nobody counted'),
+  'grace_minutes': ('Ignore the first', 'minutes after closing'),
   'days': ('Remind me', 'days before it is due'),
   'hour': ('Send it at', "o'clock"),
 };

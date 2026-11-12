@@ -155,7 +155,7 @@ async def test_standard_endpoints_cover_every_built_alert_and_can_be_run_again(c
 async def test_an_endpoint_is_checked_before_it_is_saved(client, world):
     h = world["admin"]
     base = {"name": "Crowd", "alert_type": "crowding", "url": "https://hooks.example.com/x"}
-    assert (await client.post("/admin/v1/webhooks", json={**base, "alert_type": "disk_fault"}, headers=h)).json()["error"]["code"] == "alert_not_built"
+    assert (await client.post("/admin/v1/webhooks", json={**base, "alert_type": "view_changed"}, headers=h)).json()["error"]["code"] == "alert_not_built"
     assert (await client.post("/admin/v1/webhooks", json={**base, "alert_type": "nothing"}, headers=h)).status_code == 404
     await client.delete(f"/admin/v1/webhooks/{(await endpoint_of(client, world, 'crowding'))['id']}", headers=h)
     for bad, why in [({"url": "http://hooks.example.com/x"}, "https"), ({"headers": {"X-Signature": "mine"}}, "set by the system"),
