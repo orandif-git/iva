@@ -31,7 +31,7 @@ async def until(cond, timeout=5.0):
 async def env():
     e = Env()
     e.cfg = DahuaSettings(service_token=TOKEN, relay_http_port=0, listen_port=7000, login_backoff_min=0.3, login_backoff_max=1.0,
-                          heartbeat_interval=0.2, relay_idle_grace=0.2, relay_stall_seconds=1.0, login_timeout=2.0)
+                          heartbeat_interval=0.2, health_interval=0.3, relay_idle_grace=0.2, relay_stall_seconds=1.0, login_timeout=2.0)
     e.driver = FakeDriver({"SHARMA-AB3K": {"key": KEY, "channels": 4}})
     e.backend = FakeBackend({"SHARMA-AB3K": {"key": KEY}})
     e.gw = Gateway(e.cfg, e.backend, e.driver)
@@ -68,6 +68,26 @@ async def test_a_recorder_with_the_right_key_comes_online_and_is_reported(env):
     dev, ip, chans = env.backend.heartbeats[0]
     assert (dev, ip) == ("SHARMA-AB3K", "203.0.113.7") and [c["channel_no"] for c in chans] == [1, 2, 3, 4]
     assert env.driver.port == 7000
+
+
+async def test_each_recorder_is_asked_about_its_disks_clock_and_recordings_and_the_backend_is_told(env):
+    report = {"disks": [{"num": 0, "total_mb": 1000, "free_mb": 400, "status": 1, "state": 1}], "clock": {"utc": 1_800_000_000, "local": "2027-01-15T08:00:00"},
+              "recording": {"1": {"recent": 3, "day": 40}}}
+    env.driver.health_reports["any"] = report
+    await online(env)
+    await until(lambda: env.backend.healths)
+    assert env.backend.healths[0] == ("SHARMA-AB3K", report)
+
+
+async def test_a_recorder_that_cannot_be_asked_is_skipped_and_the_gateway_carries_on(env):
+    env.driver.health_reports["any"] = None                              # the recorder gave nothing
+    await online(env)
+    await asyncio.sleep(0.8)
+    assert env.backend.healths == [] and "SHARMA-AB3K" in env.gw.sessions
+    env.backend.down = True
+    env.driver.health_reports["any"] = {"disks": None, "clock": None, "recording": {}}
+    await asyncio.sleep(0.8)
+    assert "SHARMA-AB3K" in env.gw.sessions                              # the backend being away does not drop the recorder
 
 
 async def test_listen_failure_is_loud():

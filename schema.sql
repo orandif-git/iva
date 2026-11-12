@@ -337,6 +337,8 @@ CREATE TABLE app.recorders (
   channel_count      integer NOT NULL DEFAULT 0,
   preview_ok_at      timestamptz,                      -- first successful picture from any channel
   firmware           text,
+  health             jsonb,                            -- what it last said about its disks, clock and recordings (see services/recorder_health.py)
+  health_at          timestamptz,
   created_by         uuid,
   created_at         timestamptz NOT NULL DEFAULT now()
 );

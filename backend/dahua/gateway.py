@@ -55,6 +55,7 @@ class Gateway:
             raise RuntimeError(f"could not listen on port {self.cfg.listen_port} (is another program using it?)")
         self._spawn(self._intake())
         self._spawn(self._heartbeats())
+        self._spawn(self._health_checks())
         log.info("dahua gateway listening on %s:%s", self.cfg.listen_bind, self.cfg.listen_port)
 
     async def stop(self) -> None:
@@ -166,6 +167,23 @@ class Gateway:
             for s in list(self.sessions.values()):
                 if self.sessions.get(s.device_id) is s:
                     await self._heartbeat(s)
+
+    async def _health_checks(self) -> None:
+        """Every `health_interval` seconds, ask each recorder about its disks, clock and recordings and tell the backend. A recorder that cannot be asked is simply skipped:
+        what could not be read is sent as unknown, and unknown never raises an alert."""
+        while True:
+            await asyncio.sleep(self.cfg.health_interval)
+            for s in list(self.sessions.values()):
+                if self.sessions.get(s.device_id) is not s:
+                    continue
+                try:
+                    report = await asyncio.to_thread(self.driver.health, s.login_id, len(s.channels))
+                    if report:
+                        await self.backend.health(s.device_id, report)
+                except BackendUnavailable:
+                    pass
+                except Exception:
+                    log.exception("could not read the health of recorder %s", s.device_id)
 
     async def _drop(self, s: Session, reason: str, tell_backend: bool = False) -> None:
         if self.sessions.get(s.device_id) is not s:

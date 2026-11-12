@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from ..crypto import vault
 from ..deps import ServiceCtx, service_ctx
 from ..errors import ApiError
-from ..schemas import FrameStatusIn, HeartbeatIn
+from pydantic import Field
+
+from ..schemas import FrameStatusIn, HeartbeatIn, Strict
 from datetime import datetime, timezone
 
-from ..services import alert_catalog, billing, link_history, platform_fault
+from ..services import alert_catalog, billing, link_history, platform_fault, recorder_health
 from ..services.alerts import clips_wanted
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
@@ -68,6 +70,39 @@ async def heartbeat(device_id: str, body: HeartbeatIn, ctx: ServiceCtx = Depends
             r["id"], r["tenant_id"], c.channel_no, c.name, c.external_id)
     await ctx.conn.execute("UPDATE app.recorder_channels SET active=false WHERE recorder_id=$1 AND NOT (channel_no = ANY($2::int[]))", r["id"], numbers)
     return {"allowed": True}
+
+
+class DiskIn(Strict):
+    num: int = Field(ge=0, le=255)
+    total_mb: int = Field(ge=0)
+    free_mb: int = Field(ge=0)
+    status: int = Field(ge=0)
+    state: int = Field(ge=0, le=15)           # the low four bits of status: 0 asleep, 1 working, 2 faulty
+
+
+class ClockIn(Strict):
+    utc: int | None = None                    # the recorder's time as seconds since 1970, when it gives one
+    local: str | None = Field(None, max_length=32)      # its own wall-clock time, "2026-11-12T14:05:09"
+
+
+class ChannelRecordings(Strict):
+    recent: int | None = Field(None, ge=0)    # recordings held for the last two hours (None: could not be asked)
+    day: int | None = Field(None, ge=0)       # recordings held for the last day
+
+
+class HealthIn(Strict):
+    disks: list[DiskIn] | None = Field(None, max_length=64)        # None: could not be read; []: read, and there are none
+    clock: ClockIn | None = None
+    recording: dict[str, ChannelRecordings] = Field(default_factory=dict, max_length=256)
+
+
+@router.post("/recorders/{device_id}/health")
+async def recorder_health_report(device_id: str, body: HealthIn, ctx: ServiceCtx = Depends(service_ctx)):
+    """The disks, clock and recordings of a recorder, as the Dahua gateway read them. Stored, and turned into alerts where something is wrong."""
+    r = await _recorder(ctx, device_id)
+    rec = await ctx.conn.fetchrow("SELECT r.id, r.tenant_id, r.device_id, r.name, t.timezone FROM app.recorders r JOIN app.tenants t ON t.id = r.tenant_id WHERE r.id=$1", r["id"])
+    raised = await recorder_health.apply(ctx.conn, rec, body.model_dump())
+    return {"raised": raised}
 
 
 @router.post("/recorders/{device_id}/offline", status_code=204)
