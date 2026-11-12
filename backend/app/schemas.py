@@ -278,6 +278,19 @@ class ZoneSampleIn(Strict):
     evidence_id: UUID | None = None
 
 
+class PictureIn(Strict):
+    camera_id: UUID
+    at: datetime
+    brightness: float = Field(ge=0, le=255)
+    contrast: float = Field(ge=0, le=255)
+    sharpness: float = Field(ge=0, le=1_000_000)
+    edges: str = Field(max_length=600)            # the outline sketch, base64 (see worker/picture.py)
+
+
+class PictureBatch(Strict):
+    events: list[PictureIn] = Field(min_length=1, max_length=500)
+
+
 class ZoneBatch(Strict):
     events: list[ZoneSampleIn] = Field(min_length=1, max_length=500)
 

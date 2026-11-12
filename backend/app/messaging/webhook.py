@@ -45,7 +45,7 @@ SAMPLE = {
     "used": "42", "limit": "50", "invoice": "INV-2026-0042", "due_date": "15 Nov", "device": "iPhone", "place": "Surat", "summary": "7 cameras working, 1 needs a look",
     "plate": "GJ05AB1234", "direction": "in", "hours": "8", "stay": "45 minutes", "confidence": "62", "people": "54", "area": "Billing counter", "length": "8", "minutes": "3", "wait_minutes": "6", "seconds": "25",
     "image_url": "https://ivision.example/e/Xk3q/image.jpg", "clip_url": "https://ivision.example/e/Xk3q/clip.mp4",
-    "cameras": "12", "report": "Footfall summary", "period": "3 Nov to 9 Nov", "document_url": "https://ivision.example/e/Xk3q/report.xlsx",
+    "cameras": "12", "what": "moved", "report": "Footfall summary", "period": "3 Nov to 9 Nov", "document_url": "https://ivision.example/e/Xk3q/report.xlsx",
 }
 
 

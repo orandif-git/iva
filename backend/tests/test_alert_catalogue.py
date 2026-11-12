@@ -1,3 +1,4 @@
+import pytest
 """Which alerts exist, who has them, and who can change that. System Alerts and Smart Alerts, plans, per-customer extras, the platform switch."""
 import json
 import uuid
@@ -29,7 +30,7 @@ def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     fams = {c["family"] for c in cat.CATALOG.values()}
     assert fams == {"system", "smart"}
     assert len(cat.LISTED) == 20 and len(cat.CATALOG) == 22 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready", "platform_fault"]       # system events, not customer alerts
-    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours", "clock_wrong", "storage_full", "disk_fault", "recording_stopped",
+    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours", "clock_wrong", "storage_full", "disk_fault", "recording_stopped", "view_changed", "picture_poor",
                                                                   "daily_summary", "blocked_plate", "vehicle_overstay", "crowding", "low_confidence_plate", "people_in_area", "queue_long", "phone_use"}
     assert cat.event_name("camera_offline") == "system.camera_offline" and cat.event_name("blocked_plate") == "smart.blocked_plate"
     assert cat.alert_for_event("smart.crowding") == "crowding" and cat.alert_for_event("system.nothing") is None
@@ -37,7 +38,15 @@ def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     assert "clip_url" not in cat.shortcodes_for("low_confidence_plate")
 
 
-async def test_staff_see_the_catalogue_with_what_is_built(client, make):
+@pytest.fixture
+def unbuilt(monkeypatch):
+    """Every alert in the catalogue is built now, so the rule that an unbuilt alert cannot be used is tested by marking one as not built for the length of a test."""
+    monkeypatch.setitem(cat.CATALOG["view_changed"], "built", False)
+    monkeypatch.setattr(cat, "BUILT", [k for k in cat.BUILT if k != "view_changed"])
+    monkeypatch.setattr(cat, "WEBHOOK_TYPES", [k for k in cat.WEBHOOK_TYPES if k != "view_changed"])
+
+
+async def test_staff_see_the_catalogue_with_what_is_built(client, make, unbuilt):
     r = await client.get("/admin/v1/alert-catalog", headers=(await make.staff("support"))["headers"])
     assert r.status_code == 200
     items = {i["type"]: i for i in r.json()["items"]}
@@ -61,7 +70,7 @@ async def test_only_the_owner_switches_an_alert_and_needs_a_reason_which_is_audi
     await client.put("/admin/v1/alert-catalog/crowding", json={"enabled": True, "reason": "Fixed, back on"}, headers=owner["headers"])
 
 
-async def test_an_alert_that_is_not_built_cannot_be_switched_on(client, make):
+async def test_an_alert_that_is_not_built_cannot_be_switched_on(client, make, unbuilt):
     owner = await make.staff("owner")
     r = await client.put("/admin/v1/alert-catalog/view_changed", json={"enabled": True, "reason": "try it"}, headers=owner["headers"])
     assert r.status_code == 409 and r.json()["error"]["code"] == "alert_not_built"
@@ -137,7 +146,7 @@ async def test_the_catalogue_shows_which_plans_include_each_alert(client, make, 
 
 
 # ------------------------------------------------------------------------------------------ one customer, alert by alert
-async def test_an_alert_can_be_added_to_one_customer_and_removed_again(client, make, su):
+async def test_an_alert_can_be_added_to_one_customer_and_removed_again(unbuilt, client, make, su):
     owner, support = await make.staff("owner"), await make.staff("support")
     pid = await plan(su, ["camera_offline"])
     t, other = await make.tenant(plan=pid), await make.tenant(plan=pid)

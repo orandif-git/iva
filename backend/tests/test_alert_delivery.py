@@ -152,7 +152,9 @@ async def test_standard_endpoints_cover_every_built_alert_and_can_be_run_again(c
     assert audit and all("RECEIVER-TOKEN-1" not in a["after"] for a in audit if a["after"])                  # and never written to the audit log
 
 
-async def test_an_endpoint_is_checked_before_it_is_saved(client, world):
+async def test_an_endpoint_is_checked_before_it_is_saved(client, world, monkeypatch):
+    monkeypatch.setitem(cat_mod.CATALOG["view_changed"], "built", False)      # every alert is built now: mark one as not built for this test
+    monkeypatch.setattr(cat_mod, "WEBHOOK_TYPES", [k for k in cat_mod.WEBHOOK_TYPES if k != "view_changed"])
     h = world["admin"]
     base = {"name": "Crowd", "alert_type": "crowding", "url": "https://hooks.example.com/x"}
     assert (await client.post("/admin/v1/webhooks", json={**base, "alert_type": "view_changed"}, headers=h)).json()["error"]["code"] == "alert_not_built"
