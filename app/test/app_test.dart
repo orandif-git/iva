@@ -1068,8 +1068,8 @@ void profileTests() {
     await t.tap(find.text('Health'));
     await t.pumpAndSettle();
     expect(find.text('Cameras working'), findsOneWidget);
-    expect(find.textContaining('Went offline'.toUpperCase()), findsOneWidget);
-    expect(find.text('Stockroom'), findsOneWidget);
+    expect(find.textContaining('Problems'.toUpperCase(), skipOffstage: false), findsOneWidget);
+    expect(find.text('Stockroom', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('the camera filter narrows People to one camera', (t) async {

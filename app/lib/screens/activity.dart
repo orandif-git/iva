@@ -6,6 +6,7 @@ import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'recorders.dart' show RecorderHealthCard;
 import 'vehicles.dart';
 import '../widgets/motion.dart';
 
@@ -13,7 +14,7 @@ import '../widgets/motion.dart';
 const _peopleAlerts = {'crowding'};
 const _vehicleAlerts = {'blocked_plate', 'vehicle_overstay', 'low_confidence_plate'};
 const _areaAlerts = {'people_in_area', 'queue_long', 'phone_use'};
-const _healthAlerts = {'camera_offline', 'recorder_offline', 'connection_unstable', 'back_to_normal'};
+const _healthAlerts = {'camera_offline', 'recorder_offline', 'connection_unstable', 'back_to_normal', 'disk_fault', 'disk_wear', 'recording_stopped', 'clock_wrong', 'recorder_restarted', 'hardware_fault', 'storage_full', 'view_changed', 'picture_poor'};
 
 enum Section {
   people('People', Icons.groups_outlined),
@@ -424,12 +425,13 @@ class HealthSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Tok.of(context);
-    return FutureBuilder<(Health, List<AlertCount>)>(
-      future: Future.wait([repo.health(), repo.alertCounts(period)]).then((r) => (r[0] as Health, r[1] as List<AlertCount>)),
+    return FutureBuilder<(Health, List<AlertCount>, List<RecorderItem>)>(
+      future: Future.wait([repo.health(), repo.alertCounts(period), repo.recorders()]).then((r) => (r[0] as Health, r[1] as List<AlertCount>, r[2] as List<RecorderItem>)),
       builder: (context, snap) {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off_outlined, title: 'We could not load this', text: snap.error is ApiError ? (snap.error as ApiError).message : '${snap.error}');
         if (!snap.hasData) return const SkeletonRows();
-        final (h, counts) = snap.data!;
+        final (h, counts, recorders) = snap.data!;
+        final reporting = recorders.where((r) => r.health != null).toList();
         final incidents = counts.where((c) => _healthAlerts.contains(c.rule) && c.rule != 'back_to_normal').toList()..sort((a, b) => b.count.compareTo(a.count));
         String title(String rule) => defs.where((d) => d.type == rule).firstOrNull?.title ?? rule.replaceAll('_', ' ');
         Widget card(String label, String value, {bool bad = false}) => Expanded(
@@ -449,16 +451,17 @@ class HealthSection extends StatelessWidget {
             const SizedBox(width: 10),
             card('Recorders online', '${h.recordersOnline} of ${h.recordersTotal}', bad: h.recordersOnline < h.recordersTotal),
           ]),
-          GroupLabel('Went offline · ${period.label.toLowerCase()}'),
+          for (final r in reporting) ...[GroupLabel('${r.name} · disks, clock and footage'), RecorderHealthCard(r.health!)],
+          GroupLabel('Problems · ${period.label.toLowerCase()}'),
           if (incidents.isEmpty)
-            Group(children: [Padding(padding: EdgeInsets.all(cardPad(context)), child: Row(children: [Icon(Icons.check_circle_rounded, color: t.okInk), const SizedBox(width: 12), const Expanded(child: Text('Nothing went offline in this period.', style: TextStyle(fontWeight: FontWeight.w600)))]))])
+            Group(children: [Padding(padding: EdgeInsets.all(cardPad(context)), child: Row(children: [Icon(Icons.check_circle_rounded, color: t.okInk), const SizedBox(width: 12), const Expanded(child: Text('No problems in this period.', style: TextStyle(fontWeight: FontWeight.w600)))]))])
           else
             Group(children: [
               for (final c in incidents)
                 Padding(
                   padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
                   child: Row(children: [
-                    Badge2(c.rule == 'recorder_offline' ? Icons.dns_outlined : (c.rule == 'connection_unstable' ? Icons.wifi_off_rounded : Icons.videocam_off_outlined), Level.bad, size: 40),
+                    Badge2(['recorder_offline', 'recorder_restarted', 'clock_wrong'].contains(c.rule) ? Icons.dns_outlined : (['disk_fault', 'disk_wear', 'storage_full', 'recording_stopped'].contains(c.rule) ? Icons.storage_rounded : (c.rule == 'connection_unstable' ? Icons.wifi_off_rounded : Icons.videocam_off_outlined)), Level.bad, size: 40),
                     const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(c.place.isEmpty ? title(c.rule) : c.place, style: const TextStyle(fontWeight: FontWeight.w700)),
