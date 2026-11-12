@@ -98,7 +98,7 @@ async def test_the_daily_summary_says_how_full_the_disks_are_and_how_many_days_a
     hour = datetime.now(ZoneInfo(await su.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", t))).hour
     await on(client, u, "daily_summary", hour=hour)
     await detectors.daily_summary()
-    assert "Recorders keep about 21 days of video." in await su.fetchval("SELECT body FROM app.alerts WHERE tenant_id=$1 AND rule_type='daily_summary'", t)
+    assert "Video kept: 21 days" in await su.fetchval("SELECT body FROM app.alerts WHERE tenant_id=$1 AND rule_type='daily_summary'", t)
 
 
 async def test_a_customer_sees_what_the_recorder_last_said_about_itself(client, make, su):

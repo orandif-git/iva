@@ -27,7 +27,8 @@ String describe(AlertDef d, Map<String, int> v, {String? where}) {
     'queue_long' => 'Alert me when more than ${n('length', 6)} people are waiting in $place for ${n('minutes', 5)} minutes or more.',
     'phone_use' => 'Alert me when a phone may be in use in $place for ${n('seconds', 30)} seconds or more. It never names a person.',
     'blocked_plate' => 'Alert me when a vehicle from my blocked list is seen.',
-    'daily_summary' => 'Send me a short summary every evening.',
+    'daily_summary' => 'Send me a summary every morning: how the business did and how the system is.',
+    'weekly_summary' => 'Send me a summary every Monday: the week, and how it compares with the week before.',
     _ => d.description,
   };
 }

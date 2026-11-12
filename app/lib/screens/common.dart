@@ -128,7 +128,7 @@ IconData iconForType(String type, {bool smart = false}) => switch (type) {
       'after_hours' => Icons.nightlight_outlined,
       'vehicle_overstay' => Icons.timer_outlined,
       'low_confidence_plate' => Icons.plagiarism_outlined,
-      'daily_summary' => Icons.summarize_outlined,
+      'daily_summary' || 'weekly_summary' => Icons.summarize_outlined,
       'back_to_normal' => Icons.check_circle_outline_rounded,
       _ => smart ? Icons.remove_red_eye_outlined : Icons.notifications_none_rounded,
     };

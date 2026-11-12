@@ -13,9 +13,8 @@ from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20           # a flood guard for ordinary alerts; a critical alert is never held back by it
 # A rule the customer has never touched. Every System Alert that exists is on from the start, and so are blocked vehicles; they appear in the app until recipients are added.
-# The daily summary is a message every day, so it is something a customer asks for.
-# Alerts that depend on what the customer wants, so they are something a customer asks for: a summary every day, and a number of days of video to keep.
-OPT_IN = {"daily_summary", "retention_low"}
+# The daily and weekly summaries are on for everyone (Platform Admin can change that); a number of days of video to keep depends on what the customer wants, so they ask for it.
+OPT_IN = {"retention_low"}
 DEFAULT_ENABLED = {k for k in alert_catalog.BUILT if ALERT_TYPES[k]["family"] == alert_catalog.SYSTEM and k not in OPT_IN} | {"blocked_plate"}
 
 
@@ -42,8 +41,10 @@ def clips_wanted(tenant, rule) -> bool:
 
 async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", title: str | None = None, camera_id=None, camera_name: str = "",
                       details: dict | None = None, dedupe_key: str | None = None, cooldown_minutes: int = 10, evidence_id=None,
-                      evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False) -> UUID | None:
-    """Returns the new alert id, or None when nothing was raised (rule off, or the same alert was raised recently)."""
+                      evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False, recipient_ids: list | None = None,
+                      direct_ready: bool = True, push_on: bool = True, push_tamil: bool | None = None) -> UUID | None:
+    """Returns the new alert id, or None when nothing was raised (rule off, or the same alert was raised recently).
+    `recipient_ids` replaces the rule's recipients (the summaries use it for "the account owner"). `direct_ready` says whether a summary can be sent straight to WhatsApp now."""
     meta = ALERT_TYPES[rule_type]
     if rule_type not in await alert_catalog.visible(conn, tenant_id):      # switched off by the platform, or not part of this customer's plan
         return None
@@ -79,20 +80,24 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     if wait_until and ep and ep["active"] and "{clip_url}" in ep["payload_template"]:
         hold = wait_until            # only worth holding the event back when its payload carries the clip
     quiet = (not critical) and bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
-    if rule and rule["recipients"]:
-        await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold, critical=critical)
-    # the phone gets the alert's own name and one plain fact, not the longer message that goes by WhatsApp
-    ptitle, pbody = push_text.compose(rule_type, meta["title"], camera_name, details or {}, now.astimezone(tz).strftime("%I:%M %p").lstrip("0"), title, body or payload["location"])
-    await push.notify_alert(conn, tenant_id, alert_id, ptitle, pbody, level, quiet)
+    who = recipient_ids if recipient_ids is not None else (list(rule["recipients"]) if rule and rule["recipients"] else [])
+    if who:
+        await fan_out(conn, tenant_id, tenant, alert_id, rule_type, who, payload, quiet, hold_until=hold, critical=critical, direct_ready=direct_ready)
+    if push_on:
+        # the phone gets the alert's own name and one plain fact, not the longer message that goes by WhatsApp
+        ptitle, pbody = push_text.compose(rule_type, meta["title"], camera_name, details or {}, now.astimezone(tz).strftime("%I:%M %p").lstrip("0"), title, body or payload["location"], tamil=push_tamil)
+        await push.notify_alert(conn, tenant_id, alert_id, ptitle, pbody, level, quiet)
     return alert_id
 
 
-async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None, critical: bool = False) -> int:
+async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_ids: list[UUID], payload: dict, quiet: bool = False, hold_until=None, critical: bool = False,
+                  direct_ready: bool = True) -> int:
     """One queued event per person with a mobile number. Alerts go out by WhatsApp only, as a webhook event (see messaging/webhook.py).
     A message that must not be sent (switched off, quiet hours, too many in an hour, no webhook set up) is still recorded, as suppressed, with the reason.
     There is no monthly limit. A critical alert ignores quiet hours and the hourly flood guard."""
     people = await conn.fetch("SELECT id, name, phone FROM app.recipients WHERE tenant_id=$1 AND active AND id = ANY($2::uuid[])", tenant_id, recipient_ids)
-    endpoint = await conn.fetchval("SELECT active FROM platform.webhook_endpoints WHERE alert_type=$1", alert_type)
+    direct = alert_type in alert_catalog.DIRECT_SEND
+    endpoint = direct_ready if direct else await conn.fetchval("SELECT active FROM platform.webhook_endpoints WHERE alert_type=$1", alert_type)
     n = 0
     for p in people:
         if not p["phone"]:
@@ -101,7 +106,7 @@ async def fan_out(conn, tenant_id, tenant, alert_id, alert_type: str, recipient_
         if not tenant["msg_whatsapp"]:
             why = "WhatsApp messages are switched off for this account."
         elif not endpoint:
-            why = "No webhook is set up for this alert yet."
+            why = "WhatsApp summaries are not set up yet." if direct else "No webhook is set up for this alert yet."
         elif quiet:
             why = "Quiet hours."
         elif not critical and await conn.fetchval("SELECT count(*) FROM app.notifications WHERE recipient_id=$1 AND channel='whatsapp' AND created_at > now() - interval '1 hour' "

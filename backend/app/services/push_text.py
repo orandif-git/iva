@@ -40,7 +40,8 @@ _TEXT = {
     "view_changed": lambda d, c: f"the lens is covered as of {c}." if d["what"] == "covered" else f"the view changed at {c}.",
     "picture_poor": lambda d, c: f"the picture is too {d['what']} to see clearly.",
     "counting_stopped": lambda d, c: f"no visitors counted in the last {_plural(d['hours'], 'hour', 'hours')}.",
-    "daily_summary": lambda d, c: str(d["summary"]),
+    "daily_summary": lambda d, c: str(d["headline"]),
+    "weekly_summary": lambda d, c: str(d["headline"]),
 }
 def _tamil_for(minutes) -> str:
     m = int(float(minutes))
@@ -71,9 +72,10 @@ _TAMIL = {
     "view_changed": lambda d, c: f"{c}-ல இருந்து லென்ஸ் மூடி இருக்கு." if d["what"] == "covered" else f"{c}-க்கு வியூ மாறிருச்சு.",
     "picture_poor": lambda d, c: "பிக்சர் ரொம்ப இருட்டா இருக்கு." if d["what"] == "dark" else "பிக்சர் ரொம்ப ப்ளர் ஆ இருக்கு.",
     "counting_stopped": lambda d, c: f"கடந்த {int(d['hours'])} மணி நேரமா யாரும் கவுன்ட் ஆகல.",
-    "daily_summary": None,         # built from the day's numbers: the Tamil line is added by the caller when it has one
+    "daily_summary": lambda d, c: str(d["headline_ta"]),
+    "weekly_summary": lambda d, c: str(d["headline_ta"]),
 }
-_NO_PLACE = {"daily_summary"}
+_NO_PLACE = {"daily_summary", "weekly_summary"}
 
 
 def compose(rule_type: str, name: str, camera_name: str, details: dict, clock: str, title: str, body: str, tamil: bool | None = None) -> tuple[str, str]:
@@ -96,7 +98,7 @@ def compose(rule_type: str, name: str, camera_name: str, details: dict, clock: s
         t = None
         try:
             fn = _TAMIL.get(rule_type)
-            t = fn(details, clock) if fn else (details.get("summary_ta") if rule_type == "daily_summary" else None)
+            t = fn(details, clock) if fn else None
         except (KeyError, ValueError, TypeError):
             t = None
         if t:

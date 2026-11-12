@@ -336,6 +336,18 @@ void main() {
     expect(repo.saved.last.quietStart, isNull);
   });
 
+  testWidgets('Home shows the latest summary in blocks, without the title line or the closing line', (t) async {
+    await phone(t);
+    await t.pumpWidget(IVisionApp(repo: MockRepository()));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Daily summary'), 300, scrollable: find.byType(Scrollable).first);
+    await t.pumpAndSettle();
+    expect(find.text('Daily summary'), findsOneWidget);
+    expect(find.text('412 visitors yesterday (+8% on last Wednesday)'), findsOneWidget);
+    expect(find.text('Back Gate: picture too dark since 9 PM'), findsOneWidget);
+    expect(find.textContaining('Open the Jas iVision app'), findsNothing);
+  });
+
   testWidgets('Home shows a payment that is due with its date, and nothing when there is none', (t) async {
     await phone(t);
     final repo = MockRepository();

@@ -116,3 +116,12 @@ async def health_detail(ctx: CustomerCtx = Depends(customer_ctx())):
     from datetime import timedelta
     strip = [{"date": (today - timedelta(days=i)).isoformat(), "problems": by_day.get(today - timedelta(days=i), 0)} for i in range(6, -1, -1)]
     return {"cameras": cams, "days": strip}
+
+
+@router.get("/summary")
+async def latest_summary(ctx: CustomerCtx = Depends(customer_ctx())):
+    """The newest daily or weekly summary, whole, for the Home screen. The same text that went to WhatsApp."""
+    r = await ctx.conn.fetchrow("SELECT rule_type, body, details, created_at FROM app.alerts WHERE rule_type IN ('daily_summary','weekly_summary') ORDER BY created_at DESC LIMIT 1")
+    if not r:
+        return {"summary": None}
+    return {"summary": {"kind": "weekly" if r["rule_type"] == "weekly_summary" else "daily", "text": r["body"] or "", "created_at": r["created_at"]}}
