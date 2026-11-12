@@ -12,7 +12,7 @@ from ..db import db
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
 from ..messaging import evidence
-from ..services import alert_catalog
+from ..services import alert_catalog, rules
 from ..services.alert_catalog import ALERT_TYPES
 from ..schemas import Strict
 from ..services.alerts import DEFAULT_ENABLED
@@ -129,6 +129,7 @@ async def delete_recipient(rid: UUID, ctx: CustomerCtx = Depends(customer_ctx("a
     # Cancel first: deleting the person clears recipient_id on their messages, after which they could no longer be found.
     await ctx.conn.execute("UPDATE app.notifications SET status='cancelled', error='The person was removed.', locked_until=NULL WHERE recipient_id=$1 AND status='queued'", rid)
     await ctx.conn.execute("UPDATE app.alert_rules SET recipients = array_remove(recipients, $1)", rid)
+    await ctx.conn.execute("UPDATE app.rules SET recipients = array_remove(recipients, $1)", rid)
     await ctx.conn.execute("DELETE FROM app.recipients WHERE id=$1", rid)
     await ctx.audit("recipient.delete", "recipient", rid)
 
@@ -143,25 +144,7 @@ class RuleIn(Strict):
     quiet_end: time | None = None
 
 
-def check_params(rule_type: str, params: dict) -> dict:
-    spec = ALERT_TYPES[rule_type]["params"]
-    unknown = set(params) - set(spec)
-    if unknown:
-        raise ApiError(422, "invalid_params", f"Unknown setting: {', '.join(sorted(unknown))}.")
-    out = {}
-    for k, s in spec.items():
-        v = params.get(k, s["default"])
-        if s["type"] == "boolean":
-            if not isinstance(v, bool):
-                raise ApiError(422, "invalid_params", f"{k} must be on or off.")
-            out[k] = v
-            continue
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or (s["type"] == "integer" and int(v) != v):
-            raise ApiError(422, "invalid_params", f"{k} must be a number.")
-        if not s["min"] <= v <= s["max"]:
-            raise ApiError(422, "invalid_params", f"{k} must be between {s['min']} and {s['max']}.")
-        out[k] = int(v) if s["type"] == "integer" else v
-    return out
+check_params = rules.check_params          # kept here for callers that imported it from this module
 
 
 def _rule_out(rule_type: str, r) -> dict:
@@ -170,7 +153,8 @@ def _rule_out(rule_type: str, r) -> dict:
     return {"type": rule_type, "family": meta["family"], "group": meta["group"], "ai": meta["family"] == alert_catalog.SMART,
             "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
             "settings": {k: {**v} for k, v in meta["params"].items()}, "enabled": enabled,
-            "params": (r["params"] if r else {}) or {k: v["default"] for k, v in meta["params"].items()},
+            "params": ((r["condition"] if r is not None and "condition" in r.keys() else r["params"]) if r else {}) or {k: v["default"] for k, v in meta["params"].items()},
+            "rule_id": str(r["id"]) if r else None,
             "channels": ["whatsapp"], "recipient_ids": list(r["recipients"]) if r else [],
             "quiet_start": r["quiet_start"].strftime("%H:%M") if r and r["quiet_start"] else None,
             "quiet_end": r["quiet_end"].strftime("%H:%M") if r and r["quiet_end"] else None}
@@ -178,7 +162,7 @@ def _rule_out(rule_type: str, r) -> dict:
 
 @router.get("/alert-types")
 async def alert_types(ctx: CustomerCtx = Depends(customer_ctx())):
-    rows = {r["rule_type"]: r for r in await ctx.conn.fetch("SELECT * FROM app.alert_rules")}
+    rows = {r["rule_type"]: r for r in await ctx.conn.fetch("SELECT * FROM app.rules WHERE is_default")}
     return [_rule_out(t, rows.get(t)) for t in await alert_catalog.visible(ctx.conn, ctx.tenant_id)]
 
 
@@ -210,6 +194,9 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx = Depend
            ON CONFLICT (tenant_id, rule_type) DO UPDATE SET enabled=$3, params=$4, channels=$5::app.channel_kind[], recipients=$6, quiet_start=$7, quiet_end=$8
            RETURNING *""", ctx.tenant_id, rule_type, body.enabled, params, body.channels, ids, body.quiet_start, body.quiet_end)
     await ctx.audit("alert_rule.update", "alert_rule", row["id"], {"type": rule_type, "enabled": body.enabled, "channels": body.channels, "recipients": len(ids), "params": params})
+    # The account-wide default rule is the same setting seen from the rule builder, so both screens always agree.
+    await rules.mirror_default(ctx.conn, ctx.tenant_id, rule_type, enabled=body.enabled, params=params, recipients=ids,
+                               quiet_start=body.quiet_start, quiet_end=body.quiet_end)
     return {**_rule_out(rule_type, row), "warnings": warnings}
 
 

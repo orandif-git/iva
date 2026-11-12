@@ -418,7 +418,7 @@ class RecorderHealthCard extends StatelessWidget {
       return Padding(
         padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
         child: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: fg, size: 21)),
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.chip)), child: Icon(icon, color: fg, size: 21)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)), Text(sub, style: TextStyle(color: t.fg2, fontSize: 12.5))])),
         ]),

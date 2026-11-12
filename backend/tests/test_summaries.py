@@ -47,7 +47,7 @@ async def world(client, make, su, provider):
     owner = await make.staff("owner")
     h = owner["headers"]
     assert (await client.put("/admin/v1/summaries/key", json={"key": KEY}, headers=h)).status_code == 200
-    r = await client.put("/admin/v1/summaries", json={"config": {"url": f"https://localhost:{srv.port}/api/v1/direct-send/send", "gap": 0, "retries": 2}}, headers=h)
+    r = await client.put("/admin/v1/summaries", json={"config": {"url": srv.url("/api/v1/direct-send/send"), "gap": 0, "retries": 2}}, headers=h)
     assert r.status_code == 200, r.text
     yield {"admin": h, "provider": p, "srv": srv}
     await su.execute("DELETE FROM platform.summary_settings")          # one test's hours and key must not leak into the next

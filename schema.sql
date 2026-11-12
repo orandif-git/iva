@@ -638,10 +638,39 @@ CREATE TABLE app.alert_rules (
   UNIQUE (tenant_id, rule_type)
 );
 
+-- The rules a customer builds in the app: one per camera, per marked area, or for the whole account. Several rules of the
+-- same kind can exist (a queue limit at the till and another at the gate), which app.alert_rules could not express.
+-- A rule with is_default marks the account-wide setting that the old alert-types screen writes; it keeps that screen working
+-- while the rule builder is rolled out.
+CREATE TABLE app.rules (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  name        text NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  rule_type   text NOT NULL,                           -- a key of the alert catalogue (app/services/alert_catalog.py)
+  camera_id   uuid REFERENCES app.cameras(id) ON DELETE CASCADE,
+  zone_id     uuid REFERENCES app.camera_zones(id) ON DELETE CASCADE,
+  condition   jsonb NOT NULL DEFAULT '{}',             -- thresholds for this rule; an area rule may leave them on the zone
+  channels    app.channel_kind[] NOT NULL DEFAULT '{whatsapp}',
+  recipients  uuid[] NOT NULL DEFAULT '{}',            -- app.recipients.id
+  quiet_start time,
+  quiet_end   time,
+  enabled     boolean NOT NULL DEFAULT false,
+  is_default  boolean NOT NULL DEFAULT false,
+  version     integer NOT NULL DEFAULT 1,              -- bumped on every change, so two edits cannot silently overwrite each other
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT rules_zone_needs_camera CHECK (zone_id IS NULL OR camera_id IS NOT NULL)
+);
+CREATE INDEX rules_tenant_idx ON app.rules (tenant_id, rule_type);
+CREATE INDEX rules_tenant_enabled_idx ON app.rules (tenant_id, enabled);
+CREATE INDEX rules_camera_idx ON app.rules (camera_id) WHERE camera_id IS NOT NULL;
+CREATE INDEX rules_zone_idx ON app.rules (zone_id) WHERE zone_id IS NOT NULL;
+CREATE UNIQUE INDEX rules_one_default_idx ON app.rules (tenant_id, rule_type) WHERE is_default;
+
 CREATE TABLE app.alerts (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  rule_id         uuid REFERENCES app.alert_rules(id) ON DELETE SET NULL,
+  rule_id         uuid,                                  -- app.rules.id, or app.alert_rules.id for an alert raised before the rule builder
   rule_type       text,
   camera_id       uuid REFERENCES app.cameras(id) ON DELETE SET NULL,
   severity        text NOT NULL CHECK (severity IN ('info','warning','critical')),

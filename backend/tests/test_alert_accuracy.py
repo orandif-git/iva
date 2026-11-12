@@ -16,7 +16,7 @@ def test_the_people_inside_never_go_below_zero_part_way_through_the_day():
 
 
 async def test_occupancy_is_counted_for_each_place_not_all_places_added_together(client, make, su):
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='crowding'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='crowding'; DELETE FROM app.alert_rules WHERE rule_type='crowding'")
     t, u, (a, b), _ = await setup_cameras(client, make, footfall=2, anpr=0)
     await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'crowding',true,$2)", t, json.dumps({"people": 30, "picture_minutes": 0}))
     # a second place: the second camera belongs to another recorder
@@ -31,11 +31,11 @@ async def test_occupancy_is_counted_for_each_place_not_all_places_added_together
     await detectors.crowding()
     rows = await su.fetch("SELECT title, body FROM app.alerts WHERE tenant_id=$1", t)
     assert [r["title"] for r in rows] == ["Occupancy limit exceeded at Second shop"] and "About 35 people" in rows[0]["body"]
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='crowding'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='crowding'; DELETE FROM app.alert_rules WHERE rule_type='crowding'")
 
 
 async def test_an_overstay_is_not_reported_for_an_allowed_vehicle_or_one_that_was_seen_again(client, make, su):
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='vehicle_overstay'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='vehicle_overstay'; DELETE FROM app.alert_rules WHERE rule_type='vehicle_overstay'")
     t, u, _, (cam,) = await setup_cameras(client, make)
     await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'vehicle_overstay',true,$2)", t, json.dumps({"max_minutes": 60}))
     assert (await client.post("/v1/vehicle-lists", json={"plate_text": "KA05MN1000", "list_type": "allowed", "note": "Owner"}, headers=u["headers"])).status_code == 201
@@ -49,7 +49,7 @@ async def test_an_overstay_is_not_reported_for_an_allowed_vehicle_or_one_that_wa
     titles = sorted(r["title"] for r in await su.fetch("SELECT title FROM app.alerts WHERE tenant_id=$1 AND rule_type='vehicle_overstay'", t))
     assert titles == ["Vehicle overstay: KA05MN2000", "Vehicle overstay: KA05MN3000"], "the second visit of 2000 is itself over an hour; its first visit is not reported"
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND title LIKE '%KA05MN2000'", t) == 1
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='vehicle_overstay'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='vehicle_overstay'; DELETE FROM app.alert_rules WHERE rule_type='vehicle_overstay'")
 
 
 async def test_your_own_people_inside_a_queue_area_are_not_counted_as_the_queue(client, make, su):

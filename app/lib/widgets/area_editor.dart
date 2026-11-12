@@ -68,7 +68,7 @@ class AreaEditor extends StatelessWidget {
         Text(_help(), style: TextStyle(color: t.fg2)),
         const SizedBox(height: 8),
         SelectionContainer.disabled(child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(Radii.control),
           child: AspectRatio(
             aspectRatio: 16 / 9,
             child: LayoutBuilder(builder: (context, box) {
@@ -149,7 +149,7 @@ class _Status extends StatelessWidget {
     final text = c.closed ? (bad ? c.problem! : 'Area set · ${c.points.length} corners') : (c.points.isEmpty ? 'Not drawn yet' : '${c.points.length} corners so far');
     final bg = c.closed ? (bad ? t.critSoft : t.okSoft) : t.surface2;
     final fg = c.closed ? (bad ? t.crit : t.okInk) : t.fg2;
-    return Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)), child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 12)));
+    return Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.pill)), child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 12)));
   }
 }
 

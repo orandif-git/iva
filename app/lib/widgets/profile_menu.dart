@@ -58,8 +58,8 @@ class ProfileButton extends StatelessWidget {
             child: SizedBox(
               width: width,
               child: DecoratedBox(
-                decoration: BoxDecoration(color: Tok.of(ctx).surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: Tok.of(ctx).line), boxShadow: [BoxShadow(color: Tok.of(ctx).shadow.withValues(alpha: .35), blurRadius: 32, offset: const Offset(0, 12))]),
-                child: ClipRRect(borderRadius: BorderRadius.circular(22), child: SingleChildScrollView(child: content(ctx))),
+                decoration: BoxDecoration(color: Tok.of(ctx).surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: Tok.of(ctx).line), boxShadow: [BoxShadow(color: Tok.of(ctx).shadow.withValues(alpha: .35), blurRadius: 32, offset: const Offset(0, 12))]),
+                child: ClipRRect(borderRadius: BorderRadius.circular(Radii.card), child: SingleChildScrollView(child: content(ctx))),
               ),
             ),
           ),
@@ -197,7 +197,7 @@ class _ChangePasswordPanelState extends State<ChangePasswordPanel> {
         TextField(controller: b, obscureText: !show, onSubmitted: (_) => busy ? null : _save(), decoration: dec('Confirm new password')),
         Align(alignment: Alignment.centerLeft, child: TextButton.icon(style: TextButton.styleFrom(minimumSize: const Size(44, 36), padding: const EdgeInsets.symmetric(horizontal: 4)), onPressed: () => setState(() => show = !show), icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18), label: Text(show ? 'Hide passwords' : 'Show passwords'))),
         InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(Radii.chip),
           onTap: () => setState(() => others = !others),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),

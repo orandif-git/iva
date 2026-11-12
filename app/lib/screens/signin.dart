@@ -109,7 +109,7 @@ class _PhoneLayout extends StatelessWidget {
           Transform.translate(
             offset: const Offset(0, -32),
             child: Container(
-              decoration: BoxDecoration(color: t.bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(32)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 30, offset: const Offset(0, -8))]),
+              decoration: BoxDecoration(color: t.bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(Radii.sheet)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 30, offset: const Offset(0, -8))]),
               constraints: BoxConstraints(minHeight: media.size.height - 250),
               padding: EdgeInsets.fromLTRB(24, 28, 24, 24 + media.padding.bottom),
               child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: form)),
@@ -131,7 +131,7 @@ class _Form extends StatelessWidget {
       const Text('Welcome back', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, letterSpacing: -.6)),
       const SizedBox(height: 4),
       Text('Sign in to see how your business is doing.', style: TextStyle(color: t.fg2, fontSize: 15)),
-      if (s.widget.message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Row(children: [Icon(Icons.info_outline_rounded, size: 18, color: t.brand), const SizedBox(width: 8), Expanded(child: Text(s.widget.message!, style: TextStyle(color: t.fg, fontWeight: FontWeight.w600, fontSize: 14)))]))),
+      if (s.widget.message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.chip)), child: Row(children: [Icon(Icons.info_outline_rounded, size: 18, color: t.brand), const SizedBox(width: 8), Expanded(child: Text(s.widget.message!, style: TextStyle(color: t.fg, fontWeight: FontWeight.w600, fontSize: 14)))]))),
       const SizedBox(height: 26),
       AutofillGroup(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -156,7 +156,7 @@ class _Form extends StatelessWidget {
       if (s.error != null)
         Padding(
             padding: const EdgeInsets.only(top: 14),
-            child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: t.critSoft, borderRadius: BorderRadius.circular(12)), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.error_outline, color: t.crit, size: 20), const SizedBox(width: 8), Expanded(child: Text(s.error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600)))]))),
+            child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: t.critSoft, borderRadius: BorderRadius.circular(Radii.chip)), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.error_outline, color: t.crit, size: 20), const SizedBox(width: 8), Expanded(child: Text(s.error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600)))]))),
       const SizedBox(height: 22),
       FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(44, 54)), onPressed: s.busy ? null : s._go, child: Text(s.busy ? 'Signing in…' : 'Sign in')),
       const SizedBox(height: 18),
@@ -190,7 +190,7 @@ class _HeroPanel extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: Row(children: [
-                  Container(width: 38, height: 38, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)), child: icon == Icons.auto_awesome_outlined ? const Center(child: AiSpark(size: 20, color: Colors.white)) : Icon(icon, color: Colors.white, size: 20)),
+                  Container(width: 38, height: 38, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(Radii.chip)), child: icon == Icons.auto_awesome_outlined ? const Center(child: AiSpark(size: 20, color: Colors.white)) : Icon(icon, color: Colors.white, size: 20)),
                   const SizedBox(width: 14),
                   Expanded(child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w500))),
                 ]),

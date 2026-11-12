@@ -5,11 +5,11 @@ is kept in `docs/design/` (`Main`, `Live`, `Evidence`, `Setup`) and the working 
 
 | What | Where |
 |---|---|
-| Colours, corner sizes, motion timings, heading style | `app/lib/theme.dart` (`Tok`, `Radii`, `Motion`, `display()`) |
+| Colours, corner sizes, motion timings, heading style, changing figures | `app/lib/theme.dart` (`Tok`, `Radii`, `Motion`, `display()`, `figure()`) |
 | Motion and loading | `app/lib/widgets/motion.dart` (`RiseIn`, `Skeleton`, `SkeletonPage`, `SkeletonRows`, `Pressable`, `Grow`) |
 | Shared pieces | `app/lib/screens/common.dart` (`PageTitle`, `StatusPill`, `StatStrip`, `Segments`, `Group`, `GroupLabel`, `Section`, `Pill`, `Badge2`, `EmptyState`) |
 | Tab bar and top bar | `app/lib/widgets/glass_nav.dart`, `app/lib/main.dart` (`Shell`) |
-| Staff console (`/staff`) | the "design system" block at the end of `backend/web/css/app.css`: the same tokens as CSS variables, fonts in `backend/web/css/fonts/` |
+| Staff console (`/platform`) | the "design system" block at the end of `backend/web/css/app.css`: the same tokens as CSS variables, fonts in `backend/web/css/fonts/` |
 
 Use these pieces. Do not write a colour, a corner size or an animation by hand in a screen: if something is missing, add it to the shared files first.
 
@@ -66,8 +66,8 @@ Colour always means the same thing. Never use red, green, amber or violet as dec
 
 ## Before you finish a change
 
-1. Only shared tokens and pieces were used (search your change for `Color(0x` and `BorderRadius.circular(` with a bare number).
-2. It works at 390 wide and at 1200 wide, in light and dark.
+1. Only shared tokens and pieces were used. Run `dart run tool/check_design.dart` in `app/`: it fails on a hand-written colour or a corner larger than a small control.
+2. It works at 390 wide and at 1200 wide, in light and dark (`test/design_test.dart` checks both widths).
 3. Loading shows a skeleton, an error says what to do, an empty state says what will appear.
-4. Buttons are real buttons with a spoken label; nothing is smaller than 44.
+4. Buttons are real buttons with a spoken label; nothing you press is smaller than 44. Figures that change while you watch use `figure()` (tabular digits), so they do not shift.
 5. `flutter analyze` and `flutter test` pass.

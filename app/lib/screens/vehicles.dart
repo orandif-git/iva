@@ -237,7 +237,7 @@ class _PlateDetailState extends State<PlateDetail> {
               final blocked = entry != null || (p.blocked && snap.data == null);
               return ListView(padding: const EdgeInsets.all(16), children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(Radii.button),
                   child: AspectRatio(
                     aspectRatio: 16 / 9,
                     child: FutureBuilder<Uint8List?>(

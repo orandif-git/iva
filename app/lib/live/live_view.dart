@@ -11,6 +11,7 @@ import '../screens/common.dart' show Segments;
 import '../theme.dart';
 import '../widgets/brand.dart';
 import 'live_rules.dart';
+import 'webrtc_player.dart';
 
 enum PictureSize { fit, fill, enlarge }
 
@@ -34,6 +35,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
   String? error;
   Timer? _tick, _frames;
   StreamSubscription<Uint8List>? _video;      // moving pictures; if it cannot start or drops, a picture every second takes over
+  Widget? _smooth;                            // the WebRTC player while it is the picture; null means pictures
   bool _busy = false;
 
   @override
@@ -85,6 +87,11 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
   }
 
   Future<void> _openVideo(LiveSession s) async {
+    // Smooth video first when the app can do it; the picture stream is started by _fallBack if it does not come up.
+    if (widget.repo.smoothVideo) {
+      setState(() => _smooth = LiveWebRtc(key: ValueKey('smooth-${s.id}'), repo: widget.repo, session: s, onFallback: () => _fallBack(s)));
+      return;
+    }
     try {
       final v = await widget.repo.liveStream(s);
       if (!mounted || session != s) return;
@@ -104,6 +111,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
   void _fallBack(LiveSession s) {
     if (!mounted || session != s || (clock?.ended ?? true)) return;
     _video = null;
+    setState(() => _smooth = null);
     _startPictures();
   }
 
@@ -113,6 +121,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
     c.tick();
     if (c.ended) {
       _stopTimers();
+      _smooth = null;
       error = mode == LiveMode.ai ? 'AI view closes after 30 seconds to save bandwidth.' : 'Live view closes after 2 minutes to save bandwidth.';
     }
     if (mounted) setState(() {});
@@ -143,7 +152,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
     _stopTimers();
     clock?.stop();
     if (s != null) widget.repo.stopLive(s).catchError((_) {});
-    setState(() { session = null; clock = null; image = null; error = why; });
+    setState(() { session = null; clock = null; image = null; _smooth = null; error = why; });
   }
 
   @override
@@ -153,14 +162,14 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
     final running = session != null && c != null && !c.ended;
     final ended = c != null && c.ended;
     final h = MediaQuery.sizeOf(context).height;
-    Widget scene = _Scene(ring: running ? (c.left / c.rules.period).clamp(0.0, 1.0) : null, ringText: running ? c.countdown : '', idle: !running && !ended && widget.camera.working, ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? 'AI view' : 'Live') : 'Picture on request'}');
+    Widget scene = _Scene(ring: running ? (c.left / c.rules.period).clamp(0.0, 1.0) : null, ringText: running ? c.countdown : '', idle: !running && !ended && widget.camera.working, ai: running && mode == LiveMode.ai, t: c?.elapsed ?? 0, image: running ? image : null, video: running ? _smooth : null, running: running, connecting: running && c.connecting, ended: ended, offline: !widget.camera.working, label: '${widget.camera.name} · ${running ? (mode == LiveMode.ai ? 'AI view' : 'Live') : 'Picture on request'}');
     final picture = switch (size) {
       PictureSize.fit => AspectRatio(aspectRatio: 16 / 9, child: scene),
       PictureSize.fill => SizedBox(height: h * 0.6, child: FittedBox(fit: BoxFit.cover, clipBehavior: Clip.hardEdge, child: SizedBox(width: 1600, height: 900, child: scene))),
       PictureSize.enlarge => SizedBox(height: h * 0.72, width: double.infinity, child: Center(child: RotatedBox(quarterTurns: 1, child: AspectRatio(aspectRatio: 16 / 9, child: scene)))),
     };
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(20), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
+      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(Radii.tile), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
       if (widget.compact) ...[
         const SizedBox(height: 10),
         Segments<PictureSize>(
@@ -212,18 +221,19 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
 
 /// The demo picture: a still scene with people, and in AI view the boxes and the marked area drawn on it.
 class _Scene extends StatelessWidget {
-  const _Scene({required this.ring, required this.ringText, required this.idle, required this.ai, required this.t, required this.image, required this.running, required this.connecting, required this.ended, required this.offline, required this.label});
+  const _Scene({required this.ring, required this.ringText, required this.idle, required this.ai, required this.t, required this.image, required this.running, required this.connecting, required this.ended, required this.offline, required this.label, this.video});
   final bool ai, running, connecting, ended, offline, idle;
   final double? ring;
   final String ringText;
   final int t;
   final Uint8List? image;
+  final Widget? video;          // the WebRTC player, once it has produced a frame
   final String label;
 
   @override
   Widget build(BuildContext context) {
     return Stack(fit: StackFit.expand, children: [
-      if (image != null) Image.memory(image!, fit: BoxFit.cover, gaplessPlayback: true) else CustomPaint(painter: _ScenePainter(ai: ai, t: t, people: running && !connecting)),
+      if (video != null) video! else if (image != null) Image.memory(image!, fit: BoxFit.cover, gaplessPlayback: true) else CustomPaint(painter: _ScenePainter(ai: ai, t: t, people: running && !connecting)),
       if (running && !connecting) Positioned(left: 10, top: 10, child: ai ? const _AiTag() : const _LiveTag()),
       if (ring != null && !connecting) Positioned(right: 10, top: 10, child: _Ring(progress: ring!, text: ringText, ai: ai)),
       if (idle) Center(child: Container(width: 64, height: 64, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .6), width: 2)), child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 38))),
@@ -249,12 +259,12 @@ class _ModeCard extends StatelessWidget {
       button: true,
       selected: on,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Radii.button),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: on ? (ai ? t.aiSoft : t.brandSoft) : t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? c : t.line, width: on ? 2 : 1.5)),
+          decoration: BoxDecoration(color: on ? (ai ? t.aiSoft : t.brandSoft) : t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: on ? c : t.line, width: on ? 2 : 1.5)),
           child: Row(children: [
             icon,
             const SizedBox(width: 10),
@@ -283,7 +293,7 @@ class _LiveTagState extends State<_LiveTag> with SingleTickerProviderStateMixin 
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.fromLTRB(9, 4, 11, 4),
-      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .55), borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .55), borderRadius: BorderRadius.circular(Radii.pill)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         FadeTransition(opacity: Tween(begin: .35, end: 1.0).animate(_c), child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFFFF4D3D), shape: BoxShape.circle))),
         const SizedBox(width: 6),
@@ -313,7 +323,7 @@ class _AiTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.fromLTRB(6, 3, 10, 3),
-      decoration: BoxDecoration(gradient: aiGradient, borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(gradient: aiGradient, borderRadius: BorderRadius.circular(Radii.pill)),
       child: const Row(mainAxisSize: MainAxisSize.min, children: [AiSpark(size: 15, color: Colors.white), SizedBox(width: 4), Text('AI view', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))]));
 }
 

@@ -65,7 +65,7 @@ class CountLineEditor extends StatelessWidget {
     final t = Tok.of(context);
     return SelectionContainer.disabled(
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(Radii.control),
         child: AspectRatio(
           aspectRatio: 16 / 9,
           child: ListenableBuilder(

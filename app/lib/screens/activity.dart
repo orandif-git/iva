@@ -185,7 +185,7 @@ class FilterMenu<T> extends StatelessWidget {
       position: PopupMenuPosition.under,
       offset: const Offset(0, 6),
       initialValue: value,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.button)),
       color: t.surface,
       elevation: 8,
       onOpened: HapticFeedback.selectionClick,
@@ -204,7 +204,7 @@ class FilterMenu<T> extends StatelessWidget {
       child: Container(
         height: 38,
         padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
-        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(19), border: Border.all(color: t.line)),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.tile), border: Border.all(color: t.line)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 16, color: t.brand),
           const SizedBox(width: 8),
@@ -288,7 +288,7 @@ class _StatsCard extends StatelessWidget {
         );
     final hair = Container(width: 1, color: t.line);
     return Container(
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: t.line)),
+      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.tile), border: Border.all(color: t.line)),
       child: Column(children: [
         IntrinsicHeight(child: Row(children: [stat('People in', '${r.peopleIn}', Icons.south_west_rounded), hair, stat('People out', '${r.peopleOut}', Icons.north_east_rounded)])),
         Divider(height: 1, color: t.line),
@@ -437,7 +437,7 @@ class HealthSection extends StatelessWidget {
         Widget card(String label, String value, {bool bad = false}) => Expanded(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line)),
+                decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: t.line)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(label, style: TextStyle(color: t.fg2, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
@@ -509,7 +509,7 @@ class _CameraRow extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.fromLTRB(cardPad(context), 12, cardPad(context), 12),
       child: Row(children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)), child: Icon(c.online ? Icons.videocam_outlined : Icons.videocam_off_outlined, color: fg, size: 21)),
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.chip)), child: Icon(c.online ? Icons.videocam_outlined : Icons.videocam_off_outlined, color: fg, size: 21)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),

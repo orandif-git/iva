@@ -48,7 +48,7 @@ class _MorePageState extends State<MorePage> {
           child: Padding(
             padding: EdgeInsets.fromLTRB(cardPad(context), 14, 12, 14),
             child: Row(children: [
-              Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: t.brand, size: 21)),
+              Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.chip)), child: Icon(icon, color: t.brand, size: 21)),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
@@ -343,13 +343,13 @@ class _Pick extends StatelessWidget {
       selected: on,
       enabled: enabled,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Radii.button),
         onTap: enabled ? onTap : null,
         child: Opacity(
           opacity: enabled ? 1 : .55,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
+            decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
             child: Row(children: [
               Badge2(icon, on ? Level.ok : Level.mute, size: 40),
               const SizedBox(width: 14),
@@ -433,7 +433,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       Row(children: [
                         Container(width: 52, height: 52, alignment: Alignment.center, decoration: BoxDecoration(color: t.brand, shape: BoxShape.circle), child: Text(me.name.isEmpty ? '?' : me.name[0].toUpperCase(), style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontSize: 20, fontWeight: FontWeight.w700))),
                         const SizedBox(width: 14),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(me.name, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700)), Text(me.business, style: TextStyle(color: t.fg2, fontSize: 13)), if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 6), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(99)), child: Text('Owner or manager', style: TextStyle(color: t.brand, fontSize: 12, fontWeight: FontWeight.w600))))])),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(me.name, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700)), Text(me.business, style: TextStyle(color: t.fg2, fontSize: 13)), if (me.role == 'admin') Padding(padding: const EdgeInsets.only(top: 6), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.pill)), child: Text('Owner or manager', style: TextStyle(color: t.brand, fontSize: 12, fontWeight: FontWeight.w600))))])),
                       ]),
                       if (me.plan != null || used != null) ...[
                         const SizedBox(height: 16),
@@ -696,7 +696,7 @@ class _HoursCardState extends State<_HoursCard> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
           child: Row(children: [
-            Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.schedule_rounded, color: t.brand, size: 21)),
+            Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.chip)), child: Icon(Icons.schedule_rounded, color: t.brand, size: 21)),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('We know when you are open', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),

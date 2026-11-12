@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
@@ -9,6 +10,7 @@ import 'firebase_push.dart';
 import 'push.dart';
 import 'repo.dart';
 import 'scope.dart';
+import 'state/app_state.dart';
 import 'screens/more.dart';
 import 'widgets/brand.dart';
 import 'widgets/glass_nav.dart';
@@ -150,26 +152,44 @@ class _IVisionAppState extends State<IVisionApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Jas iVision',
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light).copyWith(pageTransitionsTheme: _pageTransitions),
-        darkTheme: buildTheme(Brightness.dark).copyWith(pageTransitionsTheme: _pageTransitions),
-        themeMode: switch (choice) { ThemeChoice.light => ThemeMode.light, ThemeChoice.dark => ThemeMode.dark, ThemeChoice.auto => ThemeMode.system },
-        home: _inviteToken != null
-            ? SetPasswordPage(client: widget.client!, token: _inviteToken!, onDone: () { widget.browser.replaceUrl('/'); setState(() { _inviteToken = null; note = 'Your password is saved. Sign in with it now.'; }); })
-            : _waitingForConsole
-                ? const Scaffold(body: Loading(text: "Opening the customer's app"))
-                : _viewEnded
-                    ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('The view-only session has ended. You can close this tab.', textAlign: TextAlign.center))))
-                    : starting
-                        ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
-                        : repo == null
-                            ? (_viewAs == null && widget.browser.openedByStaff
-                                ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text("Could not open the customer's app. Close this tab and try again from the console.", textAlign: TextAlign.center))))
-                                : SignInPage(client: widget.client!, onDone: _signedIn, message: note, browser: widget.browser))
-                            : AppScope(onSignedOut: () => _signOut('Please sign in again.'), child: Shell(repo: repo!, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push, viewing: _viewAs?.tenant)),
-      );
+  Widget build(BuildContext context) {
+    final r = repo;
+    return MaterialApp(
+      title: 'Jas iVision',
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(Brightness.light).copyWith(pageTransitionsTheme: _pageTransitions),
+      darkTheme: buildTheme(Brightness.dark).copyWith(pageTransitionsTheme: _pageTransitions),
+      themeMode: switch (choice) { ThemeChoice.light => ThemeMode.light, ThemeChoice.dark => ThemeMode.dark, ThemeChoice.auto => ThemeMode.system },
+      home: _inviteToken != null
+          ? SetPasswordPage(client: widget.client!, token: _inviteToken!, onDone: () { widget.browser.replaceUrl('/'); setState(() { _inviteToken = null; note = 'Your password is saved. Sign in with it now.'; }); })
+          : _waitingForConsole
+              ? const Scaffold(body: Loading(text: "Opening the customer's app"))
+              : _viewEnded
+                  ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('The view-only session has ended. You can close this tab.', textAlign: TextAlign.center))))
+                  : starting
+                      ? const Scaffold(body: Loading(text: 'Starting Jas iVision'))
+                      : r == null
+                          ? (_viewAs == null && widget.browser.openedByStaff
+                              ? const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text("Could not open the customer's app. Close this tab and try again from the console.", textAlign: TextAlign.center))))
+                              : SignInPage(client: widget.client!, onDone: _signedIn, message: note, browser: widget.browser))
+                          : _SignedInScope(
+                              repo: r,
+                              child: AppScope(
+                                onSignedOut: () => _signOut('Please sign in again.'),
+                                child: Shell(repo: r, choice: choice, onChoice: _setTheme, onSignOut: _signOut, push: _push, viewing: _viewAs?.tenant),
+                              ),
+                            ),
+    );
+  }
+}
+
+/// Gives every screen under it the signed-in repository, so a new screen can read it instead of being handed it.
+class _SignedInScope extends StatelessWidget {
+  const _SignedInScope({required this.repo, required this.child});
+  final Repository repo;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => ProviderScope(overrides: [repositoryProvider.overrideWithValue(repo)], child: child);
 }
 
 class Shell extends StatefulWidget {
@@ -379,9 +399,9 @@ class _NavItem extends StatelessWidget {
             duration: const Duration(milliseconds: 180),
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(Radii.control)),
             child: Row(children: [
-              AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12, left: -6), decoration: BoxDecoration(color: t.accent, borderRadius: BorderRadius.circular(4))),
+              Transform.translate(offset: const Offset(-6, 0), child: AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: t.accent, borderRadius: BorderRadius.circular(4)))),
               def.glyph(selected, selected ? t.brand : t.fg2, 24),
               const SizedBox(width: 14),
               Expanded(child: Text(def.label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15))),

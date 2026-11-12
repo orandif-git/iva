@@ -272,7 +272,7 @@ class _Earlier extends StatelessWidget {
     final t = Tok.of(context);
     final n = groups.fold<int>(0, (s, g) => s + g.openItems.length);
     return Container(
-      decoration: BoxDecoration(color: t.surface2, borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: t.surface2, borderRadius: BorderRadius.circular(Radii.button)),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -344,8 +344,8 @@ class _FeaturedState extends State<_Featured> {
               child: FutureBuilder<Uint8List?>(
                 future: picture,
                 builder: (context, p) => p.data != null
-                    ? Image.memory(p.data!, fit: BoxFit.cover, gaplessPlayback: true, semanticLabel: 'What the camera saw: ${a.title}', errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1B2A41)))
-                    : (p.connectionState == ConnectionState.waiting ? const Skeleton(height: 150, radius: 0) : Container(color: const Color(0xFF1B2A41))),
+                    ? Image.memory(p.data!, fit: BoxFit.cover, gaplessPlayback: true, semanticLabel: 'What the camera saw: ${a.title}', errorBuilder: (_, __, ___) => Container(color: t.picture))
+                    : (p.connectionState == ConnectionState.waiting ? const Skeleton(height: 150, radius: 0) : Container(color: t.picture)),
               ),
             ),
           ),
@@ -412,12 +412,12 @@ class _CameraStripState extends State<_CameraStrip> {
                       width: 150,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(Radii.button),
                           child: SizedBox(
                             height: 96,
                             width: 150,
                             child: Stack(children: [
-                              Positioned.fill(child: ColoredBox(color: c.working ? const Color(0xFF1B2A41) : t.surface2)),
+                              Positioned.fill(child: ColoredBox(color: c.working ? t.picture : t.surface2)),
                               Positioned.fill(child: CameraPicture(repo: widget.repo, cameraId: c.id, active: c.working, every: const Duration(seconds: 15))),
                               Positioned(left: 8, bottom: 8, child: Pill(c.working ? 'Live' : 'Offline', c.working ? Level.ok : Level.bad)),
                             ]),
@@ -447,7 +447,7 @@ class _Health extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Tok.of(context);
     Widget row(IconData icon, String k, String v, Level l, {VoidCallback? onTap}) {
-      final dot = l == Level.ok ? t.okInk : (l == Level.warn ? const Color(0xFFD98A00) : t.crit);
+      final dot = l == Level.ok ? t.okInk : (l == Level.warn ? t.warnInk : t.crit);
       return InkWell(
         onTap: onTap,
         child: Padding(

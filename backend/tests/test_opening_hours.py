@@ -76,7 +76,7 @@ async def test_counting_stopped_is_said_once_for_an_online_camera_that_counts_no
 
 
 async def test_after_hours_activity_is_people_counted_while_closed_after_the_grace_time(client, make, su):
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='after_hours'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='after_hours'; DELETE FROM app.alert_rules WHERE rule_type='after_hours'")
     t, u, (foot,), _ = await setup_cameras(client, make)
     await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'after_hours',true,$2)", t, json.dumps({"grace_minutes": 30}))
     count = "INSERT INTO app.footfall_counts (tenant_id, camera_id, bucket_start, people_in, people_out) VALUES ($1,$2,date_trunc('minute', now() - interval '2 minutes'),2,0) ON CONFLICT DO NOTHING"
@@ -92,5 +92,5 @@ async def test_after_hours_activity_is_people_counted_while_closed_after_the_gra
     assert await detectors.after_hours() == 1 and await detectors.after_hours() == 0
     a = await su.fetchrow("SELECT title, body, severity FROM app.alerts WHERE tenant_id=$1", t)
     assert a["title"].startswith("After-hours activity at ") and "2 people were counted" in a["body"] and a["severity"] == "critical"
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='after_hours'")
+    await su.execute("DELETE FROM app.rules WHERE rule_type='after_hours'; DELETE FROM app.alert_rules WHERE rule_type='after_hours'")
     await su.execute("UPDATE app.tenants SET open_time=NULL, close_time=NULL WHERE id=$1", t)

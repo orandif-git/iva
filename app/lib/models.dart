@@ -490,3 +490,134 @@ class SummaryItem {
     return out;
   }
 }
+
+/// One rule the customer built: what to watch, on which camera or marked area, with which numbers, and who hears about it.
+///
+/// Several rules can exist for the same kind of alert (a queue limit at the till and another at the gate). A rule with no
+/// camera covers the whole account; that is also where the old alert-types screen writes its one setting per kind.
+class Rule {
+  final String id, name, type, title, description, family;
+  final bool enabled, isDefault, ai;
+  final String? cameraId, zoneId, quietStart, quietEnd, areaKind, areaLabel;
+  final Map<String, num> condition;
+  final List<String> recipientIds;
+  final int version;
+
+  const Rule({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.title,
+    required this.description,
+    required this.family,
+    required this.enabled,
+    required this.isDefault,
+    required this.ai,
+    required this.condition,
+    required this.recipientIds,
+    required this.version,
+    this.cameraId,
+    this.zoneId,
+    this.quietStart,
+    this.quietEnd,
+    this.areaKind,
+    this.areaLabel,
+  });
+
+  bool get wholeAccount => cameraId == null;
+  bool get forArea => zoneId != null;
+  bool get hasQuietHours => quietStart != null && quietEnd != null;
+
+  factory Rule.fromJson(Map<String, dynamic> j) {
+    num? n(Object? v) => v is num ? v : num.tryParse('$v');
+    return Rule(
+      id: j['id'] as String,
+      name: (j['name'] ?? '') as String,
+      type: j['rule_type'] as String,
+      title: (j['title'] ?? '') as String,
+      description: (j['description'] ?? '') as String,
+      family: (j['family'] ?? '') as String,
+      enabled: j['enabled'] == true,
+      isDefault: j['is_default'] == true,
+      ai: j['ai'] == true,
+      cameraId: j['camera_id'] as String?,
+      zoneId: j['zone_id'] as String?,
+      quietStart: j['quiet_start'] as String?,
+      quietEnd: j['quiet_end'] as String?,
+      areaKind: j['area_kind'] as String?,
+      areaLabel: j['area_label'] as String?,
+      condition: {
+        for (final e in ((j['condition'] as Map?) ?? const {}).entries)
+          if (n(e.value) != null) e.key as String: n(e.value)!
+      },
+      recipientIds: [for (final r in (j['recipient_ids'] as List? ?? const [])) '$r'],
+      version: (n(j['version']) ?? 1).toInt(),
+    );
+  }
+}
+
+/// A rule as the app sends it: on create, and as the changes on an edit.
+class RuleDraft {
+  final String name, type;
+  final String? cameraId, zoneId, quietStart, quietEnd;
+  final Map<String, num> condition;
+  final bool enabled;
+  final List<String> recipientIds;
+  final int? version;               // the version the person was looking at, so a second edit is not silently lost
+
+  const RuleDraft({
+    required this.name,
+    required this.type,
+    required this.condition,
+    required this.recipientIds,
+    this.cameraId,
+    this.zoneId,
+    this.quietStart,
+    this.quietEnd,
+    this.enabled = true,
+    this.version,
+  });
+
+  Map<String, dynamic> toJson({bool creating = true}) => {
+        if (creating) 'rule_type': type,
+        'name': name,
+        'camera_id': cameraId,
+        'zone_id': zoneId,
+        'condition': condition,
+        'enabled': enabled,
+        'recipient_ids': recipientIds,
+        'quiet_start': quietStart,
+        'quiet_end': quietEnd,
+        if (!creating) 'version': version,
+      };
+}
+
+/// What one test message did for each person on a rule.
+class RuleTest {
+  final int queued;
+  final List<String> sentTo;
+  final String? reason;
+  const RuleTest(this.queued, this.sentTo, {this.reason});
+  factory RuleTest.fromJson(Map<String, dynamic> j) => RuleTest(
+        (j['queued'] as num? ?? 0).toInt(),
+        [for (final p in (j['sent_to'] as List? ?? const [])) '$p'],
+        reason: j['reason'] as String?,
+      );
+}
+
+/// One recent message from a rule, so support can tell "the customer's network" from "we never sent it".
+class RuleDelivery {
+  final String id, status;
+  final String? person, error;
+  final DateTime? at;
+  const RuleDelivery(this.id, this.status, {this.person, this.error, this.at});
+  bool get sent => status == 'sent' || status == 'delivered';
+  bool get failed => status == 'failed';
+  factory RuleDelivery.fromJson(Map<String, dynamic> j) => RuleDelivery(
+        j['id'] as String,
+        (j['status'] ?? '') as String,
+        person: j['person'] as String?,
+        error: j['error'] as String?,
+        at: DateTime.tryParse((j['created_at'] ?? '') as String)?.toLocal(),
+      );
+}

@@ -80,7 +80,7 @@ class AppTabBar extends StatelessWidget {
                   height: 68,
                   decoration: BoxDecoration(
                     color: t.surface,
-                    borderRadius: BorderRadius.circular(34),
+                    borderRadius: BorderRadius.circular(Radii.bar),
                     border: Border.all(color: t.line),
                     boxShadow: [BoxShadow(color: t.shadow.withValues(alpha: dark ? .4 : .14), blurRadius: 28, offset: const Offset(0, 10))],
                   ),
@@ -94,7 +94,7 @@ class AppTabBar extends StatelessWidget {
                         top: 6,
                         width: w,
                         height: 54,
-                        child: Container(margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(28))),
+                        child: Container(margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.bar))),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 6),

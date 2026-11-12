@@ -61,7 +61,7 @@ class _CamerasPageState extends State<CamerasPage> {
                   height: 44,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(color: on ? t.fg : t.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: on ? t.fg : t.line)),
+                  decoration: BoxDecoration(color: on ? t.fg : t.surface, borderRadius: BorderRadius.circular(Radii.card), border: Border.all(color: on ? t.fg : t.line)),
                   child: Text(label, style: TextStyle(color: on ? t.bg : t.fg, fontWeight: FontWeight.w600, fontSize: 13.5)),
                 ),
               ),
@@ -141,7 +141,7 @@ class _CamCardState extends State<_CamCard> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: Stack(children: [
-                Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: c.working ? const Color(0xFF1B2A41) : t.surface2))),
+                Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: c.working ? t.picture : t.surface2))),
                 // the camera's latest picture, fetched again every 5 seconds while the tile is on the screen
                 Positioned.fill(child: CameraPicture(repo: widget.repo, cameraId: c.id, active: c.working, onPicture: (_) => setState(() => hasPicture = true))),
                 Positioned.fill(child: CustomPaint(painter: FramePainter(color: (c.working ? Colors.white : t.fg2).withValues(alpha: hasPicture ? .5 : .22), inset: 10, arm: 16, width: 2))),

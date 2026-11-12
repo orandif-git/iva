@@ -43,6 +43,14 @@ dependencies:
   firebase_core: ^5.1.0
   firebase_messaging: ^17.0.1
   url_launcher: ^6.3.3
+  # The state layer and the addresses an app can be opened at.
+  flutter_riverpod: ^3.5.0
+  # Talking to services that are not this app's own JSON API (the live-video bridge).
+  dio: ^5.11.1
+  # The refresh token is a password in all but name: keep it in the platform's protected store, never a preferences file.
+  flutter_secure_storage: ^11.2.0
+  # Live pictures with sound and no plugin: WebRTC, with the picture stream kept as the fallback.
+  flutter_webrtc: ^1.6.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

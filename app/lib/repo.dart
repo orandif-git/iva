@@ -53,6 +53,14 @@ abstract class Repository {
   Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
+
+  // Rules the customer builds: several of one kind, each for a camera, a marked area, or the whole account.
+  Future<List<Rule>> rules();
+  Future<Rule> createRule(RuleDraft d);
+  Future<Rule> updateRule(String id, RuleDraft d);
+  Future<void> deleteRule(String id);
+  Future<RuleTest> testRule(String id);
+  Future<List<RuleDelivery>> ruleDeliveries(String id);
   Future<OpeningHours> openingHours();
   Future<void> saveOpeningHours(OpeningHours h);
   Future<Uint8List?> snapshot(String cameraId);
@@ -67,6 +75,12 @@ abstract class Repository {
   Future<void> makeReport(String type, DateTime from, DateTime to);
   Future<({String name, Uint8List bytes})> downloadReport(String id);
   Future<LiveSession> startLive(String cameraId, LiveMode mode);
+
+  /// Could this app show smooth video (WebRTC) rather than refreshed pictures? False in the demo and in tests.
+  bool get smoothVideo;
+
+  /// Sends an SDP offer and returns the server's answer, or null when smooth video cannot be used and pictures should carry on.
+  Future<String?> liveOffer(LiveSession s, String offer);
   Future<void> extendLive(LiveSession s);
   Future<void> stopLive(LiveSession s);
 
@@ -230,9 +244,9 @@ class ApiRepository implements Repository {
 
   @override
   Future<Footfall> today() async {
-    final n = DateTime.now();
-    final from = DateTime(n.year, n.month, n.day);
-    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': from.toUtc().toIso8601String(), 'to': n.add(const Duration(hours: 1)).toUtc().toIso8601String()}) as Map<String, dynamic>);
+    // The server cuts days at midnight in India, so "today" must be the same day there as the other ranges,
+    // not midnight on whatever timezone this phone happens to use.
+    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': _istDay(0), 'to': _istDay(1), 'tz': 'Asia/Kolkata'}) as Map<String, dynamic>);
   }
 
   @override
@@ -342,6 +356,25 @@ class ApiRepository implements Repository {
       ];
 
   @override
+  Future<List<Rule>> rules() async => [for (final j in await api.call('GET', '/v1/rules') as List) Rule.fromJson(j as Map<String, dynamic>)];
+
+  @override
+  Future<Rule> createRule(RuleDraft d) async => Rule.fromJson(await api.call('POST', '/v1/rules', body: d.toJson()) as Map<String, dynamic>);
+
+  @override
+  Future<Rule> updateRule(String id, RuleDraft d) async => Rule.fromJson(await api.call('PATCH', '/v1/rules/$id', body: d.toJson(creating: false)) as Map<String, dynamic>);
+
+  @override
+  Future<void> deleteRule(String id) => api.call('DELETE', '/v1/rules/$id');
+
+  @override
+  Future<RuleTest> testRule(String id) async => RuleTest.fromJson(await api.call('POST', '/v1/rules/$id/test') as Map<String, dynamic>);
+
+  @override
+  Future<List<RuleDelivery>> ruleDeliveries(String id) async =>
+      [for (final j in await api.call('GET', '/v1/rules/$id/deliveries') as List) RuleDelivery.fromJson(j as Map<String, dynamic>)];
+
+  @override
   Future<Uint8List?> snapshot(String cameraId) async {
     try {
       final r = await api.raw('GET', '/v1/cameras/$cameraId/snapshot');
@@ -431,6 +464,12 @@ class ApiRepository implements Repository {
     final j = await api.call('POST', '/v1/cameras/$cameraId/live', body: {'mode': mode.name});
     return LiveSession(j['id'], mode);
   }
+
+  @override
+  bool get smoothVideo => true;
+
+  @override
+  Future<String?> liveOffer(LiveSession s, String offer) => api.sdp('/v1/live/${s.id}/whep', offer);
 
   @override
   Future<void> extendLive(LiveSession s) => api.call('POST', '/v1/live/${s.id}/extend');
@@ -647,6 +686,73 @@ class MockRepository implements Repository {
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
   Future<List<Person>> people() async => List.of(_people);
+
+  final List<Rule> rulesDemo = [
+    const Rule(id: 'r1', name: 'Long queue at the till', type: 'queue_long', title: 'Long queue', description: 'The queue in an area you marked is longer than your limit, or someone has waited too long.',
+        family: 'smart', enabled: true, isDefault: false, ai: true, condition: {'length': 6, 'minutes': 5}, recipientIds: ['p2'], version: 2, cameraId: 'c8', zoneId: 'z1', areaKind: 'queue_area', areaLabel: 'Queue'),
+    const Rule(id: 'r2', name: 'Crowd in Aisle 1', type: 'people_in_area', title: 'Area occupancy limit exceeded', description: 'The number of people in an area you marked stays above your limit.',
+        family: 'smart', enabled: true, isDefault: false, ai: true, condition: {'limit': 8, 'minutes': 2}, recipientIds: ['p1', 'p2'], version: 1, cameraId: 'c3', zoneId: 'z2', areaKind: 'area_count', areaLabel: 'People in an area'),
+    const Rule(id: 'r3', name: 'Camera stops sending pictures', type: 'camera_offline', title: 'Camera stopped', description: 'A camera has stopped sending pictures.',
+        family: 'system', enabled: true, isDefault: true, ai: false, condition: {}, recipientIds: ['p1'], version: 4, quietStart: '22:00', quietEnd: '07:00'),
+  ];
+
+  @override
+  Future<List<Rule>> rules() async => List.of(rulesDemo);
+
+  Rule _ruleFromDraft(String id, RuleDraft d, {Rule? before}) {
+    final def = _defs.firstWhere((x) => x.type == d.type, orElse: () => _defs.first);
+    return Rule(
+      id: id,
+      name: d.name,
+      type: d.type,
+      title: def.title,
+      description: def.description,
+      family: def.smart ? 'smart' : 'system',
+      enabled: d.enabled,
+      isDefault: before?.isDefault ?? false,
+      ai: def.smart,
+      condition: d.condition,
+      recipientIds: d.recipientIds,
+      version: (before?.version ?? 0) + 1,
+      cameraId: d.cameraId,
+      zoneId: d.zoneId,
+      quietStart: d.quietStart,
+      quietEnd: d.quietEnd,
+      areaKind: def.areaKind,
+      areaLabel: def.areaKind == 'queue_area' ? 'Queue' : (def.areaKind == 'area_count' ? 'People in an area' : null),
+    );
+  }
+
+  @override
+  Future<Rule> createRule(RuleDraft d) async {
+    final r = _ruleFromDraft('r${rulesDemo.length + 1}', d);
+    rulesDemo.add(r);
+    return r;
+  }
+
+  @override
+  Future<Rule> updateRule(String id, RuleDraft d) async {
+    final i = rulesDemo.indexWhere((r) => r.id == id);
+    if (i < 0) throw ApiError(404, 'That rule was not found.', code: 'rule_not_found');
+    final r = _ruleFromDraft(id, d, before: rulesDemo[i]);
+    rulesDemo[i] = r;
+    return r;
+  }
+
+  @override
+  Future<void> deleteRule(String id) async => rulesDemo.removeWhere((r) => r.id == id);
+
+  @override
+  Future<RuleTest> testRule(String id) async {
+    final r = rulesDemo.firstWhere((x) => x.id == id);
+    return RuleTest(r.recipientIds.length, [for (final p in _people) if (r.recipientIds.contains(p.id)) p.name], reason: r.recipientIds.isEmpty ? 'No one will be messaged yet.' : null);
+  }
+
+  @override
+  Future<List<RuleDelivery>> ruleDeliveries(String id) async => [
+        RuleDelivery('n1', 'sent', person: 'Ravi, store manager', at: DateTime.now().subtract(const Duration(hours: 2))),
+        RuleDelivery('n2', 'failed', person: 'Priya (you)', error: 'The phone number is not on WhatsApp.', at: DateTime.now().subtract(const Duration(days: 1))),
+      ];
   OpeningHours hours = const OpeningHours();
   @override
   Future<OpeningHours> openingHours() async => hours;
@@ -708,6 +814,10 @@ class MockRepository implements Repository {
   Future<({String name, Uint8List bytes})> downloadReport(String id) async => (name: 'Report $id.xlsx', bytes: Uint8List.fromList([80, 75, 3, 4]));
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async => LiveSession('demo-$cameraId', mode);
+  @override
+  bool get smoothVideo => false;               // the demo has no video to send: it draws its own scene
+  @override
+  Future<String?> liveOffer(LiveSession s, String offer) async => null;
   @override
   Future<void> extendLive(LiveSession s) async {}
   @override

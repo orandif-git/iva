@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from ..db import db
 from . import alert_catalog, summary_config
+from . import rules as rule_service
 from .alerts import DEFAULT_ENABLED, raise_alert
 from .opening_hours import Hours
 
@@ -71,8 +72,12 @@ def fill(template: str, v: dict) -> str | None:
 async def enabled_types(conn, tenant_id) -> set[str]:
     """The alerts this customer can have and has switched on (an alert they never touched is on when it is on by default)."""
     vis = set(await alert_catalog.visible(conn, tenant_id))
-    rules = {r["rule_type"]: r["enabled"] for r in await conn.fetch("SELECT rule_type, enabled FROM app.alert_rules WHERE tenant_id=$1", tenant_id)}
-    return {k for k in vis if rules.get(k, k in DEFAULT_ENABLED)}
+    # A rule for one camera does not switch an alert on for the whole account; the account-wide default does.
+    rows = await conn.fetch("SELECT rule_type, enabled FROM app.rules WHERE tenant_id=$1 AND is_default", tenant_id)
+    if not rows:
+        rows = await conn.fetch("SELECT rule_type, enabled FROM app.alert_rules WHERE tenant_id=$1", tenant_id)
+    on = {r["rule_type"]: r["enabled"] for r in rows}
+    return {k for k in vis if on.get(k, k in DEFAULT_ENABLED)}
 
 
 # ------------------------------------------------------------------------------------------------ gathering
@@ -117,9 +122,9 @@ async def gather(conn, t, kind: str, today: date) -> dict:
         if now["by_hour"]:
             h, n = max(now["by_hour"].items(), key=lambda kv: kv[1])
             v.update(busy_hour=hour_span(h), busy_people=n)
-        crowd = await conn.fetchrow("SELECT enabled, params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type='crowding'", tid)
+        crowd = await rule_service.effective(conn, tid, "crowding")
         if "crowding" in on and crowd and crowd["enabled"]:
-            lim = (crowd["params"] if isinstance(crowd["params"], dict) else json.loads(crowd["params"] or "{}")).get("people")
+            lim = (crowd["params"] or {}).get("people")
             caps["limit"] = bool(lim)
             v["limit_n"] = lim
     anpr = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM app.cameras WHERE tenant_id=$1 AND enabled AND use_anpr)", tid)
@@ -278,7 +283,7 @@ async def send_one(conn, t, kind: str, cfg: dict, has_key: bool, today: date, *,
     """Writes one customer's summary as an alert (the app shows it, the phone is told) and queues it for WhatsApp. Returns False when nothing was raised."""
     rtype = f"{kind}_summary"
     built = await compose(conn, t, kind, cfg, today)
-    rule = await conn.fetchrow("SELECT recipients FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2", t["id"], rtype)
+    rule = await rule_service.effective(conn, t["id"], rtype)
     who = list(rule["recipients"]) if rule and rule["recipients"] else await default_recipients(conn, t["id"], cfg["recips"])
     return bool(await raise_alert(conn, t["id"], rtype, title=f"{'Daily' if kind == 'daily' else 'Weekly'} system summary", body=built["text"], camera_name="All cameras",
                                   details={"summary": built["text"], "headline": built["headline"], "headline_ta": built["headline_ta"], "kind": kind},
@@ -299,14 +304,18 @@ async def run() -> int:
         tenants = await conn.fetch("SELECT id, name, timezone, open_time, close_time, closed_days FROM app.tenants WHERE status::text = ANY($1)", list(statuses))
         for t in tenants:
             local = datetime.now(ZoneInfo(t["timezone"] if cfg["tz"] == "customer" else cfg["tz"]))
-            rules = {r["rule_type"]: r for r in await conn.fetch("SELECT rule_type, enabled, params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type IN ('daily_summary','weekly_summary')", t["id"])}
+            defaults = {r["rule_type"]: r for r in await conn.fetch(
+                "SELECT rule_type, enabled, condition AS params FROM app.rules WHERE tenant_id=$1 AND is_default AND rule_type IN ('daily_summary','weekly_summary')", t["id"])}
+            if not defaults:
+                defaults = {r["rule_type"]: r for r in await conn.fetch(
+                    "SELECT rule_type, enabled, params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type IN ('daily_summary','weekly_summary')", t["id"])}
 
             def on(kind):
-                r = rules.get(f"{kind}_summary")
+                r = defaults.get(f"{kind}_summary")
                 return (r["enabled"] if r else (cfg["default_on"] and f"{kind}_summary" in DEFAULT_ENABLED)) and cfg[f"{kind}_on"]
 
             def hour(kind):
-                r = rules.get(f"{kind}_summary")
+                r = defaults.get(f"{kind}_summary")
                 p = (r["params"] if r and isinstance(r["params"], dict) else (json.loads(r["params"]) if r and r["params"] else {})) if r else {}
                 return int(p["hour"]) if cfg["cust_edit"] and "hour" in p else _hour(cfg[f"{kind}_hour"])
 

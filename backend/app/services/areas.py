@@ -87,7 +87,7 @@ async def evaluate(conn, zone_id: UUID) -> int:
         return 0
     p, area, alert = z["params"] or {}, z["name"] or "an area", cat.AREA_ALERTS[z["kind"]]
     repeat = int(p.get("repeat_minutes", 15))
-    common = dict(camera_id=z["camera_id"], camera_name=z["camera"], dedupe_key=f"area:{z['id']}", cooldown_minutes=repeat)
+    common = dict(camera_id=z["camera_id"], camera_name=z["camera"], zone_id=z["id"], dedupe_key=f"area:{z['id']}", cooldown_minutes=repeat)
     if z["kind"] == "area_count":
         limit, minutes = int(p.get("limit", 0)), int(p.get("minutes", 2))
         if limit < 1 or not await _held(conn, z["id"], minutes, limit):

@@ -134,7 +134,7 @@ async def test_the_picture_interval_is_a_setting_of_the_area_and_is_checked(clie
 async def crowd_world(client, make, su, monkeypatch, picture_minutes=None):
     """A customer whose people-count is over its limit, with a camera that can be photographed (the picture is a stand-in)."""
     from app.services import snapshot
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type='crowding'")           # the detector looks at every customer's rule: leave only this one
+    await su.execute("DELETE FROM app.rules WHERE rule_type='crowding'; DELETE FROM app.alert_rules WHERE rule_type='crowding'")           # the detector looks at every customer's rule: leave only this one
     t, u, (foot,), _ = await setup_cameras(client, make, footfall=1, anpr=0)
     params = {"people": 10, **({"picture_minutes": picture_minutes} if picture_minutes is not None else {})}
     await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'crowding',true,$2)", t, json.dumps(params))

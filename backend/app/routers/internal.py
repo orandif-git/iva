@@ -14,7 +14,7 @@ from pydantic import Field
 from ..schemas import FrameStatusIn, HeartbeatIn, Strict
 from datetime import datetime, timezone
 
-from ..services import alert_catalog, billing, link_history, platform_fault, recorder_health
+from ..services import alert_catalog, rules, billing, link_history, platform_fault, recorder_health
 from ..services.alerts import clips_wanted
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
@@ -188,7 +188,7 @@ async def camera_config(camera_id: UUID, ctx: ServiceCtx = Depends(service_ctx))
     areas = [dict(a) for a in await ctx.conn.fetch("SELECT id, kind::text AS kind, name, points, params FROM app.camera_zones WHERE camera_id=$1 AND kind::text = ANY($2::text[]) ORDER BY created_at, id",
                                                    camera_id, list(alert_catalog.AREA_ALERTS))] if ok else []
     areas = [a for a in areas if alert_catalog.AREA_ALERTS[a["kind"]] in ok]
-    rule = await ctx.conn.fetchrow("SELECT enabled, params FROM app.alert_rules WHERE tenant_id=(SELECT tenant_id FROM app.cameras WHERE id=$1) AND rule_type='blocked_plate'", camera_id)
+    rule = await rules.effective(ctx.conn, c["tenant_id"], "blocked_plate", camera_id=camera_id)
     return {"clips": bool(c["use_anpr"]) and clips_wanted(c, rule), "camera_id": c["id"], "name": c["name"], "enabled": c["enabled"], "use_footfall": c["use_footfall"], "use_anpr": c["use_anpr"], "use_areas": bool(areas),
             "stream": c["stream"], "tenant_status": c["tenant_status"], "source_set_at": c["source_set_at"],
             "active": c["enabled"] and c["tenant_status"] not in ("suspended", "cancelled"),

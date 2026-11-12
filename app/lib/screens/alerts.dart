@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models.dart';
 import '../repo.dart';
 import '../theme.dart';
 import 'alert_rows.dart';
 import 'common.dart';
+import 'rules.dart';
 import 'wizard.dart';
 import '../widgets/motion.dart';
 
@@ -110,15 +112,15 @@ class _AlertsPageState extends State<AlertsPage> {
 }
 
 /// Manage alerts: what you are watching for, switched on or off, and a way to add more.
-class ManageAlertsPage extends StatefulWidget {
+class ManageAlertsPage extends ConsumerStatefulWidget {
   const ManageAlertsPage({super.key, required this.repo, this.embedded = false});
   final Repository repo;
   final bool embedded;      // true when it is the AI Watch tab (no screen of its own, no back arrow)
   @override
-  State<ManageAlertsPage> createState() => _ManageAlertsPageState();
+  ConsumerState<ManageAlertsPage> createState() => _ManageAlertsPageState();
 }
 
-class _ManageAlertsPageState extends State<ManageAlertsPage> {
+class _ManageAlertsPageState extends ConsumerState<ManageAlertsPage> {
   late Future<(List<AlertDef>, List<AreaInfo>)> mine = _load();
   final _open = <String>{};   // alerts whose areas are showing; all folded away to begin with
   bool smartTab = false;      // System alerts (recorders and cameras) or Smart alerts (what the AI sees)
@@ -160,6 +162,59 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
     );
   }
 
+  /// The customer's own rules, inline in AI Watch: this is where a shop with two queues says they are different.
+  Widget _yourRules(Tok t) {
+    final data = ref.watch(rulesDataProvider);
+    return data.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (d) {
+        final mine = [for (final r in d.rules) if (!r.isDefault) r];
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Section(
+            title: 'Your rules',
+            subtitle: 'One camera or one marked area, with its own limits and people.',
+            icon: Icons.rule_rounded,
+            trailing: TextButton.icon(
+              onPressed: () async {
+                await RulesPage.openNew(context, ref);
+                if (mounted) setState(() {});
+              },
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New rule'),
+            ),
+            child: mine.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('The alerts above cover the whole shop. A rule narrows one down to a camera or an area.',
+                        style: TextStyle(color: t.fg2, fontSize: 13, height: 1.4)),
+                  )
+                : Column(children: [
+                    for (final r in mine.take(3))
+                      RuleRow(
+                        rule: r,
+                        data: d,
+                        onTap: () async {
+                          await RulesPage.openEdit(context, ref, r, d);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    if (mine.length > 3)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RulesPage())),
+                          child: Text('See all ${mine.length} rules'),
+                        ),
+                      ),
+                  ]),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _list(Tok t) {
     return Builder(
       builder: (context) => FutureBuilder(
@@ -171,7 +226,9 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
               final all = defs.where((d) => d.smart == smartTab).toList();
               final nSystem = defs.where((d) => !d.smart && d.enabled).length, nSmart = defs.where((d) => d.smart && d.enabled).length;
               final on = all.where((d) => d.enabled).toList();
-              final off = all.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
+              // Every alert that is off stays visible, even before anyone has been chosen. Otherwise switching one off
+              // makes it disappear and there is no way to switch it back on.
+              final off = all.where((d) => !d.enabled).toList();
               // The marked areas an alert is watching, one line each: tap one to change it (its shape and numbers are loaded).
               Widget areaLines(AlertDef m) {
                 final mine = areas.where((a) => a.kind == m.areaKind).toList();
@@ -228,6 +285,7 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
                   padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
                   child: Text(smartTab ? 'The AI watches your cameras for people, vehicles and queues in the places you mark.' : 'We tell you when a recorder or camera has a problem.', style: TextStyle(color: t.fg2, fontSize: 13.5, height: 1.35)),
                 ),
+                if (smartTab) _yourRules(t),
                 if (on.isEmpty && off.isEmpty) EmptyState(icon: smartTab ? Icons.auto_awesome_rounded : Icons.notifications_none_rounded, title: smartTab ? 'No smart alerts yet' : 'No system alerts on', text: 'Choose what you want to hear about. We message you on WhatsApp.', action: FilledButton.icon(onPressed: () => _wizard(), icon: const Icon(Icons.add_rounded), label: const Text('New alert'))),
                 if (on.isNotEmpty) ...[const GroupLabel('On'), Group(children: [for (final m in on) row(m)])],
                 if (off.isNotEmpty) ...[const GroupLabel('Off'), Group(children: [for (final m in off) row(m)])],

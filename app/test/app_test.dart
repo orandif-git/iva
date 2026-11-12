@@ -34,6 +34,10 @@ Future<void> phone(WidgetTester t) async {
   addTearDown(t.view.reset);
 }
 
+/// An ApiClient for a widget test: its own prefs, so the refresh token never touches the real Keychain (which has no test harness).
+Future<ApiClient> testClient(http.Client c) async =>
+    ApiClient(base: 'https://x.test', client: c, tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   profileTests();
@@ -64,7 +68,7 @@ void main() {
 
   testWidgets('the area editor: tap corners, close, reshape, undo, redraw', (t) async {
     final c = AreaController();
-    await t.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(16), child: AreaEditor(controller: c))))));
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(16), child: AreaEditor(controller: c))))));
     final box = t.getRect(find.byType(AspectRatio).first);
     for (final p in const [Offset(.2, .2), Offset(.7, .2), Offset(.7, .7), Offset(.2, .7)]) {
       await t.tapAt(box.topLeft + Offset(p.dx * box.width, p.dy * box.height));
@@ -220,7 +224,7 @@ void main() {
     await t.tap(find.textContaining('Smart alerts ('));
     await t.pumpAndSettle();
     expect(find.text('Billing queue'), findsNothing, reason: 'the areas are folded away until you open the alert');
-    expect(find.text('1 area'), findsOneWidget, reason: 'how many areas the alert watches, beside its name');
+    expect(find.text('1 area'), findsNWidgets(2), reason: 'both the queue and the crowd alert watch one marked area');
     await t.tap(find.text('Long queue'));
     await t.pumpAndSettle();
     expect(find.text('Billing queue'), findsOneWidget, reason: 'the camera the queue alert is watching');
@@ -247,6 +251,67 @@ void main() {
     expect(repo.areaList.length, 2, reason: 'changed in place, not added a second time');
     expect(repo.areaList.firstWhere((a) => a.id == 'z1').params['picture_minutes'], 16);
     expect(repo.areaList.firstWhere((a) => a.id == 'z1').params['length'], 6);
+  });
+
+  testWidgets('AI Watch shows the rules you built, and one opens with its own place and limits', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2800 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.textContaining('Smart alerts ('));
+    await t.pumpAndSettle();
+    expect(find.text('Your rules'), findsOneWidget);
+    expect(find.text('Long queue at the till'), findsOneWidget);
+    expect(find.text('Crowd in Aisle 1'), findsOneWidget);
+    expect(find.text('Camera stops sending pictures'), findsNothing, reason: 'the account-wide default is the list above, not a rule of its own');
+    await t.tap(find.text('Long queue at the till'));
+    await t.pumpAndSettle();
+    expect(find.text('Change rule'), findsOneWidget);
+    expect(find.text('Step 1 of 4 · Watch'), findsOneWidget);
+    expect(find.textContaining('Billing queue · Queue'), findsWidgets, reason: 'the place this rule watches, in words');
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Step 2 of 4 · When'), findsOneWidget);
+    expect(find.text('Alert when more than'), findsOneWidget);
+    expect(find.text('6 people waiting'), findsOneWidget, reason: 'this rule keeps its own queue limit, not the account-wide one');
+  });
+
+  testWidgets('a new rule is built in four steps and appears in the list', (t) async {
+    t.view.physicalSize = const Size(390 * 2, 2800 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    final repo = MockRepository();
+    await t.pumpWidget(IVisionApp(repo: repo));
+    await t.pumpAndSettle();
+    await t.tap(find.text('AI Watch').last);
+    await t.pumpAndSettle();
+    await t.tap(find.textContaining('Smart alerts ('));
+    await t.pumpAndSettle();
+    await t.tap(find.text('New rule'));
+    await t.pumpAndSettle();
+    expect(find.text('What should we watch?'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    await t.tap(find.text('Unstable connection').first);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Tell me after this many drops in an hour'), findsOneWidget);
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Who hears about it?'), findsOneWidget);
+    await t.tap(find.text('Priya (you)'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Check it once'), findsOneWidget);
+    await t.tap(find.text('Save rule'));
+    await t.pumpAndSettle();
+    expect((await repo.rules()).length, 4, reason: 'the rule was saved, not just reviewed');
+    expect(find.text('Unstable connection'), findsWidgets, reason: 'the new rule is in AI Watch straight away');
   });
 
   testWidgets('a system alert skips the camera step and saves through the repository', (t) async {
@@ -873,7 +938,7 @@ void profileTests() {
     await phone(t);
     SharedPreferences.setMockInitialValues({});
     final fake = _FakeBrowser();
-    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response(jsonEncode({'kind': 'staff', 'access_token': 'sa', 'refresh_token': 'staff-rt'}), 200)));
+    final client = await testClient(MockClient((r) async => http.Response(jsonEncode({'kind': 'staff', 'access_token': 'sa', 'refresh_token': 'staff-rt'}), 200)));
     await t.pumpWidget(IVisionApp(client: client, browser: fake));
     await t.pumpAndSettle();
     await t.enterText(find.byType(TextField).at(0), 'admin@x.test');
@@ -888,7 +953,7 @@ void profileTests() {
     await phone(t);
     SharedPreferences.setMockInitialValues({});
     final seen = <Map>[];
-    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async {
+    final client = await testClient(MockClient((r) async {
       if (r.url.path == '/v1/auth/set-password') { seen.add(jsonDecode(r.body) as Map); return http.Response('', 204); }
       return http.Response('{}', 404);
     }));
@@ -916,7 +981,7 @@ void profileTests() {
 
   testWidgets('an incomplete invitation link says so instead of showing a form', (t) async {
     await phone(t);
-    await t.pumpWidget(IVisionApp(client: ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(path: '/set-password')));
+    await t.pumpWidget(IVisionApp(client: await testClient(MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(path: '/set-password')));
     await t.pumpAndSettle();
     expect(find.textContaining('This link is not complete'), findsOneWidget);
     expect(find.text('Save password'), findsNothing);
@@ -926,7 +991,7 @@ void profileTests() {
     await phone(t);
     SharedPreferences.setMockInitialValues({});
     final calls = <String>[];
-    final client = ApiClient(base: 'https://x.test', client: MockClient((r) async {
+    final client = await testClient(MockClient((r) async {
       calls.add('${r.method} ${r.url.path} ${r.headers['Authorization']}');
       if (r.url.path == '/v1/auth/refresh') return http.Response('{}', 401);
       return http.Response(jsonEncode(r.url.path == '/v1/me' ? {'user': {'name': 'Priya', 'role': 'admin'}, 'tenant': {'name': 'Green Valley Store'}} : <String, dynamic>{}), 200);
@@ -947,7 +1012,7 @@ void profileTests() {
 
   testWidgets('if the console never hands the session over, the tab says so', (t) async {
     await phone(t);
-    await t.pumpWidget(IVisionApp(client: ApiClient(base: 'https://x.test', client: MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(openedByStaff: true)));
+    await t.pumpWidget(IVisionApp(client: await testClient(MockClient((r) async => http.Response('{}', 404))), browser: _FakeBrowser(openedByStaff: true)));
     await t.pumpAndSettle();
     expect(find.textContaining("Could not open the customer's app"), findsOneWidget);
   });
@@ -1195,7 +1260,7 @@ void profileTests() {
 
   testWidgets('an offline camera tile fetches nothing', (t) async {
     final repo = _PictureRepo();
-    await t.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(height: 60, child: CameraPicture(repo: repo, cameraId: 'c0', active: false)))));
+    await t.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: SizedBox(height: 60, child: CameraPicture(repo: repo, cameraId: 'c0', active: false)))));
     await t.pump(const Duration(seconds: 11));
     expect(repo.calls, 0);
   });

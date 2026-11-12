@@ -60,7 +60,7 @@ async def feed(conn_ctx, cam, start, minutes, **kw):
 async def run(client, make, su, steps):
     """steps: list of (minutes, kwargs) fed one after another. Returns the alert types raised, in order."""
     from app.db import db
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type IN ('view_changed','picture_poor')")
+    await su.execute("DELETE FROM app.rules WHERE rule_type IN ('view_changed','picture_poor'); DELETE FROM app.alert_rules WHERE rule_type IN ('view_changed','picture_poor')")
     t, foot, cam = await camera(client, make, su)
     start, got = datetime.now(timezone.utc) - timedelta(days=1), []
     async with db.service_tx() as conn:
@@ -105,7 +105,7 @@ async def test_a_picture_that_stays_much_blurrier_than_usual_is_reported_after_t
 
 
 async def test_a_dark_picture_is_only_a_problem_while_the_place_is_open(client, make, su):
-    await su.execute("DELETE FROM app.alert_rules WHERE rule_type IN ('view_changed','picture_poor')")
+    await su.execute("DELETE FROM app.rules WHERE rule_type IN ('view_changed','picture_poor'); DELETE FROM app.alert_rules WHERE rule_type IN ('view_changed','picture_poor')")
     t, foot, cam = await camera(client, make, su)
     from app.db import db
     tz = await su.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", t)

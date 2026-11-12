@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from ..db import db
 from ..messaging import evidence
-from . import snapshot
+from . import snapshot, rules
 from .opening_hours import Hours
 from .alerts import raise_alert
 
@@ -36,8 +36,7 @@ async def vehicle_overstay() -> int:
     plainly did not stay where it was (an exit the camera read badly, or a missed exit followed by the next visit)."""
     n = 0
     async with db.service_tx() as conn:
-        rules = await conn.fetch("SELECT tenant_id, params FROM app.alert_rules WHERE rule_type='vehicle_overstay' AND enabled")
-        for rule in rules:
+        for rule in await rules.for_type(conn, "vehicle_overstay"):
             minutes = overstay_minutes(rule["params"])
             rows = await conn.fetch(
                 """SELECT i.id, i.plate_text, i.seen_at, i.camera_id, i.evidence_id, c.name AS camera FROM app.plate_events i JOIN app.cameras c ON c.id=i.camera_id
@@ -47,12 +46,13 @@ async def vehicle_overstay() -> int:
                      AND NOT EXISTS (SELECT 1 FROM app.plate_events l WHERE l.tenant_id = i.tenant_id AND l.plate_text = i.plate_text AND l.seen_at > i.seen_at
                                      AND l.seen_at > now() - interval '7 days' AND (l.direction = 'in' OR l.direction = 'out'))
                      AND NOT EXISTS (SELECT 1 FROM app.vehicle_lists v WHERE v.tenant_id = i.tenant_id AND v.plate_text = i.plate_text AND v.list_type = 'allowed')
-                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes)
+                     AND ($3::uuid IS NULL OR i.camera_id = $3)
+                   ORDER BY i.seen_at LIMIT 50""", rule["tenant_id"], minutes, rule["camera_id"])
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle overstay: {r['plate_text']}",
                                      body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
                                      details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes)},
-                                     dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7, evidence_id=r["evidence_id"]):
+                                     dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7, evidence_id=r["evidence_id"], rule_id=rule["id"]):
                     n += 1
     return n
 
@@ -107,15 +107,16 @@ async def crowding() -> int:
     It is still an estimate: a person missed at the door is never corrected, so the count drifts through the day. It is a warning, not a head count."""
     n = 0
     async with db.service_tx() as conn:
-        rules = await conn.fetch("SELECT r.tenant_id, r.params, t.timezone FROM app.alert_rules r JOIN app.tenants t ON t.id=r.tenant_id WHERE r.rule_type='crowding' AND r.enabled")
-        for rule in rules:
+        for rule in await rules.for_type(conn, "crowding"):
+            rule = {**rule, "timezone": await conn.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", rule["tenant_id"])}
             params = rule["params"] or {}
             limit = int(params.get("people", 50))
             rows = await conn.fetch(
                 """SELECT coalesce(c.site_id::text, c.recorder_id::text, c.id::text) AS place, coalesce(s.name, r.name, r.device_id, c.name) AS place_name, c.id AS camera_id,
                           f.bucket_start, f.people_in, f.people_out
                    FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id LEFT JOIN app.sites s ON s.id = c.site_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
-                   WHERE f.tenant_id=$1 AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2 ORDER BY f.bucket_start""", rule["tenant_id"], rule["timezone"])
+                   WHERE f.tenant_id=$1 AND f.bucket_start >= date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2
+                     AND ($3::uuid IS NULL OR c.id = $3) ORDER BY f.bucket_start""", rule["tenant_id"], rule["timezone"], rule["camera_id"])
             places: dict = {}
             for r in rows:
                 places.setdefault(r["place"], {"name": r["place_name"], "cams": set(), "buckets": {}})
@@ -134,7 +135,7 @@ async def crowding() -> int:
                 if await raise_alert(conn, rule["tenant_id"], "crowding", title=f"Occupancy limit exceeded at {where}" if several else None,
                                      body=f"About {inside} people are inside{' ' + where if several else ''}. Your limit is {limit}.",
                                      camera_name=where if several else "All cameras", details={"people": int(inside), "limit": limit},
-                                     dedupe_key=f"crowding:{key}" if several else "crowding", cooldown_minutes=60, evidence_id=pic):
+                                     dedupe_key=f"crowding:{key}" if several else "crowding", cooldown_minutes=60, evidence_id=pic, rule_id=rule["id"]):
                     n += 1
     return n
 
@@ -199,10 +200,12 @@ async def after_hours() -> int:
     It sees only what a counting camera sees, a person crossing its counting line. It is not a motion detector for the whole room."""
     n = 0
     async with db.service_tx() as conn:
-        rules = await conn.fetch(
-            """SELECT r.tenant_id, r.params, t.timezone, t.open_time, t.close_time, t.closed_days FROM app.alert_rules r JOIN app.tenants t ON t.id = r.tenant_id
-               WHERE r.rule_type='after_hours' AND r.enabled AND t.open_time IS NOT NULL AND t.close_time IS NOT NULL AND t.status::text IN ('trial','active','past_due')""")
-        for rule in rules:
+        for rule in await rules.for_type(conn, "after_hours"):
+            t = await conn.fetchrow("SELECT timezone, open_time, close_time, closed_days FROM app.tenants WHERE id=$1 AND open_time IS NOT NULL AND close_time IS NOT NULL "
+                                    "AND status::text IN ('trial','active','past_due')", rule["tenant_id"])
+            if t is None:
+                continue
+            rule = {**rule, **dict(t)}
             hours, local = Hours.of(rule), _local_now(rule["timezone"])
             closed_at = hours.closed_since(local)
             if closed_at is None:
@@ -217,22 +220,23 @@ async def after_hours() -> int:
                 continue
             rows = await conn.fetch(
                 """SELECT c.id, c.name, sum(f.people_in + f.people_out)::int AS people FROM app.footfall_counts f JOIN app.cameras c ON c.id = f.camera_id
-                   WHERE f.tenant_id=$1 AND f.bucket_start > now() - make_interval(mins => $2) GROUP BY c.id, c.name HAVING sum(f.people_in + f.people_out) > 0""", rule["tenant_id"], quiet_for)
+                   WHERE f.tenant_id=$1 AND f.bucket_start > now() - make_interval(mins => $2) AND ($3::uuid IS NULL OR c.id=$3)
+                   GROUP BY c.id, c.name HAVING sum(f.people_in + f.people_out) > 0""", rule["tenant_id"], quiet_for, rule["camera_id"])
             for r in rows:
                 if await conn.fetchval("SELECT 1 FROM app.alerts WHERE tenant_id=$1 AND dedupe_key=$2 AND created_at > now() - interval '30 minutes'", rule["tenant_id"], f"afterhours:{r['id']}"):
                     continue                                # already told: do not take another picture for nothing
                 pic = await _camera_picture(conn, rule["tenant_id"], r["id"])
                 if await raise_alert(conn, rule["tenant_id"], "after_hours", title=f"After-hours activity at {r['name']}",
                                      body=f"{r['people']} {'person was' if r['people'] == 1 else 'people were'} counted at {r['name']} while you are closed.",
-                                     camera_id=r["id"], camera_name=r["name"], details={"people": r["people"]}, dedupe_key=f"afterhours:{r['id']}", cooldown_minutes=30, evidence_id=pic):
+                                     camera_id=r["id"], camera_name=r["name"], details={"people": r["people"]}, dedupe_key=f"afterhours:{r['id']}", cooldown_minutes=30, evidence_id=pic, rule_id=rule["id"]):
                     n += 1
     return n
 
 
 # ------------------------------------------------------------------------------------------------ System Alerts that watch the account and the devices
 async def _param(conn, tenant_id, rule_type: str, key: str, default):
-    r = await conn.fetchval("SELECT params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2", tenant_id, rule_type)
-    return (r or {}).get(key, default)
+    r = await rules.effective(conn, tenant_id, rule_type)
+    return (r["params"] if r else {}).get(key, default)
 
 
 async def connection_unstable() -> int:

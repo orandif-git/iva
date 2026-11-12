@@ -8,7 +8,7 @@ from ..config import get_settings
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from . import alert_catalog, push, push_text
+from . import alert_catalog, push, push_text, rules
 from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20           # a flood guard for ordinary alerts; a critical alert is never held back by it
@@ -42,13 +42,37 @@ def clips_wanted(tenant, rule) -> bool:
 async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", title: str | None = None, camera_id=None, camera_name: str = "",
                       details: dict | None = None, dedupe_key: str | None = None, cooldown_minutes: int = 10, evidence_id=None,
                       evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False, recipient_ids: list | None = None,
-                      direct_ready: bool = True, push_on: bool = True, push_tamil: bool | None = None) -> UUID | None:
+                      direct_ready: bool = True, push_on: bool = True, push_tamil: bool | None = None, rule_id=None, zone_id=None) -> UUID | None:
     """Returns the new alert id, or None when nothing was raised (rule off, or the same alert was raised recently).
     `recipient_ids` replaces the rule's recipients (the summaries use it for "the account owner"). `direct_ready` says whether a summary can be sent straight to WhatsApp now."""
     meta = ALERT_TYPES[rule_type]
     if rule_type not in await alert_catalog.visible(conn, tenant_id):      # switched off by the platform, or not part of this customer's plan
         return None
-    rule = await conn.fetchrow("SELECT * FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2", tenant_id, rule_type)
+    # Which rule applies: this area, then this camera, then the account. A customer who has built rules is governed by them
+    # alone; a rule for another camera must not make this camera's alert fire.
+    if rule_id is not None:
+        r = await conn.fetchrow("SELECT * FROM app.rules WHERE id=$1 AND tenant_id=$2 AND rule_type=$3", rule_id, tenant_id, rule_type)
+        rule = None
+        if r is not None:
+            rule = dict(r)
+            rule["params"] = dict(r["condition"] or {})
+        else:
+            # A detector that is still working from the old one-setting-per-kind row hands its id here.
+            r = await conn.fetchrow("SELECT id, tenant_id, rule_type, params, recipients, quiet_start, quiet_end, enabled FROM app.alert_rules WHERE id=$1 AND tenant_id=$2 AND rule_type=$3",
+                                    rule_id, tenant_id, rule_type)
+            if r is not None:
+                rule = dict(r)
+                rule.update({"condition": dict(r["params"] or {}), "camera_id": None, "zone_id": None, "is_default": True})
+    elif await rules.has_rules(conn, tenant_id, rule_type):
+        rule = await rules.effective(conn, tenant_id, rule_type, camera_id=camera_id, zone_id=zone_id)
+        if rule is None:
+            return None
+    else:
+        r = await conn.fetchrow("SELECT id, tenant_id, rule_type, params, recipients, quiet_start, quiet_end, enabled FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2",
+                                tenant_id, rule_type)
+        rule = dict(r) if r is not None else None
+        if rule is not None:
+            rule.update({"condition": dict(r["params"] or {}), "camera_id": None, "zone_id": None, "is_default": True})
     if (rule["enabled"] if rule else rule_type in DEFAULT_ENABLED) is False:
         return None
     if dedupe_key:
