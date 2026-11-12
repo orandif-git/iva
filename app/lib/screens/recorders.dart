@@ -434,6 +434,10 @@ class RecorderHealthCard extends StatelessWidget {
         row(Icons.storage_rounded, faulty.isNotEmpty ? Level.bad : (worn.isNotEmpty ? Level.warn : Level.ok),
             faulty.isNotEmpty ? 'A disk has a fault' : (worn.isNotEmpty ? 'A disk is wearing out' : (h.disks.length == 1 ? 'The disk is healthy' : 'All ${h.disks.length} disks are healthy')),
             faulty.isNotEmpty ? 'Have the recorder checked: video may not be saved.' : (worn.isNotEmpty ? 'About ${worn.first.lifePercent!.round()}% of its life is left. Replace it soon.' : [if (h.disks.any((d) => d.model.isNotEmpty)) h.disks.map((d) => d.model).where((m) => m.isNotEmpty).toSet().join(', '), '${_size(total)} in all'].join(' · '))),
+      // How much life each disk has left, when the disk says (not every disk does).
+      for (final d in h.disks.where((d) => d.lifePercent != null && !d.faulty))
+        row(Icons.favorite_border_rounded, d.lifePercent! <= 20 ? Level.warn : Level.ok, 'Disk ${d.number + 1}: ${d.lifePercent!.round()}% of its life left',
+            [if (d.model.isNotEmpty) d.model, _size(d.totalMb)].join(' · ')),
       if (full != null)
         // A recorder that records all the time replaces its oldest video when its disk is full, so a full disk is normal and never shown as a problem.
         row(Icons.pie_chart_outline_rounded, Level.ok, full >= 95 ? 'The disk is full, as it should be' : '$full% of the disk is in use',

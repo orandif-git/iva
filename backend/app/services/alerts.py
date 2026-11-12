@@ -8,7 +8,7 @@ from ..config import get_settings
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from . import alert_catalog, push
+from . import alert_catalog, push, push_text
 from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20           # a flood guard for ordinary alerts; a critical alert is never held back by it
@@ -81,7 +81,9 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     quiet = (not critical) and bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
     if rule and rule["recipients"]:
         await fan_out(conn, tenant_id, tenant, alert_id, rule_type, list(rule["recipients"]), payload, quiet, hold_until=hold, critical=critical)
-    await push.notify_alert(conn, tenant_id, alert_id, title, body or payload["location"], level, quiet)
+    # the phone gets the alert's own name and one plain fact, not the longer message that goes by WhatsApp
+    ptitle, pbody = push_text.compose(rule_type, meta["title"], camera_name, details or {}, now.astimezone(tz).strftime("%I:%M %p").lstrip("0"), title, body or payload["location"])
+    await push.notify_alert(conn, tenant_id, alert_id, ptitle, pbody, level, quiet)
     return alert_id
 
 

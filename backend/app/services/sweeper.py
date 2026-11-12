@@ -15,18 +15,18 @@ async def mark_stale_recorders(timeout_seconds: int) -> int:
         rows = await conn.fetch(
             """UPDATE app.recorders SET status='offline'
                WHERE status='online' AND last_heartbeat_at < now() - make_interval(secs => $1)
-               RETURNING id, tenant_id, device_id""", float(timeout_seconds))
+               RETURNING id, tenant_id, device_id, coalesce(name, device_id) AS name""", float(timeout_seconds))
         for r in rows:
             await link_history.record(conn, r["tenant_id"], r["id"], "offline")
-            await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['device_id']} has lost its connection.", camera_name=r["device_id"], details={"recorder": r["device_id"]},
+            await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['name']} has lost its connection.", camera_name=r["name"], details={"recorder": r["name"]},
                               dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=60)
         # Still offline hours later: said again every six hours, so a recorder that is down all day is not one message at dawn and then silence.
         still = await conn.fetch(
             """SELECT id, tenant_id, device_id, coalesce(name, device_id) AS name, extract(epoch FROM (now() - last_heartbeat_at))::int / 3600 AS hours FROM app.recorders
                WHERE status='offline' AND last_heartbeat_at < now() - interval '6 hours' AND last_heartbeat_at > now() - interval '7 days'""")
         for r in still:
-            await raise_alert(conn, r["tenant_id"], "recorder_offline", title="Recorder still offline", body=f"{r['name']} has been offline for {r['hours']} hours.", camera_name=r["device_id"],
-                              details={"recorder": r["device_id"]}, dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=360)
+            await raise_alert(conn, r["tenant_id"], "recorder_offline", title="Recorder still offline", body=f"{r['name']} has been offline for {r['hours']} hours.", camera_name=r["name"],
+                              details={"recorder": r["name"]}, dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=360)
     return len(rows)
 
 
