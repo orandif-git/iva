@@ -188,7 +188,7 @@ async def counting_stopped() -> int:
                 t["id"], need)
             for c in cams:
                 if await raise_alert(conn, t["id"], "counting_stopped", body=f"{c['name']} is online but has counted nobody in the last {need} hours while you are open. Check that the camera still looks at the doorway.",
-                                     camera_id=c["id"], camera_name=c["name"], details={}, dedupe_key=f"nocount:{c['id']}", cooldown_minutes=20 * 60):
+                                     camera_id=c["id"], camera_name=c["name"], details={"hours": need}, dedupe_key=f"nocount:{c['id']}", cooldown_minutes=20 * 60):
                     n += 1
     return n
 

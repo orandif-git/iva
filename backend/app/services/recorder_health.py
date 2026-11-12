@@ -91,7 +91,7 @@ async def apply(conn, rec, h: dict) -> list[str]:
     silent = sorted(set(silent) | set(stopped), key=int)
     if silent:
         await alert("recording_stopped", body=f"{name} has not saved any video from {len(silent)} camera{'s' if len(silent) != 1 else ''} in the last {RECENT_HOURS} hours, although it did earlier. "
-                    "Please check the recorder's disk and recording schedule.", details={"recorder": name}, dedupe_key=f"recording:{rec['id']}", cooldown_minutes=12 * 60)
+                    "Please check the recorder's disk and recording schedule.", details={"recorder": name, "cameras": len(silent)}, dedupe_key=f"recording:{rec['id']}", cooldown_minutes=12 * 60)
     # how many days of video the recorder holds, against what the customer wants to be able to look back on (opt-in: they choose the number)
     if h.get("days_held") is not None:
         target = int(await detectors._param(conn, rec["tenant_id"], "retention_low", "days", 30))

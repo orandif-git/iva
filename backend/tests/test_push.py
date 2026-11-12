@@ -90,7 +90,7 @@ async def test_an_alert_is_pushed_to_that_accounts_devices_only(client, make, su
     got = {m["token"]: m for m in google["messages"]}
     assert set(got) == {TOKEN_A, TOKEN_B}, "the other account's device is not told"
     m = got[TOKEN_A]
-    assert m["notification"]["title"] == "Camera offline" and m["notification"]["body"] == "The camera stopped."
+    assert m["notification"]["title"] == "Camera offline" and m["notification"]["body"].startswith("Gate: no video as of ")
     assert m["data"] == {"kind": "alert", "alert_id": str(a)} and m["android"]["priority"] == "HIGH"
     assert m["webpush"]["fcm_options"]["link"] == "https://gi.test/next/", "a tap on a browser notification opens the app"
 
