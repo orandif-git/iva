@@ -151,6 +151,7 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    su postgres -c "psql -d gateinsight -f migrations/021_activity_area.sql"          # a new kind of marked area: activity in an area (people or vehicles, when the shop is closed or between set times)
    su postgres -c "psql -d gateinsight -f migrations/022_data_retention.sql"        # one setting for how long data is kept (Setup, Data kept)
    su postgres -c "psql -d gateinsight -f migrations/023_owner_details.sql"          # the customer's owner: name, email and up to three owner mobile numbers (one number, one customer)
+   su postgres -c "psql -d gateinsight -f migrations/024_staff_delete.sql"           # console users can be deleted
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:

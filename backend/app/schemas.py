@@ -537,6 +537,7 @@ class StaffCreateIn(Strict):
 
 class StaffPatchIn(Strict):
     name: Name | None = None
+    email: Email | None = None
     role: Literal["owner", "admin", "onboarding", "support"] | None = None
 
 

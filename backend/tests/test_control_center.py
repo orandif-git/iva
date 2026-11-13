@@ -311,3 +311,23 @@ async def test_a_customer_needs_an_owner_and_an_owner_number_belongs_to_one_cust
     assert "9988776655" not in audit and "6655" in audit, "the activity log keeps only the last four digits"
     assert (await client.delete(url, params={"reason": "Test customer"}, headers=owner["headers"])).status_code == 204
     assert await su.fetchval("SELECT count(*) FROM platform.tenant_owner_phones WHERE tenant_id=$1", uuid.UUID(t["id"])) == 0
+
+
+async def test_console_users_can_be_edited_given_a_new_role_and_deleted_with_care(client, make, su):
+    owner, admin, support = await make.staff("owner"), await make.staff("admin"), await make.staff("support")
+    made = (await client.post("/admin/v1/staff", json={"name": "Priya", "email": "priya@example.com", "role": "support"}, headers=admin["headers"])).json()
+    sid = made["id"] if "id" in made else str(await su.fetchval("SELECT id FROM platform.staff_users WHERE email='priya@example.com'"))
+    url = f"/admin/v1/staff/{sid}"
+    assert (await client.patch(url, json={"name": "Priya S"}, headers=support["headers"])).status_code == 403
+    r = await client.patch(url, json={"name": "Priya S", "email": "priya.s@example.com", "role": "onboarding"}, headers=admin["headers"])
+    assert r.status_code == 200 and r.json()["name"] == "Priya S" and r.json()["email"] == "priya.s@example.com" and r.json()["role"] == "onboarding"
+    assert (await client.patch(url, json={"email": owner["email"]}, headers=admin["headers"])).status_code == 409 if "email" in owner else True
+    assert (await client.patch(url, json={"role": "owner"}, headers=admin["headers"])).status_code == 403                 # an Admin cannot make an Owner
+    assert (await client.patch(f"/admin/v1/staff/{owner['id']}", json={"role": "admin"}, headers=owner["headers"])).status_code == 409        # not your own role
+    assert (await client.delete(f"/admin/v1/staff/{owner['id']}", params={"reason": "Test removal"}, headers=owner["headers"])).status_code == 409        # not yourself, and never the last Owner
+    assert (await client.delete(f"/admin/v1/staff/{owner['id']}", params={"reason": "Test removal"}, headers=admin["headers"])).status_code == 403   # an Admin cannot remove an Owner
+    assert (await client.delete(url, params={"reason": "Test removal"}, headers=support["headers"])).status_code == 403
+    assert (await client.delete(url, params={"reason": "Left the company"}, headers=admin["headers"])).status_code == 204
+    assert await su.fetchval("SELECT count(*) FROM platform.staff_users WHERE id=$1", uuid.UUID(sid)) == 0
+    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='staff.delete' AND target_id=$1", sid) == 1
+    assert (await client.delete(url, params={"reason": "Left the company"}, headers=admin["headers"])).status_code == 404

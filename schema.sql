@@ -898,7 +898,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_user, pl
 GRANT SELECT ON platform.plans, platform.alert_switches TO app_user, service_worker;
 GRANT SELECT ON platform.messaging_providers, platform.storage_settings, platform.webhook_endpoints, platform.webhook_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
-GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints, platform.alert_checks TO platform_admin;
+GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints, platform.alert_checks, platform.staff_users TO platform_admin;
 GRANT SELECT ON platform.alert_checks, platform.fault_notify, platform.summary_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON platform.worker_seen TO service_worker;
 GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;

@@ -91,3 +91,10 @@ New customer, step 1 ("Customer"): customer name, owner name, owner mobile (up t
 - The owner starts as the first person who gets messages.
 - **Edit** on the customer page changes all of these (Owner, Admin and Onboarding). Onboarding cannot change the end date or other account settings.
 - Customers made before this have no owner mobile; their page shows a note until it is added with Edit.
+
+## Changing and deleting console users
+
+Setup, Console users: **Edit** changes a person's name, email and role. **Delete** removes them for good (type their name to confirm). Owner and Admin only; an Admin cannot touch an Owner.
+- You cannot change your own role or delete yourself, and the last active Owner can never be changed or deleted.
+- A changed role signs the person out, so the old permissions do not linger.
+- A person who has already viewed a customer's account on screen has a history that must stay, so they cannot be deleted: use Switch off instead (the screen says so).

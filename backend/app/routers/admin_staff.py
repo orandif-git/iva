@@ -60,9 +60,35 @@ async def edit_staff(sid: UUID, body: StaffPatchIn, ctx: AdminCtx = Depends(admi
             raise ApiError(409, "own_role", "You cannot change your own role. Ask another owner.")
         if cur["role"] == "owner" and not await _another_owner(ctx, sid):
             raise ApiError(409, "last_owner", "There must always be one active owner.")
-    await ctx.conn.execute("UPDATE platform.staff_users SET name=$2, role=$3::platform.staff_role WHERE id=$1", sid, ch.get("name", cur["name"]), ch.get("role", cur["role"]))
-    await ctx.audit("staff.update", target_type="staff", target_id=sid, before={"name": cur["name"], "role": cur["role"]}, after={"name": ch.get("name", cur["name"]), "role": ch.get("role", cur["role"])})
+    email = ch.get("email", cur["email"])
+    try:
+        await ctx.conn.execute("UPDATE platform.staff_users SET name=$2, role=$3::platform.staff_role, email=$4 WHERE id=$1", sid, ch.get("name", cur["name"]), ch.get("role", cur["role"]), email)
+    except asyncpg.UniqueViolationError:
+        raise ApiError(409, "email_taken", "Another person already uses this email.")
+    if ch.get("role", cur["role"]) != cur["role"]:
+        await auth.revoke_all(ctx.conn, "staff", sid)            # a new role starts with a fresh sign-in, so the old permissions cannot linger
+    await ctx.audit("staff.update", target_type="staff", target_id=sid, before={"name": cur["name"], "role": cur["role"], "email": cur["email"]},
+                    after={"name": ch.get("name", cur["name"]), "role": ch.get("role", cur["role"]), "email": email})
     return dict(await _get(ctx, sid))
+
+
+@router.delete("/{sid}", status_code=204)
+async def delete_staff(sid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    """Removes a person for good. Not yourself, and never the last active Owner. A person who has already looked into a customer's account on screen cannot be
+    removed (that record must stay): switch them off instead."""
+    cur = await _get(ctx, sid)
+    _guard(ctx, None, cur["role"])
+    if sid == ctx.staff.id:
+        raise ApiError(409, "own_account", "You cannot delete your own account.")
+    if cur["role"] == "owner" and cur["status"] == "active" and not await _another_owner(ctx, sid):
+        raise ApiError(409, "last_owner", "There must always be one active owner.")
+    await auth.revoke_all(ctx.conn, "staff", sid)
+    try:
+        async with ctx.conn.transaction():
+            await ctx.conn.execute("DELETE FROM platform.staff_users WHERE id=$1", sid)
+    except asyncpg.ForeignKeyViolationError:
+        raise ApiError(409, "has_history", "This person has history that must be kept, so they cannot be deleted. Switch them off instead.")
+    await ctx.audit("staff.delete", target_type="staff", target_id=sid, reason=reason, before={"name": cur["name"], "email": cur["email"], "role": cur["role"]})
 
 
 @router.post("/{sid}/disable", status_code=204)
