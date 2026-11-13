@@ -157,3 +157,9 @@ Setup, WhatsApp connection has two tabs (Owner only): **Summaries** (the direct-
 - Endpoints: `GET/PUT /admin/v1/webhooks/connection`, `POST /admin/v1/webhooks/connection/apply`, `POST /admin/v1/webhooks/connection/test` (all Owner only), `use_shared` on `PUT /admin/v1/webhooks/{id}`. Migration 029 (`platform.alert_connection`, `webhook_endpoints.use_shared`).
 - Sending resolves the address and headers in `messaging/delivery.py` (`resolve`), also for the platform-fault alert. The key is stored encrypted and only its last four characters are ever returned.
 - The earlier per-alert "Access key" box (`POST /admin/v1/webhooks/key`) stays for an alert that uses its own address.
+
+## Test messages
+
+- **Send a test** in an alert's window (Setup, WhatsApp templates) and on the Alerts tab always asks for a mobile number (`to_phone` is required on `POST /admin/v1/webhooks/{id}/send-now`), so a test can never go to a placeholder number. It shows the provider's answer in plain words.
+- A test message (from there, or the Test button on a customer's page) is complete: sample values for everything the message uses (people, limit, place, time) and our own sample picture and video, `web/img/sample-alert.jpg` and `sample-alert.mp4` (public, 17 KB and 13 KB), so a video alert arrives as a finished message.
+- In any message sent to the provider, a text value with nothing to show is sent as a dash, because WhatsApp refuses an empty text parameter. Link values (`image_url`, `clip_url`, `document_url`) are never replaced; a real alert waits for its clip before it is sent.

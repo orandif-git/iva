@@ -110,6 +110,8 @@ def event_body(ep, c, n, link_hours: int, *, test: bool = False) -> tuple[bytes,
     event = cat.event_name(c["rule_type"])
     values = webhook.values_for(tenant_name=c["tenant_name"], alert_id=c["alert_id"], title=c["title"], event=event, details=details, person_name=c["r_name"], phone=n["recipient"],
                                 image_url=image, clip_url=clip)
+    if details.get("test"):                       # a test message: sample values and our own sample picture and video, so nothing in it is empty
+        values = webhook.test_values(values)
     return webhook.render(ep["payload_template"], values).encode("utf-8"), event
 
 

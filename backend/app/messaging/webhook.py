@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..config import get_settings
 from ..services import alert_catalog as cat
 from . import netguard
 
@@ -65,11 +66,33 @@ def default_template(alert_type: str) -> str:
     return "{\n  " + ",\n  ".join(lines) + "\n}"
 
 
+LINK_KEYS = ("image_url", "clip_url", "document_url")        # a link is never replaced by a dash: if there is none, it stays empty
+
+
+def sample_media() -> dict[str, str]:
+    """A small sample picture and video that we host ourselves, so a test alert carries real, downloadable media."""
+    base = get_settings().public_base_url.rstrip("/")
+    return {"image_url": f"{base}/img/sample-alert.jpg", "clip_url": f"{base}/img/sample-alert.mp4"}
+
+
+def test_values(values: dict[str, str]) -> dict[str, str]:
+    """Completes the values of a test alert with sample ones (a people count, a limit, a place) and the sample media, so no part of the message is left empty."""
+    out = {**SAMPLE, **sample_media()}
+    out.update({k: v for k, v in values.items() if v not in ("", None) and k not in LINK_KEYS})
+    return out
+
+
 def render(template: str, values: dict[str, str]) -> str:
-    """Fills in the shortcodes. A value goes into the JSON text with its quotes, slashes and line breaks escaped, so it can never change the structure."""
+    """Fills in the shortcodes. A value goes into the JSON text with its quotes, slashes and line breaks escaped, so it can never change the structure.
+    A text value with nothing to show becomes a dash, because WhatsApp refuses a message with an empty text value."""
     def one(m):
         k = m.group(1)
-        return json.dumps(str(values[k]), ensure_ascii=False)[1:-1] if k in values else m.group(0)
+        if k not in values:
+            return m.group(0)
+        v = str(values[k])
+        if v.strip() == "" and k not in LINK_KEYS:
+            v = "-"
+        return json.dumps(v, ensure_ascii=False)[1:-1]
     return SHORTCODE.sub(one, template)
 
 

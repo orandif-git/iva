@@ -224,7 +224,7 @@ async def send_test(rule_type: str, body: TestIn, ctx: CustomerCtx):
     from zoneinfo import ZoneInfo
     meta = ALERT_TYPES[rule_type]
     title = "Test: " + meta["title"]
-    payload = {"event": clean_text(title, 100), "location": "Test", "time": datetime.now(timezone.utc).astimezone(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"),
+    payload = {"event": clean_text(title, 100), "location": "Test camera", "time": datetime.now(timezone.utc).astimezone(ZoneInfo(tenant["timezone"])).strftime("%d %b, %I:%M %p"),
                "details": "This is a test message. Nothing is wrong."}
     async with db.service_tx() as c:        # the webhook set-up belongs to the platform, so the queueing runs with the service's rights; every row is still for this one tenant
         alert_id = await c.fetchval(

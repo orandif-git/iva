@@ -941,6 +941,13 @@ document.addEventListener("click", async (ev) => {
       <label class="bold" for="at-n">Send to (mobile number)</label><input class="in" id="at-n" inputmode="tel" placeholder="+91 98765 43210" value="${esc(last)}">
       <div class="actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn pri" type="button" data-confirm="doaltest">Send test</button></div>`);
     }
+    if (d.confirm === "dodtest") {
+      const to = $("#dt-n").value.trim();
+      if (!/^\+?[0-9 ]{8,16}$/.test(to)) return toast("Enter a mobile number with 8 to 16 digits, for example +91 98765 43210.", true);
+      try { localStorage.setItem("gi_test_to", to); } catch (e) { /* no storage */ }
+      const r = await api.post(`/admin/v1/webhooks/${S.testEp}/send-now`, { to_phone: to }); closeModal();
+      return r.ok ? toast("Sent. The provider accepted it.") : toast("The provider did not accept it: " + (r.error || "status " + r.status), true);
+    }
     if (d.confirm === "doaltest") {
       const to = $("#at-n").value.trim(), alert_type = $("#at-a").value;
       if (!/^\+?[0-9 ]{8,16}$/.test(to)) return toast("Enter a mobile number with 8 to 16 digits, for example +91 98765 43210.", true);
@@ -1042,7 +1049,13 @@ document.addEventListener("click", async (ev) => {
       const r = await api.post("/admin/v1/webhooks/key", conn ? { endpoint_id: id, use_connection: true, all_on_address: $("#d-keyall").checked } : { endpoint_id: id, key, all_on_address: $("#d-keyall").checked });
       closeModal(); toast(r.updated === 1 ? "Key saved" : `Key saved on ${r.updated} alerts`); return render(true);
     }
-    if (g("#dtest")) { await api.post(`/admin/v1/webhooks/${g("#dtest").dataset.wid}/send-now`, {}); return toast("Test sent"); }
+    if (g("#dtest")) {
+      let last = ""; try { last = localStorage.getItem("gi_test_to") || ""; } catch (e) { /* no storage */ }
+      S.testEp = g("#dtest").dataset.wid;
+      return modal(`${mh("Send a test")}<p class="sub nm">Sends this alert with sample values, and a sample picture and video, to the number below. Nobody else receives it.</p>
+      <label class="bold" for="dt-n">Send to (mobile number)</label><input class="in" id="dt-n" inputmode="tel" placeholder="+91 98765 43210" value="${esc(last)}">
+      <div class="actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn pri" type="button" data-confirm="dodtest">Send test</button></div>`);
+    }
     if (g("#dnew")) { const type = g("#dnew").dataset.type, a = S.data.cat.find((x) => x.type === type); await api.post("/admin/v1/webhooks", { name: a.title, alert_type: type, url: $("#d-url").value.trim() }); closeModal(); toast("Set up"); return render(true); }
   } catch (e) { toast(errText(e), true); }
 });

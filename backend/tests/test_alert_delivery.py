@@ -18,6 +18,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from app.config import get_settings
 from app.messaging import delivery, evidence, webhook
 from app.db import db
 from app.services import alert_catalog as cat_mod, detectors, retention, sweeper
@@ -165,7 +166,8 @@ async def test_send_now_sends_a_marked_and_signed_test_event_with_sample_values(
     assert call["headers"]["x-test"] == "true" and call["headers"]["x-event"] == "smart.blocked_plate" and call["headers"]["authorization"] == TOKEN
     assert call["headers"]["x-signature"] == webhook.sign(world["secret"], call["headers"]["x-timestamp"], call["raw"])
     rx.script.append(500)
-    assert (await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)).json() | {"sent": 0} == {"ok": False, "status": 500, "error": "The webhook answered HTTP 500.", "sent": 0}
+    assert (await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "9000000007"}, headers=h)).json() | {"sent": 0} == {"ok": False, "status": 500, "error": "The webhook answered HTTP 500.", "sent": 0}
+    assert (await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)).status_code == 422, "a test always needs a number, so it can never go to a placeholder"
 
 
 async def test_link_life_is_at_most_four_hours_and_a_new_secret_is_shown_once(client, world):
@@ -645,18 +647,18 @@ async def test_alerts_that_use_the_shared_connection_send_to_it_with_its_key(cli
     rx = world["hook"]
     await client.put("/admin/v1/webhooks/connection", json={"url": world["srv"].url("/hook/shared"), "key": "SHARED-KEY-123456"}, headers=h)
     ep = await endpoint_of(client, world, "recorder_offline")
-    own = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    own = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "9000000007"}, headers=h)
     assert own.json()["ok"] and rx.calls[-1]["path"] == "/hook/wa" and rx.calls[-1]["headers"]["authorization"] == TOKEN, "before switching, the alert's own address and key are used"
     done = await client.post("/admin/v1/webhooks/connection/apply", headers=h)
     assert done.status_code == 200 and done.json()["switched"] > 0 and done.json()["using"] == done.json()["alerts"]
-    after = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    after = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "9000000007"}, headers=h)
     assert after.json()["ok"] and rx.calls[-1]["path"] == "/hook/shared" and rx.calls[-1]["headers"]["authorization"] == "Bearer SHARED-KEY-123456"
     await client.put("/admin/v1/webhooks/connection", json={"key": "ROTATED-KEY-00001111"}, headers=h)
-    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "9000000007"}, headers=h)
     assert rx.calls[-1]["headers"]["authorization"] == "Bearer ROTATED-KEY-00001111", "a changed key reaches every alert at once"
     back = await client.put(f"/admin/v1/webhooks/{ep['id']}", json={"use_shared": False}, headers=h)
     assert back.status_code == 200 and back.json()["use_shared"] is False
-    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "9000000007"}, headers=h)
     assert rx.calls[-1]["path"] == "/hook/wa" and rx.calls[-1]["headers"]["authorization"] == TOKEN, "one alert can go back to its own address"
 
 
@@ -685,3 +687,27 @@ async def test_setting_up_every_alert_without_an_address_uses_the_shared_connect
     assert ok.status_code == 200 and ok.json()["created"]
     items = (await client.get("/admin/v1/webhooks", headers=h)).json()["items"]
     assert items and all(e["use_shared"] for e in items)
+
+
+# ---------------------------------------------------------------------------------- test messages are complete, and no text value is ever empty
+def test_an_empty_text_value_becomes_a_dash_but_a_link_stays_empty():
+    out = json.loads(webhook.render('{"a": "{people}", "b": "{clip_url}", "c": "{camera}"}', {"people": "", "clip_url": "", "camera": "Back gate"}))
+    assert out == {"a": "-", "b": "", "c": "Back gate"}
+
+
+async def test_a_test_from_the_template_window_carries_sample_values_and_our_own_sample_media(client, world):
+    h, rx = world["admin"], world["hook"]
+    ep = await endpoint_of(client, world, "people_in_area")
+    r = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", json={"to_phone": "+91 98410 00000"}, headers=h)
+    assert r.json()["ok"]
+    sent = rx.calls[-1]["body"]
+    assert sent["phone_number"] == "919841000000", "the number typed is the number used"
+    base = get_settings().public_base_url.rstrip("/")
+    assert sent["clip_url"] == f"{base}/img/sample-alert.mp4" and sent["image_url"] == f"{base}/img/sample-alert.jpg"
+    assert all(str(v).strip() for v in sent.values()), "no part of a test message is empty"
+
+
+async def test_the_sample_picture_and_video_are_served_without_signing_in(client):
+    for name, kind in (("sample-alert.jpg", "image/jpeg"), ("sample-alert.mp4", "video/mp4")):
+        r = await client.get(f"/img/{name}")
+        assert r.status_code == 200 and r.headers["content-type"].startswith(kind) and len(r.content) > 1000, name

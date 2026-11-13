@@ -351,14 +351,13 @@ async def delete_endpoint(endpoint_id: UUID, reason: str | None = Query(None, mi
 
 
 class SendNow(Strict):
-    to_phone: str | None = Field(None, pattern=r"^\+?[0-9]{8,15}$")        # the number the test event is about; a sample number if left out
+    to_phone: str = Field(pattern=r"^\+?[0-9 ]{8,16}$")        # the number the test goes to: always asked for, so a test can never reach a placeholder number
 
 
-async def _test_send(ctx: AdminCtx, ep, to_phone: str | None) -> dict:
+async def _test_send(ctx: AdminCtx, ep, to_phone: str) -> dict:
     s = get_settings()
-    values = {**webhook.SAMPLE, "event_type": cat.event_name(ep["alert_type"]), "title": cat.CATALOG[ep["alert_type"]]["title"]}
-    if to_phone:
-        values["to_phone"] = to_phone.lstrip("+")
+    values = {**webhook.SAMPLE, **webhook.sample_media(), "event_type": cat.event_name(ep["alert_type"]), "title": cat.CATALOG[ep["alert_type"]]["title"],
+              "to_phone": to_phone.replace(" ", "").lstrip("+")}
     payload = webhook.render(ep["payload_template"], values).encode()
     cfg = await delivery.webhook_settings(ctx.conn)
     url, headers = await delivery.resolve(ctx.conn, ep)
@@ -369,6 +368,6 @@ async def _test_send(ctx: AdminCtx, ep, to_phone: str | None) -> dict:
 
 
 @router.post("/{endpoint_id}/send-now")
-async def send_now(endpoint_id: UUID, body: SendNow | None = None, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def send_now(endpoint_id: UUID, body: SendNow, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """Sends one test event with sample values to the endpoint, marked X-Test: true. Nothing is recorded for any customer."""
-    return await _test_send(ctx, await _get(ctx, endpoint_id), body.to_phone if body else None)
+    return await _test_send(ctx, await _get(ctx, endpoint_id), body.to_phone)
