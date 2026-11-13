@@ -16,6 +16,10 @@ COMMON_SHORTCODES = ["customer", "camera", "time", "details", "title", "to_name"
 MEDIA_SHORTCODES = {"image": ["image_url"], "image_clip": ["image_url", "clip_url"], "document": ["document_url"]}
 
 
+CLIP_TIME = ["clip_time", "clip_from", "clip_to"]       # when the video starts and ends, on the shop's clock, so it can be found on the recorder
+CLIP_PARAM = {"clip": {"type": "boolean", "default": True}}
+
+
 def _a(family, group, title, description, *, built=False, severity="warning", params=None, shortcodes=(), media="", needs="", uses_evidence=False, internal=False):
     """`internal`: an event the system sends (a report is ready) that is not an alert a customer can switch on. It has a webhook like any alert but is never listed to customers or in plans."""
     return {"internal": internal, "family": family, "group": group, "title": title, "description": description, "built": built, "severity": severity, "params": params or {},
@@ -69,17 +73,17 @@ CATALOG: dict[str, dict] = {
                    media="image", uses_evidence=True, params={"people": {"type": "integer", "default": 50, "min": 1, "max": 100000}, "picture_minutes": {"type": "integer", "default": 15, "min": 0, "max": 240}}),
     "after_hours": _a(SMART, "People", "After-hours activity", "People are counted at a door when you are closed.", built=True, severity="critical", media="image", shortcodes=["people"],
                       needs="People counting and opening hours", uses_evidence=True, params={"grace_minutes": {"type": "integer", "default": 30, "min": 0, "max": 180}}),
-    "people_in_area": _a(SMART, "People", "Area occupancy limit exceeded", "The number of people in an area you marked stays above your limit.", built=True, shortcodes=["area", "people", "limit", "minutes"],
-                         needs="People counting in a marked area", media="image", uses_evidence=True),
-    "queue_long": _a(SMART, "People", "Long queue", "The queue in an area you marked is longer than your limit, or someone has waited too long.", built=True, shortcodes=["area", "length", "limit", "minutes", "wait_minutes"],
-                     needs="People counting in a marked area", media="image", uses_evidence=True),
+    "people_in_area": _a(SMART, "People", "Area occupancy limit exceeded", "The number of people in an area you marked stays above your limit.", built=True, shortcodes=["area", "people", "limit", "minutes", *CLIP_TIME],
+                         needs="People counting in a marked area", media="image_clip", uses_evidence=True, params=CLIP_PARAM),
+    "queue_long": _a(SMART, "People", "Long queue", "The queue in an area you marked is longer than your limit, or someone has waited too long.", built=True, shortcodes=["area", "length", "limit", "minutes", "wait_minutes", *CLIP_TIME],
+                     needs="People counting in a marked area", media="image_clip", uses_evidence=True, params=CLIP_PARAM),
     "area_activity": _a(SMART, "People", "Activity in an area", "A person or a vehicle is seen in an area you marked, when the shop is closed, between times you set, or at any time.", built=True,
-                        media="image", shortcodes=["area", "what", "when"], needs="Person and vehicle detection in a marked area", uses_evidence=True),
+                        media="image_clip", shortcodes=["area", "what", "when", *CLIP_TIME], needs="Person and vehicle detection in a marked area", uses_evidence=True, params=CLIP_PARAM),
     "phone_use": _a(SMART, "People", "Possible phone use (staff area)", "A phone seems to be in use in an area you marked for staff. It names the area, never a person.", built=True, severity="info",
-                    media="image", shortcodes=["area", "seconds"], needs="Person and phone detection in a marked area", uses_evidence=True),
+                    media="image_clip", shortcodes=["area", "seconds", *CLIP_TIME], needs="Person and phone detection in a marked area", uses_evidence=True, params=CLIP_PARAM),
     # ---- Smart Alerts: vehicles
     "blocked_plate": _a(SMART, "Vehicles", "Blocked vehicle detected", "A vehicle on your blocked list is read at any camera.", built=True, severity="critical", uses_evidence=True, media="image_clip",
-                        shortcodes=["plate", "direction"], needs="Number plates", params={"clip": {"type": "boolean", "default": True}}),
+                        shortcodes=["plate", "direction", *CLIP_TIME], needs="Number plates", params=CLIP_PARAM),
     "vehicle_overstay": _a(SMART, "Vehicles", "Vehicle overstay", "A vehicle entered and has not left after the time you set.", built=True, shortcodes=["plate", "minutes", "hours", "stay"], needs="Number plates", media="image", uses_evidence=True,
                            params={"max_minutes": {"type": "integer", "default": 480, "min": 5, "max": 10080}}),
     "low_confidence_plate": _a(SMART, "Vehicles", "Number plate needs review", "A number plate could not be read with confidence and needs a person to check it.", built=True, severity="info",

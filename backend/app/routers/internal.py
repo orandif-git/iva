@@ -189,7 +189,12 @@ async def camera_config(camera_id: UUID, ctx: ServiceCtx = Depends(service_ctx))
                                                    camera_id, list(alert_catalog.AREA_ALERTS))] if ok else []
     areas = [a for a in areas if alert_catalog.AREA_ALERTS[a["kind"]] in ok]
     rule = await ctx.conn.fetchrow("SELECT enabled, params FROM app.alert_rules WHERE tenant_id=(SELECT tenant_id FROM app.cameras WHERE id=$1) AND rule_type='blocked_plate'", camera_id)
-    return {"clips": bool(c["use_anpr"]) and clips_wanted(c, rule), "camera_id": c["id"], "name": c["name"], "enabled": c["enabled"], "use_footfall": c["use_footfall"], "use_anpr": c["use_anpr"], "use_areas": bool(areas),
+    want = bool(c["use_anpr"]) and clips_wanted(c, rule)
+    for kind in {a["kind"] for a in areas}:                  # an area alert can send a video too
+        r = await ctx.conn.fetchrow("SELECT enabled, params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type=$2", c["tenant_id"], alert_catalog.AREA_ALERTS[kind])
+        want = want or (r is not None and clips_wanted(c, r))
+    tz = await ctx.conn.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", c["tenant_id"])
+    return {"clips": want, "timezone": tz, "camera_id": c["id"], "name": c["name"], "enabled": c["enabled"], "use_footfall": c["use_footfall"], "use_anpr": c["use_anpr"], "use_areas": bool(areas),
             "stream": c["stream"], "tenant_status": c["tenant_status"], "source_set_at": c["source_set_at"],
             "active": c["enabled"] and c["tenant_status"] not in ("suspended", "cancelled"),
             "frame_rate": resolve(tenant_policy(c), camera_override(c)),

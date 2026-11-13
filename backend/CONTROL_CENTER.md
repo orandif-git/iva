@@ -61,3 +61,13 @@ New customers start with the current setting. An alert that is still being sent 
 ## The message log
 
 `GET /admin/v1/messaging/log` reads the log for a range of days (India time), a status group and a search, 100 at a time with the total; both Messages pages use it.
+
+## Videos on area alerts
+
+People in an area, long queue, activity in an area and phone use can now send a short video, the same way a blocked vehicle does.
+
+- A video is made only when the customer's account allows videos and the alert's `clip` setting is not off.
+- It covers about 10 seconds before and 5 seconds after the latest report, at 5 pictures a second. The seconds before are sparser when nothing was in view.
+- The shop's date and time are written in the bottom-left corner of every picture of the video.
+- Three shortcodes give the time range on the shop's clock, so the owner can find the same moment on the recorder: `{clip_time}` (13 Nov, 10:11:50 PM to 10:12:05 PM), `{clip_from}` and `{clip_to}`.
+- The message waits up to 40 seconds for the video, then goes out without it. The webhook template must contain `{clip_url}` for the message to wait.

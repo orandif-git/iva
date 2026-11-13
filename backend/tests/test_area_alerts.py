@@ -377,3 +377,34 @@ async def test_someone_in_the_store_room_raises_an_alert_only_when_it_is_being_w
     (c,) = [z for z in await su.fetch("SELECT id FROM app.camera_zones WHERE camera_id=$1", uuid.UUID(cam))]
     await report(client, make, cam, str(c["id"]), steady(1, 70))
     assert await alerts_of(su, t, "area_activity") == []
+
+
+# ------------------------------------------------------------------------------------------ a video with the alert, and when it was taken
+async def test_an_area_alert_asks_the_worker_for_a_video_and_the_message_says_which_minutes_to_look_at(client, make, su):
+    t, u, cam = await shop(client, make, su)
+    await turn_on(client, u, "people_in_area")
+    await su.execute("UPDATE app.tenants SET msg_clips=true, timezone='Asia/Kolkata' WHERE id=$1", t)
+    (a,) = await draw(client, u, cam, area("area_count", "Billing counter", limit=5, minutes=2))
+    cfg = await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())
+    assert cfg.json()["clips"] is True and cfg.json()["timezone"] == "Asia/Kolkata", "the worker keeps recent pictures for this camera"
+    res = await report(client, make, cam, a["id"], steady(7))
+    (ask,) = res["clips"]
+    assert 0 <= ask["index"] < 13 and ask["seconds_before"] == 10 and ask["seconds_after"] == 5
+    row = await su.fetchrow("SELECT id, clip_wait_until FROM app.alerts WHERE tenant_id=$1 AND rule_type='people_in_area'", t)
+    assert str(row["id"]) == ask["alert_id"] and row["clip_wait_until"] is not None
+    start = datetime(2026, 11, 13, 16, 41, 50, tzinfo=timezone.utc).timestamp()          # 10:11:50 PM in India
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
+    up = await client.post(f"/internal/v1/alerts/{ask['alert_id']}/clip", content=mp4, headers={**make.service(), "X-Clip-From": str(start), "X-Clip-To": str(start + 15)})
+    assert up.status_code == 201, up.text
+    d = json.loads((await su.fetchrow("SELECT details::text AS d FROM app.alerts WHERE id=$1", row["id"]))["d"])
+    assert d["clip_from"] == "10:11:50 PM" and d["clip_to"] == "10:12:05 PM" and d["clip_time"] == "13 Nov, 10:11:50 PM to 10:12:05 PM"
+
+
+async def test_a_customer_who_switched_videos_off_for_the_alert_gets_none(client, make, su):
+    t, u, cam = await shop(client, make, su)
+    r = await client.put("/v1/alert-types/people_in_area", json={"enabled": True, "params": {"clip": False}}, headers=u["headers"])
+    assert r.status_code == 200, r.text
+    await su.execute("UPDATE app.tenants SET msg_clips=true WHERE id=$1", t)
+    (a,) = await draw(client, u, cam, area("area_count", "Billing counter", limit=5, minutes=2))
+    assert (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()["clips"] is False
+    assert (await report(client, make, cam, a["id"], steady(7)))["clips"] == []

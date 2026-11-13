@@ -29,6 +29,7 @@ class CameraConfig:
     zone: list | None = None           # plate zone polygon, normalised. None means the whole picture
     zone_direction: tuple | None = None
     clips: bool = False                # keep recent pictures so a short video can be made when an alert asks for one
+    tz: str | None = None              # the shop's time zone, for the clock written on videos
     areas: tuple = ()                  # marked areas (AreaConfig): people in an area, queues, phone use in a staff area
 
     @classmethod
@@ -40,7 +41,7 @@ class CameraConfig:
             elif z["kind"] == "anpr_zone" and len(z["points"]) >= 3:
                 zone, zdir = [tuple(p) for p in z["points"]], (tuple(z["in_direction"]) if z.get("in_direction") else None)
         areas = tuple(AreaConfig.from_backend(a) for a in j.get("areas", []) if len(a.get("points", [])) >= 3)
-        return cls(j["camera_id"], j.get("name", "camera"), bool(j.get("use_footfall")), bool(j.get("use_anpr")), line, zone, zdir, bool(j.get("clips")), areas)
+        return cls(j["camera_id"], j.get("name", "camera"), bool(j.get("use_footfall")), bool(j.get("use_anpr")), line, zone, zdir, bool(j.get("clips")), j.get("timezone"), areas)
 
 
 @dataclass
@@ -80,9 +81,9 @@ class CameraPipeline:
         self.minutes: dict = {}
         self.visits: dict[int, Visit] = {}
         self.clips = None
-        if cfg.clips and cfg.use_anpr:
+        if cfg.clips and (cfg.use_anpr or cfg.areas):
             from .clips import ClipRecorder
-            self.clips = ClipRecorder(sink, ffmpeg=ffmpeg)
+            self.clips = ClipRecorder(sink, tz=cfg.tz, ffmpeg=ffmpeg)
             if hasattr(sink, "clip_handler"):
                 sink.clip_handler = self.clips.request
         self.frame_no = 0

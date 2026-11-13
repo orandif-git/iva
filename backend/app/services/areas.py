@@ -103,21 +103,26 @@ async def _picture(conn, zone_id: UUID, minutes: int, picture_minutes: int = 15)
 
 async def evaluate(conn, zone_id: UUID) -> int:
     """Raises the alert for one area if its condition holds right now. Returns how many alerts were raised (0 or 1)."""
+    return int(await evaluate_alert(conn, zone_id) is not None)
+
+
+async def evaluate_alert(conn, zone_id: UUID):
+    """The same, but returns the new alert's id (None when nothing was raised), so the caller can ask for a video of it."""
     z = await conn.fetchrow(
         """SELECT z.id, z.tenant_id, z.camera_id, z.kind::text AS kind, z.name, z.params, c.name AS camera FROM app.camera_zones z JOIN app.cameras c ON c.id = z.camera_id
            WHERE z.id=$1 AND z.kind::text = ANY($2::text[])""", zone_id, list(cat.AREA_ALERTS))
     if z is None:
-        return 0
+        return None
     p, area, alert = z["params"] or {}, z["name"] or "an area", cat.AREA_ALERTS[z["kind"]]
     repeat = int(p.get("repeat_minutes", 15))
     common = dict(camera_id=z["camera_id"], camera_name=z["camera"], dedupe_key=f"area:{z['id']}", cooldown_minutes=repeat)
     if z["kind"] == "area_count":
         limit, minutes = int(p.get("limit", 0)), int(p.get("minutes", 2))
         if limit < 1 or not await _held(conn, z["id"], minutes, limit):
-            return 0
+            return None
         now = await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
-        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Occupancy limit exceeded in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
-                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
+        return await raise_alert(conn, z["tenant_id"], alert, title=f"Occupancy limit exceeded in {area}", body=f"{now} people are in {area}. Your limit is {limit}, and it has been at or above that for {minutes} minutes.",
+                                     details={"area": area, "people": now, "limit": limit, "minutes": minutes}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), expect_clip=True, **common)
     if z["kind"] == "queue_area":
         length, minutes, wait, staff = int(p.get("length", 5)), int(p.get("minutes", 3)), int(p.get("wait_minutes", 0)), int(p.get("staff", 0))
         seen = await conn.fetchrow("SELECT people, wait_seconds FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"])
@@ -126,19 +131,19 @@ async def evaluate(conn, zone_id: UUID) -> int:
         # someone waiting: only when there is a queue at all beyond your own people (the cashier is always "waiting")
         waited = wait > 0 and now["people"] > 0 and (await conn.fetchval("SELECT max(wait_seconds) FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '60 seconds' AND people > $2", z["id"], staff) or 0) >= wait * 60
         if not (long_queue or waited):
-            return 0
+            return None
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."
-        return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Long queue at {area}", body=why,
-                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
+        return await raise_alert(conn, z["tenant_id"], alert, title=f"Long queue at {area}", body=why,
+                                     details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), expect_clip=True, **common)
     if z["kind"] == "activity_area":
         return await _activity(conn, z, p, area, alert, common)
     seconds = int(p.get("seconds", 20))
     r = await conn.fetchrow("SELECT max(phone_seconds) AS held, (array_agg(evidence_id ORDER BY at DESC) FILTER (WHERE evidence_id IS NOT NULL))[1] AS evidence "
                             "FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '30 seconds'", z["id"])
     if not r["held"] or r["held"] < seconds:
-        return 0
-    return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Possible phone use in {area}", body=f"A phone seems to have been in use in {area} for {int(r['held'])} seconds. This is a possible case, please check the picture.",
-                                 details={"area": area, "seconds": int(r["held"])}, evidence_id=r["evidence"], **common) is not None)
+        return None
+    return await raise_alert(conn, z["tenant_id"], alert, title=f"Possible phone use in {area}", body=f"A phone seems to have been in use in {area} for {int(r['held'])} seconds. This is a possible case, please check the picture.",
+                                 details={"area": area, "seconds": int(r["held"])}, evidence_id=r["evidence"], expect_clip=True, **common)
 
 
 def in_window(p: dict, hours, local: datetime) -> bool:
@@ -153,7 +158,7 @@ def in_window(p: dict, hours, local: datetime) -> bool:
     return hours.set and not hours.is_open(local)            # "closed": with no opening hours set there is no "closed", so nothing is raised
 
 
-async def _activity(conn, z, p: dict, area: str, alert: str, common: dict) -> int:
+async def _activity(conn, z, p: dict, area: str, alert: str, common: dict) -> "UUID | None":
     """Someone (or a vehicle) in the area for `minutes`, at a time it is being watched."""
     from datetime import datetime as _dt
     from zoneinfo import ZoneInfo
@@ -161,14 +166,14 @@ async def _activity(conn, z, p: dict, area: str, alert: str, common: dict) -> in
     t = await conn.fetchrow("SELECT timezone, open_time, close_time, closed_days, day_hours FROM app.tenants WHERE id=$1", z["tenant_id"])
     local = _dt.now(ZoneInfo(t["timezone"])).replace(tzinfo=None)
     if not in_window(p, Hours.of(t), local):
-        return 0
+        return None
     minutes = int(p.get("minutes", 1))
     if not await _held(conn, z["id"], minutes, 1):
-        return 0
+        return None
     n = int(await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"]) or 1)
     one, many = WHAT.get(p.get("target", "person"), WHAT["person"])
     when = {"closed": "while the shop is closed", "between": f"between {p.get('from')} and {p.get('to')}", "always": ""}[p.get("when", "closed")]
     seen = one if n == 1 else f"{n} {many}"
-    return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Activity in {area}", body=f"{seen} seen in {area}{' ' + when if when else ''}.",
+    return await raise_alert(conn, z["tenant_id"], alert, title=f"Activity in {area}", body=f"{seen} seen in {area}{' ' + when if when else ''}.",
                                  details={"area": area, "what": one.split()[-1], "when": when or "at any time", "count": n},
-                                 evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 10))), **common) is not None)
+                                 evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 10))), expect_clip=True, **common)

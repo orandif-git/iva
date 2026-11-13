@@ -13,7 +13,8 @@ import tempfile
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import cv2
@@ -109,10 +110,27 @@ async def encode_mp4(jpegs: list[bytes], *, fps: int = OUT_FPS, ffmpeg: str = "f
     return None
 
 
+def stamp(frame, local: datetime):
+    """The shop's date and time in the bottom-left corner of a copy of the picture, so a clip can be matched with the recorder's own playback."""
+    img = frame.copy()
+    h, w = img.shape[:2]
+    scale = max(0.6, w / 1280)
+    text = local.strftime("%d %b %Y  %I:%M:%S %p")
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7 * scale, max(1, round(scale * 1.5)))
+    y = h - int(10 * scale)
+    cv2.rectangle(img, (4, y - th - int(8 * scale)), (tw + int(14 * scale), y + int(8 * scale)), (0, 0, 0), -1)
+    cv2.putText(img, text, (int(9 * scale), y), cv2.FONT_HERSHEY_SIMPLEX, 0.7 * scale, (255, 255, 255), max(1, round(scale * 1.5)))
+    return img
+
+
 class ClipRecorder:
-    def __init__(self, sink, *, ffmpeg: str = "ffmpeg", fps: int = OUT_FPS, keep: float = KEEP_SECONDS, max_bytes: int = 15_000_000, quality: int = 75,
+    def __init__(self, sink, *, tz: str | None = None, ffmpeg: str = "ffmpeg", fps: int = OUT_FPS, keep: float = KEEP_SECONDS, max_bytes: int = 15_000_000, quality: int = 75,
                  extra_wait: float = 6.0, concurrency: int = 2, retry_delays=(2.0, 5.0), sleep=asyncio.sleep, clock=time.monotonic):
         self.sink, self.ffmpeg, self.fps, self.max_bytes, self.quality = sink, ffmpeg, fps, max_bytes, quality
+        try:
+            self.tz = ZoneInfo(tz) if tz else None             # the shop's clock, burnt into every picture of the video
+        except Exception:
+            self.tz = None
         self.ring = FrameRing(keep)
         self.extra_wait, self.retry_delays, self._sleep, self._clock = extra_wait, retry_delays, sleep, clock
         self._sem = asyncio.Semaphore(concurrency)
@@ -121,6 +139,8 @@ class ClipRecorder:
         self.stats = {"requested": 0, "uploaded": 0, "failed": 0, "frames_buffered": 0}
 
     def add(self, frame, ts: datetime) -> None:
+        if self.tz is not None:
+            frame = stamp(frame, ts.astimezone(self.tz))
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
         if ok:
             self.ring.add(ts.timestamp(), buf.tobytes())
@@ -147,13 +167,14 @@ class ClipRecorder:
                 log.warning("no pictures around the moment, so no clip for alert %s", alert_id)
                 self.stats["failed"] += 1
                 return
+            span = (frames[0][0], frames[-1][0])           # first and last picture, so the message can say which minutes to look at on the recorder
             async with self._sem:
                 data = await encode_mp4(resample(frames, self.fps), fps=self.fps, ffmpeg=self.ffmpeg, max_bytes=self.max_bytes)
             if data is None:
                 self.stats["failed"] += 1
                 return
             for attempt in range(len(self.retry_delays) + 1):
-                outcome = await self.sink.upload_clip(alert_id, data)
+                outcome = await self.sink.upload_clip(alert_id, data, span)
                 if outcome == "ok":
                     self.stats["uploaded"] += 1
                     return

@@ -115,6 +115,18 @@ class BackendSink:
             return None
         return r.json()
 
+    def _start_clips(self, res: dict, chunk: list, when: str) -> None:
+        """The backend wants a video for some of the items it was just sent: hand each to the camera's clip maker."""
+        for c in res.get("clips", []):
+            if 0 <= c["index"] < len(chunk):
+                cam = chunk[c["index"]]["camera_id"]
+                handler = self.clip_handlers.get(cam) or (None if self.shared else self.clip_handler)
+                if handler:
+                    try:
+                        handler(cam, chunk[c["index"]][when], c["alert_id"], c.get("seconds_before", 5), c.get("seconds_after", 4))
+                    except Exception:
+                        log.exception("could not start a clip")
+
     async def _upload_picture(self, item: dict) -> None:
         """Best effort: a plate read is worth more than its picture, so after three failed uploads the read goes without one."""
         jpeg = item.get("_jpeg")
@@ -138,10 +150,10 @@ class BackendSink:
             item.pop("_jpeg", None)
             self.stats["pictures_dropped"] += 1
 
-    async def upload_clip(self, alert_id: str, data: bytes) -> str:
+    async def upload_clip(self, alert_id: str, data: bytes, span: tuple | None = None) -> str:
         """Returns 'ok', 'retry' (try again later) or 'drop' (the backend will never accept it)."""
         try:
-            r = await self.client.post(f"/internal/v1/alerts/{alert_id}/clip", content=data, headers={**self._h, "Content-Type": "video/mp4"}, timeout=60)
+            r = await self.client.post(f"/internal/v1/alerts/{alert_id}/clip", content=data, headers={**self._h, "Content-Type": "video/mp4", **({"X-Clip-From": f"{span[0]:.3f}", "X-Clip-To": f"{span[1]:.3f}"} if span else {})}, timeout=60)
         except httpx.HTTPError as e:
             log.warning("could not upload a clip: %s", e)
             return "retry"
@@ -216,15 +228,7 @@ class BackendSink:
                 break
             self._note(res, [it["camera_id"] for it in chunk])
             self.stats["plates_sent"] += res.get("accepted", 0)
-            for c in res.get("clips", []):                 # the backend wants a video for some of these reads
-                if 0 <= c["index"] < len(chunk):
-                    cam = chunk[c["index"]]["camera_id"]
-                    handler = self.clip_handlers.get(cam) or (None if self.shared else self.clip_handler)
-                    if handler:
-                        try:
-                            handler(cam, chunk[c["index"]]["seen_at"], c["alert_id"], c.get("seconds_before", 5), c.get("seconds_after", 4))
-                        except Exception:
-                            log.exception("could not start a clip")
+            self._start_clips(res, chunk, "seen_at")
             sent = {id(it) for it in chunk}
             with self._lk:
                 self.plates = deque(p for p in self.plates if id(p) not in sent)
@@ -243,6 +247,7 @@ class BackendSink:
                 break
             self._note(res, [it["camera_id"] for it in chunk])
             self.stats["zones_sent"] += res.get("accepted", 0)
+            self._start_clips(res, chunk, "at")
             sent = {id(it) for it in chunk}
             with self._lk:
                 self.zones = deque(z for z in self.zones if id(z) not in sent)
@@ -320,8 +325,8 @@ class SinkView:
     def pending(self):
         return self._sink.pending
 
-    async def upload_clip(self, alert_id, data):
-        return await self._sink.upload_clip(alert_id, data)
+    async def upload_clip(self, alert_id, data, span=None):
+        return await self._sink.upload_clip(alert_id, data, span)
 
     async def flush(self, force=False):
         return await self._sink.flush(force)
@@ -351,7 +356,7 @@ class MemorySink:
 
     clip_handler = None
 
-    async def upload_clip(self, alert_id, data):
+    async def upload_clip(self, alert_id, data, span=None):
         self.clips = getattr(self, "clips", [])
         self.clips.append((alert_id, data))
         return "ok"

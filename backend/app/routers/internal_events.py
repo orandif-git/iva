@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 
 from ..deps import ServiceCtx, service_ctx
-from ..schemas import CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PictureBatch, PlateBatch, Rejected, ZoneBatch
+from ..schemas import AREA_CLIP_AFTER, AREA_CLIP_BEFORE, CLIP_AFTER, CLIP_BEFORE, ClipRequest, FootfallBatch, IngestResult, PictureBatch, PlateBatch, Rejected, ZoneBatch
 from ..services import areas as area_rules, picture_checks
 from ..services.alerts import raise_alert
 from ..services.plate_events import alert_if_blocked, alert_if_possibly_blocked, find_entry
@@ -164,7 +164,7 @@ async def ingest_zones(body: ZoneBatch, ctx: ServiceCtx = Depends(service_ctx)):
     cams = {r["id"]: r for r in await ctx.conn.fetch(_CAMS, list({e.camera_id for e in body.events}))}
     zones = {r["id"]: r for r in await ctx.conn.fetch("SELECT id, camera_id FROM app.camera_zones WHERE id = ANY($1::uuid[])", list({e.zone_id for e in body.events}))}
     now = datetime.now(timezone.utc)
-    rejected, rows, touched = [], [], set()
+    rejected, rows, touched, newest = [], [], set(), {}
     for i, e in enumerate(body.events):
         cam = cams.get(e.camera_id)
         reason = _why_rejected(cam, e.at, now, "use_areas")
@@ -175,7 +175,9 @@ async def ingest_zones(body: ZoneBatch, ctx: ServiceCtx = Depends(service_ctx)):
             continue
         rows.append((e.zone_id, cam["tenant_id"], e.at, e.people, e.wait_seconds, e.phone_seconds, e.evidence_id))
         touched.add(e.zone_id)
-    stored = 0
+        if e.zone_id not in newest or e.at >= body.events[newest[e.zone_id]].at:
+            newest[e.zone_id] = i
+    stored, clips = 0, []
     if rows:
         for r in rows:
             stored += int(bool(await ctx.conn.fetchval(
@@ -183,5 +185,7 @@ async def ingest_zones(body: ZoneBatch, ctx: ServiceCtx = Depends(service_ctx)):
                           (SELECT id FROM app.evidence WHERE id=$7 AND tenant_id=$2))
                    ON CONFLICT (zone_id, at) DO NOTHING RETURNING 1""", *r)))
         for zid in touched:
-            await area_rules.evaluate(ctx.conn, zid)
-    return IngestResult(accepted=len(rows), duplicates=len(rows) - stored, rejected=rejected)
+            alert_id = await area_rules.evaluate_alert(ctx.conn, zid)
+            if alert_id and await ctx.conn.fetchval("SELECT clip_wait_until IS NOT NULL FROM app.alerts WHERE id=$1", alert_id):
+                clips.append(ClipRequest(index=newest[zid], alert_id=alert_id, seconds_before=AREA_CLIP_BEFORE, seconds_after=AREA_CLIP_AFTER))     # a video around the newest report
+    return IngestResult(accepted=len(rows), duplicates=len(rows) - stored, rejected=rejected, clips=clips)

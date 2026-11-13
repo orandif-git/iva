@@ -373,6 +373,7 @@ class Rejected(BaseModel):
 
 
 CLIP_BEFORE, CLIP_AFTER = 5, 4        # seconds of video before and after the moment the plate was read
+AREA_CLIP_BEFORE, AREA_CLIP_AFTER = 10, 5     # an area alert: a little longer, so the owner sees how it built up
 
 
 class ClipRequest(BaseModel):

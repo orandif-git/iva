@@ -1,5 +1,6 @@
 """Workers upload evidence pictures here. Workers never hold storage credentials; this service checks and stores the file."""
 import uuid
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -43,6 +44,21 @@ async def upload_evidence(request: Request, camera_id: UUID = Query(...), kind: 
     return {"evidence_id": eid}
 
 
+def _clip_span(start: str | None, end: str | None, tz: str) -> dict | None:
+    """`start` and `end` are the first and last picture of the video, in seconds since 1970. Returns the three shortcodes, or None when they make no sense."""
+    try:
+        a, b = float(start), float(end)
+        z = ZoneInfo(tz)
+    except (TypeError, ValueError, KeyError):
+        return None
+    if not (0 < a <= b) or b - a > 600:
+        return None
+    ta, tb = datetime.fromtimestamp(a, z), datetime.fromtimestamp(b, z)
+    f = lambda t: t.strftime("%I:%M:%S %p").lstrip("0")
+    day = ta.strftime("%d %b").lstrip("0")
+    return {"clip_from": f(ta), "clip_to": f(tb), "clip_time": f"{day}, {f(ta)} to {f(tb)}" if ta.date() == tb.date() else f"{day}, {f(ta)} to {tb.strftime('%d %b').lstrip('0')}, {f(tb)}"}
+
+
 @router.post("/alerts/{alert_id}/clip", status_code=201)
 async def upload_clip(alert_id: UUID, request: Request, ctx: ServiceCtx = Depends(service_ctx)):
     """The worker uploads the short video the backend asked for. It is attached to the alert, and a WhatsApp message that was
@@ -59,7 +75,7 @@ async def upload_clip(alert_id: UUID, request: Request, ctx: ServiceCtx = Depend
     if data[4:8] != b"ftyp":
         raise ApiError(415, "not_an_mp4", "Send an MP4 video.")
     a = await ctx.conn.fetchrow(
-        """SELECT a.tenant_id, a.camera_id, a.clip_id, a.clip_wait_until, a.created_at, t.retention_snapshots_days, t.status::text AS status
+        """SELECT a.tenant_id, a.camera_id, a.clip_id, a.clip_wait_until, a.created_at, t.retention_snapshots_days, t.timezone, t.status::text AS status
            FROM app.alerts a JOIN app.tenants t ON t.id = a.tenant_id WHERE a.id=$1 FOR UPDATE OF a""", alert_id)
     if not a:
         raise ApiError(404, "alert_not_found", "No such alert.")
@@ -81,5 +97,8 @@ async def upload_clip(alert_id: UUID, request: Request, ctx: ServiceCtx = Depend
     await ctx.conn.execute("INSERT INTO app.evidence (id, tenant_id, camera_id, kind, storage_key, content_type, bytes, expires_at) VALUES ($1,$2,$3,'clip',$4,'video/mp4',$5,$6)",
                            eid, a["tenant_id"], a["camera_id"], key, len(data), datetime.now(timezone.utc) + timedelta(days=a["retention_snapshots_days"]))
     await ctx.conn.execute("UPDATE app.alerts SET clip_id=$2 WHERE id=$1", alert_id, eid)
+    span = _clip_span(request.headers.get("x-clip-from"), request.headers.get("x-clip-to"), a["timezone"])
+    if span:                       # when the video starts and ends on the shop's clock, so the owner can find the same moment on the recorder
+        await ctx.conn.execute("UPDATE app.alerts SET details = coalesce(details, '{}'::jsonb) || $2::jsonb WHERE id=$1", alert_id, span)
     await ctx.conn.execute("UPDATE app.notifications SET next_attempt_at = now() WHERE alert_id=$1 AND status='queued' AND channel='whatsapp' AND next_attempt_at > now()", alert_id)
     return {"evidence_id": str(eid)}

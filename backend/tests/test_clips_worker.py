@@ -95,7 +95,7 @@ class FakeSink:
     def __init__(self, outcomes=("ok",)):
         self.uploads, self.outcomes, self.clip_handler = [], list(outcomes), None
 
-    async def upload_clip(self, alert_id, data):
+    async def upload_clip(self, alert_id, data, span=None):
         self.uploads.append((alert_id, data))
         return self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
 
@@ -276,3 +276,23 @@ async def test_the_pipeline_drains_pending_clips():
     p.clips.request("c", iso(T0 + 10), "al-1")
     await p.drain_clips(30)
     assert [u[0] for u in sink.uploads] == ["al-1"]
+
+
+def test_the_shops_clock_is_written_on_each_picture_of_a_video():
+    import numpy as np
+    from datetime import datetime, timezone
+    from worker.clips import ClipRecorder, stamp
+    frame = np.zeros((360, 640, 3), np.uint8)
+    out = stamp(frame, datetime(2026, 11, 13, 22, 11, 50))
+    assert out.shape == frame.shape and out[300:, :250].sum() > 0 and frame.sum() == 0, "the corner is drawn on a copy"
+    rec = ClipRecorder(object(), tz="Asia/Kolkata")
+    rec.add(frame, datetime(2026, 11, 13, 16, 41, 50, tzinfo=timezone.utc))
+    assert rec.ring.newest is not None and rec.tz is not None
+
+
+def test_a_camera_with_only_marked_areas_keeps_pictures_for_videos():
+    from worker.areas import AreaConfig
+    from worker.pipeline import CameraConfig, CameraPipeline
+    cfg = CameraConfig.from_backend({"camera_id": "c", "clips": True, "timezone": "Asia/Kolkata",
+                                     "areas": [{"id": "z", "kind": "area_count", "name": "Hall", "points": [[0, 0], [1, 0], [1, 1]], "params": {}}]})
+    assert cfg.tz == "Asia/Kolkata" and CameraPipeline(cfg, None, None, type("S", (), {})()).clips is not None
