@@ -35,7 +35,7 @@ async def test_a_plan_with_customers_is_retired_not_deleted(client, make, su):
     assert (await client.put(f"/admin/v1/plans/{p['id']}", json={"active": False, "reason": "Retiring it"}, headers=hdr(owner))).json()["active"] is False
     assert p["id"] not in {x["id"] for x in (await client.get("/admin/v1/plans", headers=hdr(owner))).json()["items"]}                 # hidden from new customers
     assert p["id"] in {x["id"] for x in (await client.get("/admin/v1/plans", params={"include_retired": "true"}, headers=hdr(owner))).json()["items"]}
-    assert (await client.post("/admin/v1/tenants", json={"name": "Late Joiner", "plan_id": p["id"]}, headers=hdr(owner))).status_code == 422
+    assert (await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500004"], "city": "Salem", "name": "Late Joiner", "plan_id": p["id"]}, headers=hdr(owner))).status_code == 422
     assert await su.fetchval("SELECT plan_id FROM app.tenants WHERE id=$1", t) == p["id"]                                                # current customers keep it
     await su.execute("DELETE FROM app.tenants WHERE id=$1", t)
     assert (await client.delete(f"/admin/v1/plans/{p['id']}", params={"reason": "Nobody on it now"}, headers=hdr(owner))).status_code == 204

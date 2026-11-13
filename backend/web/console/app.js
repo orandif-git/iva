@@ -36,7 +36,7 @@ const IC = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>', back: '<path d="M15 5l-7 7 7 7"/>', chev: '<path d="M9 6l6 6-6 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>', play: '<path d="M8 5.5v13l11-6.5z"/>', lock: '<rect x="5" y="10.5" width="14" height="9" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
-  trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   wa: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8c-1-.4-2-1.4-2.4-2.4l.8-1-1-2z"/>',
   photo: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4 16l4.5-4 4 3.5 3-2.5L20 16"/>', area: '<path d="M5 8l5-3.5 9 4-2 9-8 2.5z"/>',
   camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>'
@@ -64,13 +64,13 @@ const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate
 /* ------------------------------------------------------------------------------------------------ state */
 const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", logRange: "7", logFrom: "", logTo: "", logData: null, evQ: "", keepDays: null, evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
   customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
-const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], keep: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"], recs: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
+const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], keep: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"], recs: ["owner", "admin", "onboarding"], editc: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
 const PERMS = [["See all customers and the message log", "oaos"], ["Add a new customer and set it up", "oao-"], ["Edit people, hours and cameras", "oaos"], ["Add and change events", "oao-"], ["Pause or resume a customer", "oa-s"], ["Change the end date", "oa--"], ["Delete a customer", "o---"],
   ["WhatsApp templates", "oa--"], ["Console users", "oa--"], ["WhatsApp connection and key", "o---"]];
 
 /* ------------------------------------------------------------------------------------------------ customers */
-const mapCustomer = (t) => ({ id: t.id, name: t.name, place: t.city || "", cams: t.cameras_in_use, recs: t.recorders_total, recsOn: t.recorders_online, lang: t.msg_language, people: t.people || "", last: t.last_message_at, endsOn: t.ends_on,
+const mapCustomer = (t) => ({ id: t.id, name: t.name, place: t.city || "", cams: t.cameras_in_use, recs: t.recorders_total, recsOn: t.recorders_online, lang: t.msg_language, ownerName: t.owner_name || "", ownerPhones: t.owner_phones || [], ownerEmail: t.owner_email || "", people: t.people || "", last: t.last_message_at, endsOn: t.ends_on,
   days: daysUntil(t.ends_on), status: t.status, reason: t.suspended_reason || "", reasons: [], waiting: "" });
 const ended = (c) => c.status === "suspended" && c.reason.startsWith("Service ended");
 const since = (iso) => { if (!iso) return "a while"; const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 6e4)); return m < 60 ? `${m} minute${m === 1 ? "" : "s"}` : m < 1440 ? `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? "" : "s"}` : `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? "" : "s"}`; };
@@ -102,7 +102,7 @@ function shell() {
   $("#role").textContent = ROLES[S.role]?.[0] || "";
   side();
 }
-const NSTEPS = [["shop", "Shop", "store"], ["people", "Who gets messages", "users"], ["hours", "Business hours", "clock"], ["cams", "Recorder", "cam"], ["summary", "Summaries and end date", "send"]];
+const NSTEPS = [["shop", "Customer", "store"], ["people", "Who gets messages", "users"], ["hours", "Business hours", "clock"], ["cams", "Recorder", "cam"], ["summary", "Summaries and end date", "send"]];
 const ESTEPS = [["event", "Event", "bell"], ["type", "Event type", "list"], ["recorder", "Recorder", "rec"], ["camera", "Camera", "cam"], ["area", "Mark on the picture", "area"], ["settings", "Settings", "gear"]];
 const needsArea = () => !!(S.ev && S.ev.key && AREA_KIND[S.ev.key]);
 /* What has to be marked on the picture: an area (area events), a counting line (counting people) or the area plates are read in (reading plates) */
@@ -166,7 +166,7 @@ function pageCustomers() {
   const q = S.q.toLowerCase();
   const list = S.customers.filter((c) => (!q || (c.name + c.place).toLowerCase().includes(q)) && (S.filter === "all" || statusOf(c)[0] === S.filter));
   const body = !list.length ? `<div class="empty">${S.customers.length ? "No customers match. Clear the search or the filter." : "No customers yet. Add the first one."}</div>` : S.view === "list" ?
-    `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Place</th><th>Cameras</th><th>Messages go to</th><th>Language</th><th>Last message</th><th>Ends on</th></tr></thead><tbody>${list.map((c) => { const st = statusOf(c); return `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span></td><td class="ico"><span class="glyph">${ico("store", 20)}</span></td><td class="main-c">${esc(c.name)}</td><td class="t-${st[1]}">${st[0]}${whyOf(c) ? `<br><span class="sub small">${esc(whyOf(c))}</span>` : ""}</td><td>${esc(c.place)}</td><td class="num">${c.cams}</td><td>${esc(peopleShort(c.people))}</td><td>${langName(c.lang)}</td><td class="num">${fmtTime(c.last)}</td><td class="num">${fmtDate(c.endsOn)}</td></tr>`; }).join("")}</tbody></table></div>` :
+    `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Place</th><th>Cameras</th><th>Messages go to</th><th>Last message</th><th>Ends on</th></tr></thead><tbody>${list.map((c) => { const st = statusOf(c); return `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span></td><td class="ico"><span class="glyph">${ico("store", 20)}</span></td><td class="main-c">${esc(c.name)}</td><td class="t-${st[1]}">${st[0]}${whyOf(c) ? `<br><span class="sub small">${esc(whyOf(c))}</span>` : ""}</td><td>${esc(c.place)}</td><td class="num">${c.cams}</td><td>${esc(peopleShort(c.people))}</td><td class="num">${fmtTime(c.last)}</td><td class="num">${fmtDate(c.endsOn)}</td></tr>`; }).join("")}</tbody></table></div>` :
     `<div class="grid">${list.map((c) => { const st = statusOf(c); return `<button class="tile" type="button" data-cust="${c.id}"><div class="pic"><span class="cc2">${c.cams} cameras</span>${ico("store", 30)}</div><div class="tb"><b>${esc(c.name)}</b><span class="t-${st[1]}">${st[0]}</span><span> · ${esc(c.place)}</span></div></button>`; }).join("")}</div>`;
   return `<div class="rise"><div class="bar"><label class="search">${ico("search")}<span class="sr">Search customers</span><input id="q" placeholder="Search" value="${esc(S.q)}"></label>${S.filter !== "all" ? `<span class="tag brand">${S.filter}</span>` : ""}<span class="sp"></span>
    <div class="tools rel"><button class="tool" type="button" data-view="list" aria-pressed="${S.view === "list"}" aria-label="List">${ico("list")}</button><button class="tool" type="button" data-view="grid" aria-pressed="${S.view === "grid"}" aria-label="Grid">${ico("grid")}</button><button class="tool" type="button" data-pop aria-pressed="${S.pop || S.filter !== "all"}" aria-label="Filter">${ico("filter")}</button>
@@ -175,9 +175,23 @@ function pageCustomers() {
 }
 
 /* ------------------------------------------------------------------------------------------------ form sections (shared by New customer and a customer's own page) */
-function secShop(f) { return `<div class="f"><label for="f-name">Shop name</label><input class="in" id="f-name" data-bind="name" value="${esc(f.name)}" placeholder="For example, Lakshmi Jewellers" autocomplete="off">
-  <label for="f-place">Place</label><input class="in" id="f-place" data-bind="place" value="${esc(f.place)}" placeholder="Town or city" autocomplete="off">
-  <span class="lb">Message language<small>Used for every message to this shop</small></span><div class="seg" role="group" aria-label="Language">${[["en", "English"], ["ta", "Tamil"], ["en+ta", "English and Tamil"]].map((l) => `<button type="button" data-lang="${l[0]}" aria-pressed="${f.lang === l[0]}">${l[1]}</button>`).join("")}</div></div>`; }
+const PHONE_OK = (v) => /^(\+?91)?0?[6-9]\d{9}$/.test(v.replace(/[\s\-().]/g, ""));
+function secShop(f) { return `<div class="f"><label for="f-name">Customer name<small>Business or company name</small></label><input class="in" id="f-name" data-bind="name" value="${esc(f.name)}" placeholder="For example, Lakshmi Jewellers" autocomplete="off">
+  <label for="f-oname">Owner name<small>The main contact</small></label><input class="in" id="f-oname" data-bind="ownerName" value="${esc(f.ownerName)}" placeholder="Full name" autocomplete="off">
+  <span class="lb">Owner mobile<small>Used later to sign in. One number can belong to one customer only.</small></span><div class="stack">${f.ownerPhones.map((p, i) => `<div class="row"><input class="in" id="f-ph${i}" aria-label="Owner mobile ${i + 1}" data-oph="${i}" value="${esc(p)}" placeholder="${i ? "Another number (optional)" : "98765 43210"}" inputmode="tel" autocomplete="off">${i ? `<button class="ibtn" type="button" data-delph="${i}" aria-label="Remove number">${ico("trash")}</button>` : ""}</div>`).join("")}${f.ownerPhones.length < 3 ? `<div><button class="btn sm" type="button" data-addph>${ico("plus", 15)}Add another number</button></div>` : ""}</div>
+  <label for="f-oemail">Owner email<small>Optional</small></label><input class="in" id="f-oemail" type="email" data-bind="ownerEmail" value="${esc(f.ownerEmail)}" placeholder="name@company.com" autocomplete="off">
+  <label for="f-place">City</label><input class="in" id="f-place" data-bind="place" value="${esc(f.place)}" placeholder="Town or city" autocomplete="off"></div>`; }
+/* What is missing on step 1 (null when it is complete): the field to point at and a plain sentence. */
+function ownerProblem(f) {
+  if (!f.name.trim()) return ["f-name", "Enter the customer name."];
+  if (!f.ownerName.trim()) return ["f-oname", "Enter the owner's name."];
+  if (!f.ownerPhones[0]?.trim()) return ["f-ph0", "Enter the owner's mobile number."];
+  for (let i = 0; i < f.ownerPhones.length; i++) if (f.ownerPhones[i].trim() && !PHONE_OK(f.ownerPhones[i])) return ["f-ph" + i, "That mobile number does not look right. Use 10 digits, like 98765 43210."];
+  if (f.ownerEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.ownerEmail.trim())) return ["f-oemail", "That email does not look right."];
+  if (!f.place.trim()) return ["f-place", "Enter the city."];
+  return null;
+}
+function pointAt(id, msg) { toast(msg, true); const el = document.getElementById(id); if (el) { el.classList.add("bad"); el.focus(); } }
 function secPeople(f) { return `<div class="stack"><div class="note">Only the people listed here get messages. By adding a mobile number you confirm this person has agreed to get WhatsApp messages.</div>
   <div class="pr sub"><span>Name</span><span>Mobile</span><span>Alerts</span><span>Summary</span><span></span></div>
   ${f.people.map((p, i) => `<div class="pr"><input class="in" aria-label="Name" data-p="${i}.n" value="${esc(p.n)}" placeholder="Name"><input class="in" aria-label="Mobile number" data-p="${i}.m" value="${esc(p.m)}" placeholder="+91 98765 43210" inputmode="tel"><label class="chk"><input type="checkbox" data-pc="${i}.a" ${p.a ? "checked" : ""}>Alerts</label><label class="chk"><input type="checkbox" data-pc="${i}.s" ${p.s ? "checked" : ""}>Summary</label><button class="ibtn" type="button" data-delp="${i}" aria-label="Remove person" ${f.people.length < 2 && !f._id ? "disabled" : ""}>${ico("trash")}</button></div>`).join("")}
@@ -196,7 +210,7 @@ function secSummaries(f) { return `<h2 class="h2 pt8">Daily and weekly summary</
   <span class="lb">Weekly summary<small>Sent once a week, on the day set for all shops</small></span><div class="row">${sw("f-weekly", f.weekly, false, "weekly")}</div></div>`; }
 
 /* ------------------------------------------------------------------------------------------------ New customer */
-const blankForm = () => ({ _id: null, name: "", place: "", lang: "en+ta", people: [{ id: null, n: "", m: "", a: true, s: true }], hmode: "set", hours: DAYS.map((d, i) => ({ open: i < 6, from: "09:00", to: "21:00" })), rtype: "dahua", rname: "", daily: true, dailyAt: "08:00", weekly: true, expiry: plusDays(365), done: {} });
+const blankForm = () => ({ _id: null, name: "", place: "", ownerName: "", ownerPhones: [""], ownerEmail: "", _pn: "", _pm: "", people: [{ id: null, n: "", m: "", a: true, s: true }], hmode: "set", hours: DAYS.map((d, i) => ({ open: i < 6, from: "09:00", to: "21:00" })), rtype: "dahua", rname: "", daily: true, dailyAt: "08:00", weekly: true, expiry: plusDays(365), done: {} });
 function pageNew() {
   const f = S.form, i = NSTEPS.findIndex((s) => s[0] === S.step), last = i === NSTEPS.length - 1;
   const body = { shop: secShop, people: secPeople, hours: secHours, cams: secRecorderNew, summary: secSummary }[S.step](f);
@@ -205,7 +219,8 @@ function pageNew() {
 }
 async function createCustomer() {
   const f = S.form;
-  if (!f.name.trim()) { S.step = "shop"; render(); return toast("Give the shop a name first.", true); }
+  const bad = ownerProblem(f);
+  if (bad) { S.step = "shop"; render(); return pointAt(...bad); }
   const people = f.people.filter((p) => p.n.trim() || p.m.trim());
   if (people.some((p) => !p.n.trim() || !p.m.trim())) { S.step = "people"; render(); return toast("Each person needs a name and a mobile number.", true); }
   const btn = document.querySelector("[data-create]"); if (btn) btn.disabled = true;
@@ -213,7 +228,7 @@ async function createCustomer() {
   try {
     if (!S.plans.length) S.plans = (await api.get("/admin/v1/plans")).items || (await api.get("/admin/v1/plans"));
     const plan = S.plans.find((p) => p.anpr && !p.alerts_chosen) || S.plans.find((p) => p.anpr) || S.plans[0];       // there is no plan to choose: every customer gets everything
-    t = await api.post("/admin/v1/tenants", { name: f.name.trim(), city: f.place.trim() || null, plan_id: plan.id, camera_limit: 64, ends_on: f.expiry || null, msg_language: f.lang });
+    t = await api.post("/admin/v1/tenants", { name: f.name.trim(), city: f.place.trim(), owner_name: f.ownerName.trim(), owner_phones: f.ownerPhones.map((p) => p.trim()).filter(Boolean), owner_email: f.ownerEmail.trim() || null, plan_id: plan.id, camera_limit: 64, ends_on: f.expiry || null });
   } catch (e) { if (btn) btn.disabled = false; return toast(errText(e), true); }
   const base = `/admin/v1/tenants/${t.id}/shop`, problems = []; let creds = null;
   const ids = [];
@@ -255,7 +270,8 @@ async function pageCustomer() {
   else if (S.section === "log") { await loadLog(S.cid, false, true); body = logTable(false); }
   else body = (S.section === "hours" ? secHours(f) + secSummaries(f) : secPeople(f)) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
   return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span>
-   <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></div>
+   <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-editc ${can("editc") ? "" : "disabled title='Not for your role'"}>${ico("edit", 15)}Edit</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></div>
+   ${c.ownerPhones.length ? "" : `<div class="whyline t-warn">The owner's mobile number is missing. Add it with Edit.</div>`}
    ${whyOf(c) ? `<div class="whyline ${st[1] === "warn" ? "t-warn" : st[1] === "crit" ? "t-crit" : "sub"}">${esc(whyOf(c))}</div>` : ""}
    <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log"].includes(S.section) ? "full" : ""}">${body}</div></div>`;
 }
@@ -677,7 +693,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-addph],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -700,11 +716,13 @@ document.addEventListener("click", async (ev) => {
     if (d.step) { S.step = d.step; return render(); }
     if (d.sec) { S.section = d.sec; if (d.sec !== "log") S.cur = null; return render(); }
     if (d.setup) { S.setup = d.setup; return go("setup"); }
-    if ("next" in d) { S.form.done[S.step] = true; S.step = ORDER[ORDER.indexOf(S.step) + 1]; return render(); }
+    if ("next" in d) { if (S.step === "shop") { const bad = ownerProblem(S.form); if (bad) return pointAt(...bad); const f = S.form, one = f.people[0]; if (one && ((!one.n && !one.m) || (one.n === f._pn && one.m === f._pm))) { one.n = f.ownerName.trim(); one.m = f.ownerPhones[0].trim(); f._pn = one.n; f._pm = one.m; } }   /* the owner starts as the first person who gets messages */
+      S.form.done[S.step] = true; S.step = ORDER[ORDER.indexOf(S.step) + 1]; return render(); }
     if ("prev" in d) { S.step = ORDER[ORDER.indexOf(S.step) - 1]; return render(); }
     if ("create" in d) { S.form.done.summary = true; return createCustomer(); }
     if ("finish" in d) return go("customer", { section: "events" });
-    if (d.lang) { (S.route === "new" ? S.form : S.cur.f).lang = d.lang; return render(true); }
+    if ("addph" in d) { if (S.route === "new") { S.form.ownerPhones.push(""); return render(true); } const m = $("#layer .modal"); if (m && m.querySelectorAll("[data-ephone]").length < 3) { const i = document.createElement("div"); i.className = "row"; i.innerHTML = `<input class="in" data-ephone aria-label="Another owner mobile" placeholder="Another number (optional)" inputmode="tel" autocomplete="off">`; m.querySelector("#ephones").appendChild(i); i.firstChild.focus(); if (m.querySelectorAll("[data-ephone]").length >= 3) t.remove(); } return; }
+    if (d.delph) { S.form.ownerPhones.splice(+d.delph, 1); return render(true); }
     if (d.hmode) { (S.route === "new" ? S.form : S.cur.f).hmode = d.hmode; return render(true); }
     if ("copyh" in d) { const f = S.route === "new" ? S.form : S.cur.f, m = f.hours[0]; f.hours.forEach((h) => { if (h.open) { h.from = m.from; h.to = m.to; } }); return render(true); }
     if (d.rtype) { S.form.rtype = d.rtype; return render(true); }
@@ -717,6 +735,10 @@ document.addEventListener("click", async (ev) => {
     if ("pausec" in d) { const c = cust(S.cid); if (c.status === "suspended") await api.post(`/admin/v1/tenants/${c.id}/reactivate`, { reason: "Resumed from the Control Center" }); else await api.post(`/admin/v1/tenants/${c.id}/suspend`, { reason: "Paused from the Control Center" }); await loadCustomers(); toast(c.status === "suspended" ? "Resumed." : "Paused. No messages will go out."); return render(true); }
     if ("extend" in d || "extendc" in d) { const c = d.extendc ? cust(d.extendc) : cust(S.cid); return modal(`${mh("Change end date")}<label class="bold" for="nd">${esc(c.name)}: new end date</label><input class="in" id="nd" type="date" value="${c.endsOn || plusDays(365)}"><p class="sub nm">On the day after, everything stops and the shop gets one WhatsApp message. A customer who has already ended is switched back on.</p><button class="btn pri wide" type="button" data-confirm="extend" data-id="${c.id}">Save</button>`); }
     if (d.confirm === "extend") { const v = $("#nd").value; if (!v) return toast("Choose a date.", true); const c = cust(d.id); await api.patch(`/admin/v1/tenants/${c.id}`, { ends_on: v }); if (c.status === "suspended" && c.reason.startsWith("Service ended")) await api.post(`/admin/v1/tenants/${c.id}/reactivate`, { reason: "End date changed from the Control Center" }); await loadCustomers(); S.cur = null; closeModal(); toast("End date changed"); return render(true); }
+    if ("editc" in d) { const c = cust(S.cid), ph = c.ownerPhones.length ? c.ownerPhones : [""]; return modal(`${mh("Edit customer")}<label class="bold" for="ec-name">Customer name</label><input class="in" id="ec-name" value="${esc(c.name)}" autocomplete="off"><label class="bold" for="ec-own">Owner name</label><input class="in" id="ec-own" value="${esc(c.ownerName)}" autocomplete="off"><span class="bold">Owner mobile</span><div class="stack" id="ephones">${ph.map((p) => `<div class="row"><input class="in" data-ephone aria-label="Owner mobile" value="${esc(p)}" placeholder="98765 43210" inputmode="tel" autocomplete="off"></div>`).join("")}</div>${ph.length < 3 ? `<div><button class="btn sm" type="button" data-addph>${ico("plus", 15)}Add another number</button></div>` : ""}<label class="bold" for="ec-mail">Owner email</label><input class="in" id="ec-mail" type="email" value="${esc(c.ownerEmail)}" placeholder="Optional" autocomplete="off"><label class="bold" for="ec-city">City</label><input class="in" id="ec-city" value="${esc(c.place)}" autocomplete="off"><div class="row"><button class="btn pri" type="button" data-confirm="savec">Save</button><button class="btn" type="button" data-close>Cancel</button></div>`); }
+    if (d.confirm === "savec") { const g = (i) => $("#" + i).value.trim(), ph = [...document.querySelectorAll("[data-ephone]")].map((x) => x.value.trim()).filter(Boolean);
+      if (!g("ec-name")) return toast("Enter the customer name.", true); if (!g("ec-own")) return toast("Enter the owner's name.", true); if (!ph.length) return toast("Enter the owner's mobile number.", true); if (ph.some((p) => !PHONE_OK(p))) return toast("A mobile number does not look right. Use 10 digits, like 98765 43210.", true); if (!g("ec-city")) return toast("Enter the city.", true);
+      await api.patch(`/admin/v1/tenants/${S.cid}`, { name: g("ec-name"), owner_name: g("ec-own"), owner_phones: ph, owner_email: g("ec-mail"), city: g("ec-city") }); await loadCustomers(); S.cur = null; closeModal(); toast("Saved"); return render(true); }
     if ("delc" in d) return modal(`${mh("Delete " + esc(cust(S.cid).name) + "?")}<div class="note warn">This removes the customer, its cameras and all history. It cannot be undone.</div><label class="bold" for="dn">Type the shop name to confirm</label><input class="in" id="dn" placeholder="${esc(cust(S.cid).name)}" autocomplete="off"><div class="row"><button class="btn danger" type="button" data-confirm="delete">Delete forever</button><button class="btn" type="button" data-close>Keep</button></div>`);
     if (d.confirm === "delete") { if ($("#dn").value.trim() !== cust(S.cid).name) return toast("The name does not match.", true); await api.del(`/admin/v1/tenants/${S.cid}?reason=${encodeURIComponent("Deleted from the Control Center")}`); await loadCustomers(); closeModal(); toast("Customer deleted"); return go("customers"); }
     if (d.resend) { S.logData = null; await api.post(`/admin/v1/webhooks/deliveries/${d.resend}/resend`); toast("Sent again"); return render(true); }
@@ -803,7 +825,9 @@ document.addEventListener("input", (ev) => {
     if (d.ebind) { v[d.ebind] = t.value; if (d.ebind === "name") v.nameAuto = false; } else if (d.eto) { const i = v.to.indexOf(d.eto); if (t.checked && i < 0) v.to.push(d.eto); if (!t.checked && i >= 0) v.to.splice(i, 1); } else if (d.ev) { v.v[d.ev] = t.value; if (d.ev === "when") render(true); } else if ("enotice" in d) v.notice = t.checked;
     else if (d.act === "eon") v.on = t.checked; else if (d.act === "eclip") v.clip = t.checked; return; }
   const f = S.route === "new" ? S.form : S.route === "customer" ? S.cur?.f : null; if (!f) return; const d = t.dataset;
+  t.classList.remove("bad");
   if (d.bind) f[d.bind] = t.value;
+  else if (d.oph !== undefined) f.ownerPhones[+d.oph] = t.value;
   else if (d.p) { const [i, k] = d.p.split("."); f.people[+i][k] = t.value; }
   else if (d.pc) { const [i, k] = d.pc.split("."); f.people[+i][k] = t.checked; }
   else if (d.ht) { const [i, k] = d.ht.split("."); f.hours[+i][k] = t.value; }

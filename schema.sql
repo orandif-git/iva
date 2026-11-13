@@ -878,6 +878,17 @@ CREATE TABLE IF NOT EXISTS platform.data_retention (
 );
 INSERT INTO platform.data_retention (id) VALUES (true) ON CONFLICT DO NOTHING;
 
+-- The customer's owner: name and email on the customer, and up to three owner mobile numbers. A number belongs to one customer only (later used to sign in with a one-time code).
+ALTER TABLE app.tenants ADD COLUMN IF NOT EXISTS owner_name  text;
+ALTER TABLE app.tenants ADD COLUMN IF NOT EXISTS owner_email text;
+CREATE TABLE IF NOT EXISTS platform.tenant_owner_phones (
+  tenant_id uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
+  phone     text NOT NULL UNIQUE,
+  position  smallint NOT NULL CHECK (position BETWEEN 1 AND 3),
+  PRIMARY KEY (tenant_id, position)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON platform.tenant_owner_phones TO platform_admin;
+
 -- Grants
 GRANT EXECUTE ON FUNCTION app.ensure_plate_partition(date) TO platform_admin, service_worker;
 GRANT EXECUTE ON FUNCTION app.drop_old_plate_partitions(date) TO service_worker;

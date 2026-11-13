@@ -6,11 +6,11 @@ from app.security import issue_token
 
 async def test_create_tenant_and_audit(client, make, su):
     owner = await make.staff("owner")
-    r = await client.post("/admin/v1/tenants", json={"name": "Karur Textile Mills", "plan_id": "full", "camera_limit": 10}, headers=owner["headers"])
+    r = await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500001"], "city": "Salem", "name": "Karur Textile Mills", "plan_id": "full", "camera_limit": 10}, headers=owner["headers"])
     assert r.status_code == 201
     t = r.json()
     assert t["status"] == "trial" and t["trial_ends_at"] and t["slug"] == "karur-textile-mills"
-    again = await client.post("/admin/v1/tenants", json={"name": "Karur Textile Mills", "plan_id": "full"}, headers=owner["headers"])
+    again = await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500002"], "city": "Salem", "name": "Karur Textile Mills", "plan_id": "full"}, headers=owner["headers"])
     assert again.status_code == 201 and again.json()["slug"] != t["slug"]                    # slug clash resolved
     row = await su.fetchrow("SELECT * FROM platform.audit_log WHERE action='tenant.create' AND tenant_id=$1", __import__("uuid").UUID(t["id"]))
     assert row["actor_role"] == "owner"
@@ -90,7 +90,7 @@ async def test_staff_can_look_at_recorders_but_cannot_change_them(client, make):
 
 async def test_audit_log_cannot_be_changed_even_by_the_admin_role(client, make, su):
     owner = await make.staff("owner")
-    await client.post("/admin/v1/tenants", json={"name": "Audit Probe", "plan_id": "quick"}, headers=owner["headers"])
+    await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500003"], "city": "Salem", "name": "Audit Probe", "plan_id": "quick"}, headers=owner["headers"])
     from app.db import db
     async with db.admin_tx() as c:
         with pytest.raises(asyncpg.PostgresError):

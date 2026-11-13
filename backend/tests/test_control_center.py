@@ -26,7 +26,7 @@ async def test_roles_admin_runs_the_team_but_cannot_make_owners_and_only_the_own
 
 async def test_onboarding_creates_customers_support_pauses_them_and_neither_can_change_the_end_date(client, make):
     onboarding, support, admin = await make.staff("onboarding"), await make.staff("support"), await make.staff("admin")
-    r = await client.post("/admin/v1/tenants", json={"name": "Lakshmi Jewellers", "plan_id": "full", "ends_on": "2027-06-13"}, headers=onboarding["headers"])
+    r = await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500007"], "city": "Salem", "name": "Lakshmi Jewellers", "plan_id": "full", "ends_on": "2027-06-13"}, headers=onboarding["headers"])
     assert r.status_code == 201 and r.json()["ends_on"] == "2027-06-13"
     tid = r.json()["id"]
     assert (await client.patch(f"/admin/v1/tenants/{tid}", json={"ends_on": "2028-01-01"}, headers=onboarding["headers"])).status_code == 403
@@ -34,7 +34,7 @@ async def test_onboarding_creates_customers_support_pauses_them_and_neither_can_
     assert (await client.patch(f"/admin/v1/tenants/{tid}", json={"ends_on": "2028-01-01"}, headers=admin["headers"])).json()["ends_on"] == "2028-01-01"
     assert (await client.post(f"/admin/v1/tenants/{tid}/suspend", json={"reason": "Asked to pause"}, headers=support["headers"])).json()["status"] == "suspended"
     assert (await client.post(f"/admin/v1/tenants/{tid}/reactivate", json={"reason": "Back again"}, headers=support["headers"])).json()["status"] == "active"
-    assert (await client.post("/admin/v1/tenants", json={"name": "Not Allowed", "plan_id": "full"}, headers=support["headers"])).status_code == 403
+    assert (await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500008"], "city": "Salem", "name": "Not Allowed", "plan_id": "full"}, headers=support["headers"])).status_code == 403
 
 
 async def test_service_stops_the_day_after_the_end_date_and_the_shop_is_told_once(client, make, su):
@@ -219,7 +219,7 @@ async def test_one_setting_says_how_long_everything_is_kept_and_applies_to_every
     for t in (a, b):
         row = await su.fetchrow("SELECT retention_events_days, retention_snapshots_days FROM app.tenants WHERE id=$1", t)
         assert (row["retention_events_days"], row["retention_snapshots_days"]) == (90, 90)
-    new = (await client.post("/admin/v1/tenants", json={"name": "Fresh Shop", "plan_id": "full"}, headers=owner["headers"])).json()["id"]
+    new = (await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500009"], "city": "Salem", "name": "Fresh Shop", "plan_id": "full"}, headers=owner["headers"])).json()["id"]
     assert await su.fetchval("SELECT retention_events_days FROM app.tenants WHERE id=$1", uuid.UUID(new)) == 90         # a customer added later starts with the same
     assert (await client.put("/admin/v1/maintenance/keep", json={"days": 3}, headers=owner["headers"])).status_code == 422       # not shorter than a week
     assert (await client.put("/admin/v1/maintenance/keep", json={"days": 30}, headers=support["headers"])).status_code == 403
@@ -278,3 +278,36 @@ async def test_staff_can_rename_a_recorder_change_its_id_get_a_new_password_and_
     assert await su.fetchval("SELECT count(*) FROM app.cameras WHERE id=$1", cam) == 0
     assert [r["rule_type"] for r in await su.fetch("SELECT rule_type FROM app.alert_rules WHERE tenant_id=$1", t)] == ["camera_offline"]
     assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='recorder.delete' AND target_id=$1", str(rid)) == 1
+
+
+async def test_a_customer_needs_an_owner_and_an_owner_number_belongs_to_one_customer_only(client, make, su):
+    onboarding, owner, support = await make.staff("onboarding"), await make.staff("owner"), await make.staff("support")
+    body = {"name": "Sri Textiles", "city": "Erode", "plan_id": "full", "owner_name": "Mr Rao", "owner_phones": ["98765 43210", "09123456789"], "owner_email": "rao@example.com"}
+    for missing in ("owner_name", "owner_phones", "city"):
+        assert (await client.post("/admin/v1/tenants", json={k: v for k, v in body.items() if k != missing}, headers=onboarding["headers"])).status_code == 422
+    assert (await client.post("/admin/v1/tenants", json={**body, "owner_phones": ["12345"]}, headers=onboarding["headers"])).status_code == 422
+    assert (await client.post("/admin/v1/tenants", json={**body, "owner_phones": ["98765 43210", "+919876543210"]}, headers=onboarding["headers"])).status_code == 422      # the same number twice
+    assert (await client.post("/admin/v1/tenants", json={**body, "owner_phones": list("1234")}, headers=onboarding["headers"])).status_code == 422                      # at most three
+    r = await client.post("/admin/v1/tenants", json=body, headers=onboarding["headers"])
+    assert r.status_code == 201, r.text
+    t = r.json()
+    assert t["owner_name"] == "Mr Rao" and t["owner_phones"] == ["+919876543210", "+919123456789"] and t["owner_email"] == "rao@example.com"
+    clash = await client.post("/admin/v1/tenants", json={**body, "name": "Other Shop", "owner_phones": ["+91 98765 43210"]}, headers=onboarding["headers"])
+    assert clash.status_code == 409 and "Sri Textiles" in clash.json()["error"]["message"] if "error" in clash.json() else "Sri Textiles" in clash.text
+    assert await su.fetchval("SELECT count(*) FROM app.tenants WHERE name='Other Shop'") == 0, "nothing half-made"
+    # a person who gets messages may share a number: only owner numbers are unique
+    # editing
+    url = f"/admin/v1/tenants/{t['id']}"
+    assert (await client.patch(url, json={"name": "Sri Textiles Pvt"}, headers=support["headers"])).status_code == 403
+    assert (await client.patch(url, json={"ends_on": "2027-01-01"}, headers=onboarding["headers"])).status_code == 403
+    e = await client.patch(url, json={"name": "Sri Textiles Pvt", "city": "Salem", "owner_name": "Mrs Rao", "owner_phones": ["9988776655"], "owner_email": ""}, headers=onboarding["headers"])
+    assert e.status_code == 200, e.text
+    assert e.json()["name"] == "Sri Textiles Pvt" and e.json()["owner_phones"] == ["+919988776655"] and e.json()["owner_email"] is None
+    other = (await client.post("/admin/v1/tenants", json={**body, "name": "Third", "owner_phones": ["9000000001"]}, headers=onboarding["headers"])).json()
+    taken = await client.patch(f"/admin/v1/tenants/{other['id']}", json={"owner_phones": ["9988776655"]}, headers=owner["headers"])
+    assert taken.status_code == 409 and "Sri Textiles Pvt" in taken.text
+    assert (await client.patch(f"/admin/v1/tenants/{t['id']}", json={"owner_phones": ["98765 43210"]}, headers=owner["headers"])).status_code == 200      # a number that was released can be used again
+    audit = str(await su.fetch("SELECT before, after FROM platform.audit_log WHERE action='tenant.update' AND target_id=$1", t["id"]))
+    assert "9988776655" not in audit and "6655" in audit, "the activity log keeps only the last four digits"
+    assert (await client.delete(url, params={"reason": "Test customer"}, headers=owner["headers"])).status_code == 204
+    assert await su.fetchval("SELECT count(*) FROM platform.tenant_owner_phones WHERE tenant_id=$1", uuid.UUID(t["id"])) == 0

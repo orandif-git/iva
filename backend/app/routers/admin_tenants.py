@@ -16,7 +16,7 @@ router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
 
 TENANT_SELECT = """
 SELECT t.id, t.name, t.slug::text AS slug, t.city, t.state, t.status::text AS status, t.plan_id, t.partner_id, t.camera_limit,
-       t.price_override_paise, t.trial_ends_at, t.ends_on, t.msg_language, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
+       t.price_override_paise, t.trial_ends_at, t.ends_on, t.msg_language, t.owner_name, t.owner_email, coalesce((SELECT array_agg(o.phone ORDER BY o.position) FROM platform.tenant_owner_phones o WHERE o.tenant_id=t.id), '{}') AS owner_phones, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
        (SELECT string_agg(r.name, ', ' ORDER BY r.name) FROM app.recipients r WHERE r.tenant_id=t.id AND r.active) AS people,
        (SELECT max(n.created_at) FROM app.notifications n WHERE n.tenant_id=t.id) AS last_message_at,
        (SELECT count(*) FROM app.cameras c WHERE c.tenant_id=t.id AND c.enabled) AS cameras_in_use,
@@ -83,12 +83,41 @@ async def tenant_health(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
             "messages_failed_7d": await c.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1 AND status='failed' AND created_at > now() - interval '7 days'", tenant_id)}
 
 
+def _owner_phones(raw: list[str]) -> list[str]:
+    """The owner's numbers in one form (+91XXXXXXXXXX). The same number twice is refused."""
+    from .customer_alerts import normalize_phone
+    out = [normalize_phone(p) for p in raw]
+    if len(set(out)) != len(out):
+        raise ApiError(422, "duplicate_owner_phone", "The same number is entered twice.")
+    return out
+
+
+async def _set_owner_phones(conn, tenant_id, phones: list[str]) -> None:
+    """Saves the owner's numbers. A number that is already an owner number of another customer is refused, with that customer's name."""
+    for p in phones:
+        other = await conn.fetchrow("SELECT t.name FROM platform.tenant_owner_phones o JOIN app.tenants t ON t.id=o.tenant_id WHERE o.phone=$1 AND o.tenant_id<>$2", p, tenant_id)
+        if other:
+            raise ApiError(409, "owner_phone_taken", f"{p} is already an owner number of {other['name']}.")
+    await conn.execute("DELETE FROM platform.tenant_owner_phones WHERE tenant_id=$1", tenant_id)
+    for i, p in enumerate(phones, 1):
+        await conn.execute("INSERT INTO platform.tenant_owner_phones (tenant_id, phone, position) VALUES ($1,$2,$3)", tenant_id, p, i)
+
+
+def _masked(phones) -> list[str]:
+    return [p[:3] + "•" * max(len(p) - 7, 0) + p[-4:] for p in phones]
+
+
 @router.post("/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner", "onboarding"))):
     if not await ctx.conn.fetchval("SELECT 1 FROM platform.plans WHERE id=$1 AND active", body.plan_id):
         raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
     if body.partner_id and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1 AND status='active'", body.partner_id):
         raise ApiError(422, "unknown_partner", "That partner does not exist or is paused.")
+    phones = _owner_phones(body.owner_phones)
+    for p in phones:                                        # a clear refusal before anything is made
+        other = await ctx.conn.fetchval("SELECT t.name FROM platform.tenant_owner_phones o JOIN app.tenants t ON t.id=o.tenant_id WHERE o.phone=$1", p)
+        if other:
+            raise ApiError(409, "owner_phone_taken", f"{p} is already an owner number of {other}.")
     base = _slug(body.name)
     tenant_id = None
     for attempt in range(5):
@@ -96,18 +125,20 @@ async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("o
         try:
             async with ctx.conn.transaction():
                 tenant_id = await ctx.conn.fetchval(
-                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language, retention_events_days, retention_snapshots_days)
-                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8, $9, $9) RETURNING id""",
+                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language, retention_events_days, retention_snapshots_days,
+                                               owner_name, owner_email)
+                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8, $9, $9, $10, $11) RETURNING id""",
                     body.name, slug, body.city, body.plan_id, body.partner_id, body.camera_limit, body.ends_on, body.msg_language,
-                    await ctx.conn.fetchval("SELECT coalesce((SELECT keep_days FROM platform.data_retention WHERE id), 30)"),
+                    await ctx.conn.fetchval("SELECT coalesce((SELECT keep_days FROM platform.data_retention WHERE id), 30)"), body.owner_name, body.owner_email or None,
                 )
+                await _set_owner_phones(ctx.conn, tenant_id, phones)
             break
         except asyncpg.UniqueViolationError:
             continue
     if tenant_id is None:
         raise ApiError(409, "slug_conflict", "Try a slightly different name.")
     out = await _get(ctx, tenant_id)
-    await ctx.audit("tenant.create", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, after={"name": body.name, "plan_id": body.plan_id})
+    await ctx.audit("tenant.create", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, after={"name": body.name, "plan_id": body.plan_id, "owner_phones": _masked(phones)})
     return out
 
 
@@ -116,22 +147,38 @@ async def get_tenant(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
     return await _get(ctx, tenant_id)
 
 
+PROFILE_FIELDS = {"name", "city", "owner_name", "owner_email", "owner_phones"}      # Onboarding may correct these; the rest is for the Owner and Admin
+
+
 @router.patch("/tenants/{tenant_id}", response_model=TenantOut)
-async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depends(admin_ctx("owner", "onboarding"))):
     changes = body.model_dump(exclude_unset=True)
     if not changes:
         raise ApiError(422, "nothing_to_change", "Send at least one field to change.")
+    if ctx.staff.role == "onboarding" and set(changes) - PROFILE_FIELDS:
+        raise ApiError(403, "forbidden", "Your role can change the name, city and owner details only.")
     before = await _get(ctx, tenant_id)
+    phones = _owner_phones(changes.pop("owner_phones")) if "owner_phones" in changes else None
+    if "owner_email" in changes:
+        changes["owner_email"] = changes["owner_email"] or None
+    if "owner_name" in changes and not changes["owner_name"]:
+        raise ApiError(422, "owner_name_required", "The owner needs a name.")
     if "camera_limit" in changes and changes["camera_limit"] < before["cameras_in_use"]:
         raise ApiError(409, "limit_below_usage", f"{before['cameras_in_use']} cameras are already in use. Remove some first.")
     if changes.get("partner_id") and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1", changes["partner_id"]):
         raise ApiError(422, "unknown_partner", "That partner does not exist.")
     cols = list(changes)                                   # keys are validated by the model, never by the client
-    sets = ", ".join(f"{c} = ${i + 2}" for i, c in enumerate(cols))
-    await ctx.conn.execute(f"UPDATE app.tenants SET {sets} WHERE id = $1", tenant_id, *[changes[c] for c in cols])
+    async with ctx.conn.transaction():
+        if cols:
+            sets = ", ".join(f"{c} = ${i + 2}" for i, c in enumerate(cols))
+            await ctx.conn.execute(f"UPDATE app.tenants SET {sets} WHERE id = $1", tenant_id, *[changes[c] for c in cols])
+        if phones is not None:
+            await _set_owner_phones(ctx.conn, tenant_id, phones)
     after = await _get(ctx, tenant_id)
-    await ctx.audit("tenant.update", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id,
-                    before={c: before[c] for c in cols}, after={c: after[c] for c in cols})
+    b, a = {c: before[c] for c in cols}, {c: after[c] for c in cols}
+    if phones is not None:                                 # the activity log keeps only the last four digits
+        b["owner_phones"], a["owner_phones"] = _masked(before["owner_phones"]), _masked(after["owner_phones"])
+    await ctx.audit("tenant.update", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, before=b, after=a)
     return after
 
 

@@ -31,6 +31,9 @@ class TenantOut(BaseModel):
     trial_ends_at: datetime | None
     ends_on: date | None = None
     msg_language: str = "en+ta"
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phones: list[str] = []
     people: str | None = None
     last_message_at: datetime | None = None
     retention_events_days: int
@@ -45,7 +48,10 @@ class TenantOut(BaseModel):
 
 class TenantCreate(Strict):
     name: Name
-    city: Name | None = None
+    owner_name: Name
+    owner_phones: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=30)]] = Field(min_length=1, max_length=3)
+    owner_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")] | None = None
+    city: Name
     plan_id: str
     partner_id: UUID | None = None
     camera_limit: int = Field(5, ge=0, le=5000)
@@ -56,6 +62,9 @@ class TenantCreate(Strict):
 class TenantPatch(Strict):
     name: Name | None = None
     city: Name | None = None
+    owner_name: Name | None = None
+    owner_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120, pattern=r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$")] | None = None
+    owner_phones: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=30)]] | None = Field(None, min_length=1, max_length=3)
     partner_id: UUID | None = None
     camera_limit: int | None = Field(None, ge=0, le=5000)
     retention_events_days: int | None = Field(None, ge=1, le=730)

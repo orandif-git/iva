@@ -82,3 +82,12 @@ On Recorder and cameras, each recorder has an **Edit** button (Owner, Admin and 
 - **Name and Recorder ID** can be changed. The ID is what the recorder calls itself when it connects; after a change it shows as "not connected" until the new ID is typed into the recorder. The saved password is re-locked to the new ID, so it keeps working.
 - **New password** makes a new password, shown once. The old one stops working at once.
 - **Delete** (type the recorder's name to confirm) removes the recorder, its cameras with their counts and marked areas, and any event left with nothing to watch. Alerts and messages stay until the "Data kept" clean-up removes them.
+
+## Customer and owner details
+
+New customer, step 1 ("Customer"): customer name, owner name, owner mobile (up to three numbers), owner email (optional) and city. Name, owner name, the first mobile and city are required. The state, GSTIN and billing address are not kept here, and neither is the message language (it did nothing).
+- An owner mobile can belong to one customer only (it will be used later to sign in with a one-time code). A number already used is refused with the name of that customer. People who get messages can share numbers freely.
+- Numbers are stored as +91XXXXXXXXXX, so "98765 43210" and "+91 98765 43210" are the same number. The activity log keeps only the last four digits.
+- The owner starts as the first person who gets messages.
+- **Edit** on the customer page changes all of these (Owner, Admin and Onboarding). Onboarding cannot change the end date or other account settings.
+- Customers made before this have no owner mobile; their page shows a note until it is added with Edit.

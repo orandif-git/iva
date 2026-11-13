@@ -35,9 +35,9 @@ async def test_staff_needs_mfa_and_must_be_active(client, make):
 
 async def test_role_comes_from_database_not_token(client, make, su):
     s = await make.staff("support")
-    assert (await client.post("/admin/v1/tenants", json={"name": "X Co", "plan_id": "quick"}, headers=s["headers"])).status_code == 403
+    assert (await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500005"], "city": "Salem", "name": "X Co", "plan_id": "quick"}, headers=s["headers"])).status_code == 403
     await su.execute("UPDATE platform.staff_users SET role='owner' WHERE id=$1", s["id"])
-    assert (await client.post("/admin/v1/tenants", json={"name": "X Co", "plan_id": "quick"}, headers=s["headers"])).status_code == 201
+    assert (await client.post("/admin/v1/tenants", json={"owner_name": "Owner", "owner_phones": ["9876500006"], "city": "Salem", "name": "X Co", "plan_id": "quick"}, headers=s["headers"])).status_code == 201
 
 
 async def test_regular_user_cannot_add_recorder_or_camera(client, make):
