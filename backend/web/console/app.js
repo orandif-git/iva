@@ -106,7 +106,6 @@ function shell() {
   const rails = { overview: [["overview", "pulse", "Overview"]], customers: [["customers", "list", "All customers"], ["new", "plus", "New customer", !can("newCustomer")]], messages: [["messages", "log", "Message log"]], setup: [["setup", "gear", "Setup"]] }[areaOf()];
   $("#rail").innerHTML = rails.map((r) => `<button class="rb" type="button" title="${r[2]}${r[3] ? " (not for your role)" : ""}" data-go="${r[0]}" ${r[3] ? "disabled" : ""} ${S.route === r[0] || (r[0] === "customers" && ["customer", "event"].includes(S.route)) ? 'aria-current="page"' : ""} aria-label="${r[2]}">${ico(r[1], 19)}</button>`).join("");
   $("#theme").innerHTML = ico(document.documentElement.dataset.theme === "dark" ? "sun" : "moon", 19);
-  $("#signout").innerHTML = ico("out", 18);
   $("#av").textContent = (S.me?.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   $("#role").textContent = ROLES[S.role]?.[0] || "";
   side();
@@ -1020,3 +1019,81 @@ boot();
 
 /* A vehicle picture that was removed (or never kept) becomes the plain car mark instead of a broken picture */
 document.addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.classList.contains("vimg")) { const d = document.createElement("div"); d.className = (t.classList.contains("vbig") ? "vbig" : "vthumb") + " vnone"; d.innerHTML = ico("car", t.classList.contains("vbig") ? 40 : 22); t.replaceWith(d); } }, true);
+
+/* ------------------------------------------------------------------------------------------------ My profile: a compact panel that drops down from the avatar */
+const PW_HINT = "At least 10 characters. A long phrase is best.";
+function pwStrength(p, email) {                                  // the same plain rules as the server: 10 or more characters, nothing common or easy
+  if (!p) return [0, PW_HINT];
+  if (p.length < 10) return [1, `Use at least 10 characters (${p.length} so far).`];
+  const low = p.toLowerCase();
+  if (["password123", "1234567890", "qwertyuiop"].includes(low) || (email && (low === email.toLowerCase() || low === email.toLowerCase().split("@")[0])) || new Set(low).size < 4) return [1, "Too easy to guess. Choose a longer one that is not a common word."];
+  const sc = 2 + (p.length >= 14 ? 1 : 0) + (/\d/.test(p) && /[a-z]/i.test(p) ? 1 : 0);
+  return [Math.min(4, sc), sc >= 4 ? "Strong." : sc === 3 ? "Good." : "Okay. A longer one is stronger."];
+}
+const initials = (n) => (n || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+function renderProfile() {
+  const m = S.prof, ch = `<svg class="ch" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+  $("#pop").innerHTML = `<div class="pf-hd"><span class="av lg" id="pf-av">${esc(initials(m.name))}</span><div class="pf-t">
+    <div class="pf-nm" id="pf-view"><b id="pf-name">${esc(m.name)}</b><button class="ibtn sm" id="pf-edit" type="button" aria-label="Edit name">${ico("edit", 15)}</button></div>
+    <div class="pf-ed" id="pf-editor" hidden><input class="in" id="pf-nin" aria-label="Your name" autocomplete="off"><button class="btn pri sm" id="pf-nsave" type="button">Save</button><button class="btn sm" id="pf-ncancel" type="button">Cancel</button></div>
+    <div class="pf-em">${esc(m.email)}</div><div class="pf-meta"><span class="tag brand">${esc(ROLES[m.role]?.[0] || humanize(m.role))}</span><span>Last sign-in ${m.last_login_at ? fmtTime(m.last_login_at).toLowerCase() : "never"}</span></div></div></div>
+  <div class="pf-list">
+   <button class="pf-ri" id="pf-pwb" type="button" aria-expanded="false" aria-controls="pf-pwbox">${ico("lock", 18)}Change password${ch}</button>
+   <div class="pf-box" id="pf-pwbox" hidden>
+    <label for="pf-cur">Current password</label><input class="in" id="pf-cur" type="password" autocomplete="current-password">
+    <label for="pf-p1">New password</label><input class="in" id="pf-p1" type="password" autocomplete="new-password">
+    <div class="pf-meter" id="pf-meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="pf-tip" id="pf-mtext">${PW_HINT}</div>
+    <label for="pf-p2">New password again</label><input class="in" id="pf-p2" type="password" autocomplete="new-password">
+    <div class="pf-err" id="pf-err" role="alert"></div>
+    <div class="row"><button class="btn pri sm" id="pf-chg" type="button">Change password</button><button class="btn sm" id="pf-pcancel" type="button">Cancel</button></div>
+    <div class="pf-tip">Your other devices are signed out. This one stays signed in.</div></div>
+   <button class="pf-ri" id="pf-othb" type="button" aria-expanded="false" aria-controls="pf-othbox">${ico("cam", 18)}Sign out everywhere else${ch}</button>
+   <div class="pf-box" id="pf-othbox" hidden><div class="pf-ask" id="pf-oask">${m.devices > 1 ? `You are signed in on ${m.devices} devices. End the other ${m.devices - 1}?` : "You are signed in on 1 device (this one). Nothing else to end."}</div>
+    <div class="row">${m.devices > 1 ? `<button class="btn danger sm" id="pf-oyes" type="button">Yes, sign them out</button>` : ""}<button class="btn sm" id="pf-ono" type="button">${m.devices > 1 ? "Keep them" : "Close"}</button></div></div>
+  </div>
+  <div class="pf-ft"><button class="pf-ri out" id="signout" type="button">${ico("out", 18)}Sign out</button></div>`;
+}
+const pfBoxes = [["pf-pwb", "pf-pwbox"], ["pf-othb", "pf-othbox"]];
+const pfClose = () => pfBoxes.forEach(([b, x]) => { $("#" + b)?.setAttribute("aria-expanded", "false"); const e = $("#" + x); if (e) e.hidden = true; });
+async function openProfile() {
+  try { S.prof = await api.get("/admin/v1/me"); } catch (e) { return toast(errText(e), true); }
+  renderProfile(); $("#pop").hidden = false; $("#meb").setAttribute("aria-expanded", "true");
+}
+function closeProfile() { const p = $("#pop"); if (!p || p.hidden) return; p.hidden = true; p.innerHTML = ""; $("#meb").setAttribute("aria-expanded", "false"); }
+async function saveMyName() {
+  const v = $("#pf-nin").value.trim(); if (!v) { $("#pf-nin").classList.add("bad"); return toast("Enter your name.", true); }
+  try { await api.patch("/admin/v1/me", { name: v }); } catch (e) { return toast(errText(e), true); }
+  S.me.name = v; S.prof.name = v; shell(); $("#pf-name").textContent = v; $("#pf-av").textContent = initials(v); $("#pf-editor").hidden = true; $("#pf-view").hidden = false; toast("Name saved");
+}
+async function changeMyPassword() {
+  const cur = $("#pf-cur").value, a = $("#pf-p1").value, b = $("#pf-p2").value, bad = (id, msg) => { $("#" + id).classList.add("bad"); $("#pf-err").textContent = msg; $("#" + id).focus(); };
+  if (!cur) return bad("pf-cur", "Enter your current password.");
+  const [sc, t] = pwStrength(a, S.prof.email); if (sc <= 1) return bad("pf-p1", t);
+  if (a === cur) return bad("pf-p1", "Choose a password you have not used before.");
+  if (a !== b) return bad("pf-p2", "The two new passwords are not the same.");
+  try { await api.post("/admin/v1/me/change-password", { current_password: cur, new_password: a, refresh_token: api.refreshToken }); }
+  catch (e) { return bad(e.status === 401 ? "pf-cur" : "pf-p1", e.status === 401 ? "Your current password is not right." : errText(e)); }
+  closeProfile(); toast("Password changed. Your other devices were signed out.");
+}
+document.addEventListener("click", async (ev) => {
+  const t = ev.target;
+  if (t.closest("#meb")) { return $("#pop").hidden ? openProfile() : closeProfile(); }
+  if (!t.closest("#pop")) return closeProfile();
+  const id = t.closest("button")?.id; if (!id) return;
+  if (id === "pf-edit") { $("#pf-nin").value = S.prof.name; $("#pf-view").hidden = true; $("#pf-editor").hidden = false; $("#pf-nin").focus(); $("#pf-nin").select(); }
+  else if (id === "pf-ncancel") { $("#pf-editor").hidden = true; $("#pf-view").hidden = false; }
+  else if (id === "pf-nsave") await saveMyName();
+  else if (pfBoxes.some(([b]) => b === id)) { const x = $("#" + pfBoxes.find(([b]) => b === id)[1]), open = x.hidden; pfClose(); if (open) { $("#" + id).setAttribute("aria-expanded", "true"); x.hidden = false; x.querySelector("input,button")?.focus(); } }
+  else if (id === "pf-pcancel" || id === "pf-ono") pfClose();
+  else if (id === "pf-chg") await changeMyPassword();
+  else if (id === "pf-oyes") { try { const r = await api.post("/admin/v1/me/sign-out-others", { refresh_token: api.refreshToken }); closeProfile(); toast("Every other sign-in of yours has ended."); } catch (e) { toast(errText(e), true); } }
+});
+document.addEventListener("input", (ev) => {
+  const t = ev.target; if (!t.closest?.("#pop")) return;
+  t.classList.remove("bad"); const er = $("#pf-err"); if (er) er.textContent = "";
+  if (t.id === "pf-p1") { const [sc, tx] = pwStrength(t.value, S.prof?.email); $("#pf-meter").dataset.s = sc; $("#pf-mtext").textContent = tx; }
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !$("#pop").hidden) { closeProfile(); $("#meb").focus(); }
+  if (ev.key === "Enter" && ev.target.id === "pf-nin") saveMyName();
+});

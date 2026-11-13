@@ -3,15 +3,83 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
+from ..db import db
 from ..deps import AdminCtx, admin_ctx
+from ..errors import ApiError
 from ..pagination import decode_cursor, encode_cursor
+from ..schemas import Name, Secret, Strict
+from ..services import auth, passwords
+from pydantic import Field
 
 router = APIRouter(prefix="/admin/v1", tags=["admin"])
 
 
+async def _devices(conn, staff_id) -> int:
+    """How many places this person is signed in on right now (each sign-in is one family of refresh tokens)."""
+    return await conn.fetchval("SELECT count(DISTINCT family) FROM platform.auth_tokens WHERE account_type='staff' AND account_id=$1 AND kind='refresh' AND revoked_at IS NULL AND used_at IS NULL AND expires_at > now()", staff_id) or 0
+
+
 @router.get("/me")
 async def me(ctx: AdminCtx = Depends(admin_ctx())):
-    return {"id": ctx.staff.id, "name": ctx.staff.name, "role": ctx.staff.role}
+    r = await ctx.conn.fetchrow("SELECT email::text AS email, last_login_at FROM platform.staff_users WHERE id=$1", ctx.staff.id)
+    return {"id": ctx.staff.id, "name": ctx.staff.name, "role": ctx.staff.role, "email": r["email"], "last_login_at": r["last_login_at"], "devices": await _devices(ctx.conn, ctx.staff.id)}
+
+
+class MePatch(Strict):
+    name: Name
+
+
+class MePassword(Strict):
+    current_password: Secret
+    new_password: Secret
+    refresh_token: str | None = Field(None, max_length=600)        # this device's own sign-in, so it stays signed in
+
+
+class MeDevices(Strict):
+    refresh_token: str | None = Field(None, max_length=600)
+
+
+async def _my_family(conn, staff_id, refresh_token: str | None):
+    if not refresh_token:
+        return None
+    return await conn.fetchval("SELECT family FROM platform.auth_tokens WHERE token_hash=$1 AND kind='refresh' AND account_type='staff' AND account_id=$2 AND revoked_at IS NULL",
+                               auth.token_hash(refresh_token), staff_id)
+
+
+@router.patch("/me")
+async def edit_me(body: MePatch, ctx: AdminCtx = Depends(admin_ctx())):
+    """Your own name. (Your email and role are changed by an Owner or Admin under Console users.)"""
+    await ctx.conn.execute("UPDATE platform.staff_users SET name=$2 WHERE id=$1", ctx.staff.id, body.name)
+    await ctx.audit("staff.profile", target_type="staff", target_id=ctx.staff.id, before={"name": ctx.staff.name}, after={"name": body.name})
+    return {"id": ctx.staff.id, "name": body.name, "role": ctx.staff.role}
+
+
+@router.post("/me/change-password", status_code=204)
+async def change_my_password(body: MePassword, ctx: AdminCtx = Depends(admin_ctx())):
+    """Needs the current password. Wrong tries count like wrong sign-ins do. Every other device is signed out; this one stays."""
+    u = await ctx.conn.fetchrow("SELECT id, email::text AS email, password_hash FROM platform.staff_users WHERE id=$1", ctx.staff.id)
+    if not await passwords.verify_async(body.current_password, u["password_hash"]):
+        async with db.admin_tx() as c2:                            # kept even though this request ends in an error
+            await auth._record_failure(c2, "platform.staff_users", [u["id"]])
+            await AdminCtx(c2, ctx.staff, ctx.request_id, ctx.ip).audit("staff.password_change_failed", target_type="staff", target_id=u["id"])
+        raise ApiError(401, "wrong_credentials", "Your current password is not right.")
+    if body.new_password == body.current_password:
+        raise ApiError(422, "same_password", "Choose a password you have not used before.")
+    passwords.check_policy(body.new_password, u["email"])
+    keep = await _my_family(ctx.conn, u["id"], body.refresh_token)
+    await ctx.conn.execute("UPDATE platform.staff_users SET password_hash=$2, failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], await passwords.hash_async(body.new_password))
+    await auth.revoke_all(ctx.conn, "staff", u["id"], except_family=keep)
+    await ctx.audit("staff.password_change", target_type="staff", target_id=u["id"], after={"other_devices_signed_out": True})
+
+
+@router.post("/me/sign-out-others")
+async def sign_out_my_other_devices(body: MeDevices, ctx: AdminCtx = Depends(admin_ctx())):
+    keep = await _my_family(ctx.conn, ctx.staff.id, body.refresh_token)
+    if keep is None:
+        raise ApiError(409, "no_session", "Sign in again first, so this device can be kept signed in.")
+    await auth.revoke_all(ctx.conn, "staff", ctx.staff.id, except_family=keep)
+    await ctx.audit("staff.sign_out_others", target_type="staff", target_id=ctx.staff.id)
+    return {"devices": await _devices(ctx.conn, ctx.staff.id)}
 
 
 @router.get("/overview")

@@ -451,3 +451,45 @@ async def test_passwords_still_lock_accounts_when_two_step_is_off(client, su, mf
 async def test_the_old_mfa_flag_in_a_token_is_still_honoured_when_two_step_is_off(client, make, mfa_off):
     weak = await make.staff("owner", mfa=False)                      # a token without the multi-factor flag
     assert (await client.get("/admin/v1/me", headers=weak["headers"])).status_code == 200
+
+
+async def device(sid):
+    """One more place this person is signed in on (a full sign-in with its own family of tokens)."""
+    from app.db import db
+    from app.services import auth
+    async with db.admin_tx() as c:
+        return await auth._tokens(c, "staff", sid, mfa=True)
+
+
+async def test_staff_profile_name_password_and_other_devices(client, su):
+    sid, email, secret = await staff_with_totp(su)
+    a, b = await device(sid), await device(sid)
+    ha = {"Authorization": "Bearer " + a["access_token"]}
+    me = (await client.get("/admin/v1/me", headers=ha)).json()
+    assert me["email"] == email and me["devices"] == 2
+    r = await client.patch("/admin/v1/me", json={"name": "  Aman Singh "}, headers=ha)
+    assert r.status_code == 200 and r.json()["name"] == "Aman Singh"
+    assert (await client.patch("/admin/v1/me", json={"name": ""}, headers=ha)).status_code == 422
+    new = "a brand new phrase 2026"
+    body = {"current_password": PW, "new_password": new, "refresh_token": a["refresh_token"]}
+    assert (await client.post("/admin/v1/me/change-password", json={**body, "current_password": "wrong password!"}, headers=ha)).status_code == 401
+    assert (await client.post("/admin/v1/me/change-password", json={**body, "new_password": "short"}, headers=ha)).status_code == 422
+    assert (await client.post("/admin/v1/me/change-password", json={**body, "new_password": PW}, headers=ha)).status_code == 422          # not the same one again
+    assert (await client.post("/admin/v1/me/change-password", json=body, headers=ha)).status_code == 204
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": b["refresh_token"]})).status_code == 401, "the other device is signed out"
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": a["refresh_token"]})).status_code == 200, "this one stays signed in"
+    assert passwords.verify_password(new, await su.fetchval("SELECT password_hash FROM platform.staff_users WHERE id=$1", sid)) and not passwords.verify_password(PW, await su.fetchval("SELECT password_hash FROM platform.staff_users WHERE id=$1", sid))
+    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action IN ('staff.password_change','staff.password_change_failed','staff.profile') AND target_id=$1", str(sid)) == 3
+    assert new not in str(await su.fetch("SELECT before, after FROM platform.audit_log WHERE target_id=$1", str(sid))), "no password in the log"
+
+
+async def test_signing_out_every_other_device_keeps_this_one(client, su):
+    sid, email, secret = await staff_with_totp(su)
+    a, b, c = await device(sid), await device(sid), await device(sid)
+    ha = {"Authorization": "Bearer " + a["access_token"]}
+    assert (await client.post("/admin/v1/me/sign-out-others", json={}, headers=ha)).status_code == 409           # it must know which one to keep
+    r = await client.post("/admin/v1/me/sign-out-others", json={"refresh_token": a["refresh_token"]}, headers=ha)
+    assert r.status_code == 200 and r.json()["devices"] == 1
+    for dead in (b, c):
+        assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": dead["refresh_token"]})).status_code == 401
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": a["refresh_token"]})).status_code == 200

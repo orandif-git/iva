@@ -122,3 +122,12 @@ Two read-only pages under each customer, in the menu after Events. A page shows 
 ## Opening a customer's sections is quick
 
 What a customer's page shows is loaded once and kept. Opening another section reuses it and refreshes it quietly in the background (at most every 8 seconds), updating the page only when something it shows has changed and never while a window is open. The marked areas and plate/line data of every camera are fetched only when the Events list (or the event wizard) needs them. The menu remembers whether People count and Vehicles apply to the customer, so it no longer flickers. Saving a change still reloads the customer's data.
+
+## My profile
+
+Click your avatar at the top right: a compact panel drops down (the light/dark switch stays as its own icon next to it).
+- **Name**: the pencil edits it in place. Your email and role are shown; an Owner or Admin changes those under Setup, Console users.
+- **Change password**: needs the current one; the same rules as sign-in (10 or more characters, nothing common or easy). Wrong tries count like wrong sign-ins and are logged. Every other device is signed out; this one stays.
+- **Sign out everywhere else**: shows how many devices you are signed in on and ends the others after a yes.
+- **Sign out** is at the bottom of the panel.
+- There is no authenticator set-up in the profile. Endpoints: `GET/PATCH /admin/v1/me`, `POST /admin/v1/me/change-password`, `POST /admin/v1/me/sign-out-others`. The activity log records that a change happened, never a password.
