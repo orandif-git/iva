@@ -257,3 +257,30 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .cam.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
 .cam .cb b{display:block}
 .cam .cb .tag{margin-top:2px}
+
+/* ---- compact Events list and its side panel ---- */
+.ev-tbl th{padding:6px 12px;font-size:12.5px;color:var(--fg2)}
+.ev-tbl td{padding:3px 12px;height:34px;font-size:13px;border-top:1px solid var(--line);vertical-align:middle}
+.ev-tbl tr.grp td{background:var(--panel);padding:0;height:30px}
+.gb{border:0;background:none;width:100%;text-align:left;padding:5px 12px;font-weight:700;color:var(--head);display:flex;align-items:center;gap:6px;font-size:13px}
+.gb .cnt{background:var(--field);color:var(--fg2);border-radius:999px;padding:0 8px;font-size:12px}
+.car{width:12px;color:var(--fg2)}
+.ev-tbl .sw-c{width:70px;text-align:right}
+.ev{cursor:pointer}
+.ev:hover td{background:var(--hover)}
+.ev:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.ev.off td{color:var(--mute)}
+.ev.off td.nm b{color:var(--mute)}
+.ev.off .tag{opacity:.6}
+.nm b{font-weight:700;color:var(--head)}
+.nm .ty{display:block;font-size:11.5px;color:var(--fg2);line-height:1.2}
+.ev-tbl .sw{width:34px;height:20px}
+.ev-tbl .sw i::after{width:16px;height:16px}
+.ev-tbl .sw input:checked+i::after{transform:translateX(14px)}
+.shade{position:fixed;inset:46px 0 0 0;background:var(--scrim);z-index:15}
+.drawer.ev{padding:0;gap:0}
+.dh{display:flex;justify-content:space-between;gap:12px;padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.dh h2{font-size:17px}
+.dbody{padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:14px;flex:1}
+.df{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--line);align-items:center}
+.rowsw{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px}

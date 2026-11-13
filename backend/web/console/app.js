@@ -62,7 +62,7 @@ const AREA_FIELDS = { area_count: [["limit", "More than", "people", 5], ["minute
 const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate", "minutes", "recorder", "image_url", "clip_url"];
 
 /* ------------------------------------------------------------------------------------------------ state */
-const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", setup: "tpl", tq: "", pop: false, estep: "event",
+const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
   customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
 const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
@@ -426,63 +426,84 @@ async function createEvent() {
 
 /* ---- the Events list: what the shop really gets, with Edit and Delete ---- */
 const AREA_TYPES = new Set(Object.keys(AREA_KIND));
+const EV_GROUPS = [["cam", "Counting and plates"], ["area", "Marked areas"], ["alert", "Alerts added"], ["default", "Default alerts"]];
 function eventRows() {
-  const { events, cams, areas } = S.cur, byType = Object.fromEntries(events.map((e) => [e.type, e])), rows = [];
+  const { events, cams, areas, zones } = S.cur, byType = Object.fromEntries(events.map((e) => [e.type, e])), rows = [];
   for (const c of cams) {
-    if (c.use_footfall) rows.push({ k: "data", flag: "use_footfall", t: "Count people", cam: c });
-    if (c.use_anpr) rows.push({ k: "data", flag: "use_anpr", t: "Read number plates", cam: c });
-    for (const a of areas[c.id] || []) rows.push({ k: "area", type: a.alert, cam: c, area: a, rule: byType[a.alert] });
+    const z = zones[c.id] || [], line = z.some((q) => q.kind === "count_line"), plate = z.some((q) => q.kind === "anpr_zone");
+    if (c.use_footfall || line) rows.push({ k: "data", g: "cam", flag: "use_footfall", t: "Count people", cam: c, on: !!c.use_footfall, marked: line });
+    if (c.use_anpr || plate) rows.push({ k: "data", g: "cam", flag: "use_anpr", t: "Read number plates", cam: c, on: !!c.use_anpr, marked: plate });
+    for (const a of areas[c.id] || []) rows.push({ k: "area", g: "area", type: a.alert, cam: c, area: a, rule: byType[a.alert], on: !!byType[a.alert]?.enabled });
   }
-  for (const e of events) if (!HIDDEN.has(e.type) && !AREA_TYPES.has(e.type) && ((e.saved && (e.enabled || !e.default)) || (!e.saved && e.default))) rows.push({ k: "rule", type: e.type, rule: e });
+  for (const e of events) if (!HIDDEN.has(e.type) && !AREA_TYPES.has(e.type) && (e.saved || e.default)) rows.push({ k: "rule", g: e.default ? "default" : "alert", type: e.type, rule: e, on: !!e.enabled });
   return rows;
 }
-const namesOf = (ids) => (ids || []).map((i) => S.cur.people.find((p) => p.id === i)?.name).filter(Boolean).join(", ") || "Nobody yet";
+const namesOf = (ids) => (ids || []).map((i) => S.cur.people.find((p) => p.id === i)?.name).filter(Boolean).join(", ") || "—";
+const rowName = (r) => r.k === "data" ? `${r.t} · ${r.cam.name}` : r.k === "area" ? r.area.name : (r.rule.label || r.rule.title);
+const rowType = (r) => r.k === "data" ? r.t : r.k === "area" ? (evMeta(r.type)?.title || r.type) + (r.type === "area_activity" ? ` · ${{ person: "people", vehicle: "vehicles" }[r.area.params?.target || "person"]}, ${{ closed: "when closed", between: `${r.area.params?.from}–${r.area.params?.to}`, always: "at any time" }[r.area.params?.when || "closed"]}` : "") : r.rule.title;
+const rowWhere = (r) => r.k === "rule" ? (REC_LEVEL.has(r.type) ? "Every recorder" : NEEDS_COUNT.has(r.type) ? "Counting cameras" : NEEDS_PLATES.has(r.type) ? "Plate cameras" : "Every camera") : r.cam.name;
+const rowSends = (r) => MEDIA[carries(r.k === "data" ? (r.flag === "use_footfall" ? "__count" : "__plates") : r.type)];
 function secEvents() {
-  const rows = S.cur.rows = eventRows(), ro = !can("events");
-  const line = (r, i) => {
-    if (r.k === "data") { const z = S.cur.zones[r.cam.id] || [], marked = z.some((q) => q.kind === (r.flag === "use_footfall" ? "count_line" : "anpr_zone")), warn = r.flag === "use_footfall" && !marked;
-      return `<tr><td class="dotc"><span class="dot ${warn ? "warn" : "ok"}"></span></td><td class="main-c">${r.t} · ${esc(r.cam.name)} ${warn ? '<span class="tag warn">No line marked. Nothing is counted yet</span>' : r.flag === "use_footfall" ? '<span class="tag ok">Line marked</span>' : marked ? '<span class="tag ok">Plate area marked</span>' : '<span class="tag">Whole picture</span>'}</td><td>${r.t}</td><td>${esc(r.cam.name)}</td><td><span class="tag mute">No message</span></td><td>—</td><td class="${warn ? "t-warn" : "t-ok"}">${warn ? "Needs a line" : "On"}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>${warn ? "Mark the line" : "Edit"}</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`; }
-    if (r.k === "area") { const on = !!r.rule?.enabled, m = MEDIA[carries(r.type)]; return `<tr><td class="dotc"><span class="dot ${on ? "ok" : ""}"></span></td><td class="main-c">${esc(r.area.name)}</td><td>${esc(evMeta(r.type)?.title || r.type)}</td><td>${esc(r.cam.name)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(namesOf(r.rule?.recipient_ids))}</td><td class="${on ? "t-ok" : "t-mute"}">${on ? "On" : "Off"}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>Edit</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`; }
-    const e = r.rule, m = MEDIA[carries(e.type)], dflt = e.default;
-    return `<tr><td class="dotc"><span class="dot ${e.enabled ? "ok" : ""}"></span></td><td class="main-c">${esc(e.label || e.title)}${dflt ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(e.title)}</td><td>${REC_LEVEL.has(e.type) ? "Every recorder" : NEEDS_COUNT.has(e.type) || NEEDS_PLATES.has(e.type) ? "Counting or plate cameras" : "Every camera"}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(namesOf(e.recipient_ids))}</td><td>${dflt ? '<span class="t-ok">On</span>' : sw("evon-" + e.type, e.enabled, ro, "evon:" + e.type)}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>Edit</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`;
+  const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length;
+  const line = (r) => {
+    const i = rows.indexOf(r), m = rowSends(r), warn = r.k === "data" && r.flag === "use_footfall" && !r.marked, goes = r.k === "data" ? "—" : namesOf(r.rule?.recipient_ids);
+    return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="nm"><b>${esc(rowName(r))}</b>${warn ? ' <span class="tag warn">No line marked</span>' : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}<span class="ty">${esc(rowType(r))}</span></td><td>${esc(rowWhere(r))}</td><td>${esc(goes)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
   };
-  return `<div class="stack"><div class="bar flush"><span class="sub">Everything this shop is told about, and what its cameras count and read. Only admins can change these.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
-  ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Where</th><th>Sends</th><th>Goes to</th><th>On</th><th></th></tr></thead><tbody>${rows.map(line).join("")}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
+  return `<div class="stack"><div class="bar flush"><span class="sub">${on} on of ${rows.length}. Click an event to see it, change it or delete it.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
+  ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th>Event</th><th>Where</th><th>Goes to</th><th>Sends</th><th class="sw-c">On</th></tr></thead>${EV_GROUPS.map(([g, label]) => { const list = rows.filter((r) => r.g === g); if (!list.length) return ""; const open = S.evOpen[g]; return `<tbody><tr class="grp"><td colspan="5"><button type="button" class="gb" data-evgrp="${g}" aria-expanded="${open}"><span class="car">${open ? "▾" : "▸"}</span> ${label} <span class="cnt">${list.length}</span>${g === "default" && !open ? '<span class="sub light"> · on for every shop unless turned off</span>' : ""}</button></td></tr>${open ? list.map(line).join("") : ""}</tbody>`; }).join("")}</table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
 }
-/* Edit: a side panel for one row */
+/* Switch an event on or off straight from the list */
+async function toggleRow(i, checked) {
+  const r = S.cur.rows[i], base = `/admin/v1/tenants/${S.cid}/shop`;
+  if (r.k === "data") {
+    const c = r.cam, others = [c.use_footfall && r.flag !== "use_footfall", c.use_anpr && r.flag !== "use_anpr", c.use_areas].some(Boolean);
+    if (!checked && !others && c.enabled) { S.pendingOff = i; return modal(`${mh("Switch this off?")}<p class="nm"><b>${esc(rowName(r))}</b></p><div class="note warn">This is the camera's only use. Switching it off stops watching this camera. Continue?</div><div class="row"><button class="btn pri" type="button" data-confirm="rowoff">Switch off</button><button class="btn" type="button" data-confirm="rowkeep">Keep it on</button></div>`); }
+    await api.patch(`${base}/cameras/${c.id}`, { [r.flag]: checked, ...(r.flag === "use_anpr" && checked ? { stream: "main" } : {}) });
+  } else {
+    const e = r.rule;
+    await api.put(`${base}/events/${e.type}`, { label: e.label, enabled: checked, params: e.params, recipient_ids: e.recipient_ids, quiet_start: e.quiet_start, quiet_end: e.quiet_end });
+  }
+  await loadCurrent(S.cid); toast(checked ? "Switched on" : "Switched off"); render(true);
+}
+/* Click an event: its details in a side panel, with Save and Delete */
 function openEditEvent(i) {
-  const r = S.cur.rows[i], kind = r.k === "area" ? AREA_KIND[r.type] : null, rule = r.rule, x = evMeta(r.type);
-  const v = kind ? { ...(r.area.params || {}) } : { ...(rule.params || {}) };
-  S.edit = { i, v, pts: kind ? r.area.points.map((p) => [Math.round(p[0] * 640), Math.round(p[1] * 360)]) : null, to: [...(rule.recipient_ids || [])], name: kind ? r.area.name : (rule.label || rule.title), on: rule.enabled, clip: !!(rule.params || {}).clip };
+  const r = S.cur.rows[i], kind = r.k === "area" ? AREA_KIND[r.type] : null, rule = r.rule;
+  S.edit = { i, v: r.k === "data" ? {} : kind ? { ...(r.area.params || {}) } : { ...(rule.params || {}) }, pts: kind ? r.area.points.map((p) => [Math.round(p[0] * 640), Math.round(p[1] * 360)]) : null, to: [...(rule?.recipient_ids || [])], name: r.k === "data" ? rowName(r) : kind ? r.area.name : (rule.label || rule.title), on: r.on, clip: !!(rule?.params || {}).clip };
   drawEdit();
 }
 function drawEdit() {
-  const { i, v, to, name } = S.edit, r = S.cur.rows[i], kind = r.k === "area" ? AREA_KIND[r.type] : null, x = evMeta(r.type), rule = r.rule;
-  const fields = kind ? areaFields(kind, v) : Object.entries(x.settings || {}).map(([k, s]) => { if (s.type === "boolean") return `<div class="cfg"><span>Include a short video</span><span>${sw("x-clip", S.edit.clip, false, "xclip")}</span><span></span></div>`; const [label, unit] = PARAM[k] || [humanize(k), ""]; return `<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="${s.min}" max="${s.max}" aria-label="${label}" data-xv="${k}" value="${v[k] ?? s.default}"><span class="sub">${unit}</span></div>`; });
-  const fieldsHtml = kind ? fields.map((f) => f.replace(/data-ev=/g, "data-xv=")).join("") : fields.join("");
-  $("#layer").innerHTML = `<aside class="drawer" role="dialog" aria-label="Edit event"><div class="row spread"><h2 class="h2">Edit event</h2><button class="ibtn" type="button" id="dclose" aria-label="Close">${ico("x")}</button></div>
-  <div><div class="sec-h mb6">${esc(x.title)}${r.cam ? " · " + esc(r.cam.name) : ""}</div><span class="sub small">${esc(x.description)}</span></div>
-  <div><div class="sec-h mb6">Name</div><input class="in full" id="x-name" value="${esc(name)}"></div>
-  <div><div class="sec-h mb6">Goes to</div><div class="stack">${S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-xto="${p.id}" ${to.includes(p.id) ? "checked" : ""}>${esc(p.name)}</label>`).join("") || '<span class="sub">Nobody yet</span>'}</div>${kind ? '<div class="sub small mt6">This list is shared by every area of this kind in the shop.</div>' : ""}</div>
-  ${fieldsHtml ? `<div><div class="sec-h mb6">Settings</div><div class="stack">${fieldsHtml}</div></div>` : ""}
-  ${kind ? `<div><button class="btn" type="button" data-redraw>Redraw the area</button></div>` : ""}
-  <div class="row"><button class="btn pri" type="button" data-esave>Save</button><button class="btn" type="button" id="dclose2">Cancel</button></div></aside>`;
+  const { i, v, to, name } = S.edit, r = S.cur.rows[i], kind = r.k === "area" ? AREA_KIND[r.type] : null, data = r.k === "data", def = r.g === "default", ro = !can("events"), m = rowSends(r);
+  const x = data ? { title: r.t, description: r.flag === "use_footfall" ? "Counts the people crossing the line marked on this camera. Used for the shop's visitor numbers and for crowding, after-hours and counting alerts. Sends no message." : "Reads the number plates of vehicles on this camera, for the vehicle list and the vehicle alerts. Sends no message.", settings: {} } : evMeta(r.type);
+  const fields = data ? [] : kind ? areaFields(kind, v).map((f) => f.replace(/data-ev=/g, "data-xv=")) : Object.entries(x.settings || {}).map(([k, s]) => { if (s.type === "boolean") return `<div class="cfg"><span>Include a short video</span><span>${sw("x-clip", S.edit.clip, false, "xclip")}</span><span></span></div>`; const [label, unit] = PARAM[k] || [humanize(k), ""]; return `<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="${s.min}" max="${s.max}" aria-label="${label}" data-xv="${k}" value="${v[k] ?? s.default}"><span class="sub">${unit}</span></div>`; });
+  const marked = data && r.marked, warn = data && r.flag === "use_footfall" && !marked;
+  const shared = r.k === "area" ? "Switching this on or off applies to every area of this kind in the shop." : def ? "Default alerts can be switched off, not deleted." : "Switch off to stop this without deleting it.";
+  $("#layer").innerHTML = `<div class="shade" data-close></div><aside class="drawer ev" role="dialog" aria-label="${esc(name)}"><div class="dh"><div><h2>${esc(name)}</h2><div class="sub">${esc(rowType(r))} · ${esc(rowWhere(r))}</div></div><button class="ibtn" type="button" id="dclose" aria-label="Close">${ico("x")}</button></div>
+  <div class="dbody"><div class="rowsw"><span><b>On</b><br><span class="sub small">${shared}</span></span>${sw("x-on", S.edit.on, ro, "xon")}</div>
+  ${data ? "" : `<div><div class="sec-h">Name</div><input class="in full" id="x-name" value="${esc(name)}" ${ro ? "disabled" : ""}></div><div><div class="sec-h">Goes to</div><div class="stack">${S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-xto="${p.id}" ${to.includes(p.id) ? "checked" : ""}>${esc(p.name)}</label>`).join("") || '<span class="sub">Nobody yet</span>'}</div>${kind ? '<div class="sub small mt6">This list is shared by every area of this kind in the shop.</div>' : ""}</div>`}
+  ${fields.length ? `<div><div class="sec-h">Settings</div><div class="stack">${fields.join("")}</div></div>` : ""}
+  <div><div class="sec-h">Sends</div><span class="tag ${m[1]}">${m[0]}</span></div>
+  ${data ? `<div class="${warn ? "note warn" : "sub"}">${r.flag === "use_footfall" ? (warn ? "No line is marked on this camera, so nothing is counted yet." : "A counting line is marked. People crossing the way the arrow points are counted IN.") : (marked ? "A plate area is marked." : "Plates are read in the whole picture.")}</div><div><button class="btn ${warn ? "pri" : ""}" type="button" data-editmark="${i}" ${ro ? "disabled" : ""}>${r.flag === "use_footfall" ? (marked ? "Mark the line again" : "Mark the line") : "Mark the plate area"}</button></div>` : ""}
+  ${kind ? `<div><button class="btn" type="button" data-redraw ${ro ? "disabled" : ""}>Redraw the area</button></div>` : ""}</div>
+  <div class="df"><button class="btn pri" type="button" data-esave ${ro ? "disabled" : ""}>Save</button><button class="btn" type="button" id="dclose2">Cancel</button><span class="grow"></span>${def ? "" : `<button class="btn danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button>`}</div></aside>`;
 }
 async function saveEdit() {
-  const E = S.edit, r = S.cur.rows[E.i], kind = r.k === "area" ? AREA_KIND[r.type] : null, rule = r.rule, base = `/admin/v1/tenants/${S.cid}/shop`, x = evMeta(r.type);
+  const E = S.edit, r = S.cur.rows[E.i], kind = r.k === "area" ? AREA_KIND[r.type] : null, rule = r.rule, base = `/admin/v1/tenants/${S.cid}/shop`, x = r.k === "data" ? null : evMeta(r.type);
   try {
-    if (kind) {
-      const params = areaParams(kind, E.v), keepNotice = kind === "staff_area";
-      const list = S.cur.areas[r.cam.id].map((a) => a.id === r.area.id ? { id: a.id, kind: a.kind, name: E.name.trim() || a.name, points: E.pts.map((p) => [Math.round(p[0] / 640 * 1000) / 1000, Math.round(p[1] / 360 * 1000) / 1000]), params: keepNotice ? { ...params, notice_confirmed: true } : params } : { id: a.id, kind: a.kind, name: a.name, points: a.points, params: a.params });
+    if (r.k === "data") {
+      if (E.on !== r.on) { await toggleRowSilent(r, E.on); }
+    } else if (kind) {
+      const params = areaParams(kind, E.v);
+      const list = S.cur.areas[r.cam.id].map((a) => a.id === r.area.id ? { id: a.id, kind: a.kind, name: E.name.trim() || a.name, points: E.pts.map(norm1), params } : { id: a.id, kind: a.kind, name: a.name, points: a.points, params: a.params });
       await api.put(`${base}/cameras/${r.cam.id}/areas`, { areas: list });
-      await api.put(`${base}/events/${r.type}`, { label: rule?.label || null, enabled: rule ? rule.enabled : true, params: rule?.params || {}, recipient_ids: E.to });
+      await api.put(`${base}/events/${r.type}`, { label: rule?.label || null, enabled: E.on, params: rule?.params || {}, recipient_ids: E.to });
     } else {
       const params = {}; for (const [k, s] of Object.entries(x.settings || {})) params[k] = s.type === "boolean" ? !!E.clip : +(E.v[k] ?? s.default);
-      await api.put(`${base}/events/${r.type}`, { label: E.name.trim() || null, enabled: rule.enabled, params, recipient_ids: E.to });
+      await api.put(`${base}/events/${r.type}`, { label: E.name.trim() || null, enabled: E.on, params, recipient_ids: E.to });
     }
     closeModal(); await loadCurrent(S.cid); toast("Saved"); render(true);
-  } catch (e) { toast(errText(e), true); }
+  } catch (e) { toast(e.code === "use_required" ? "A camera needs at least one use. Delete it, or turn Watching off, instead." : errText(e), true); }
 }
+async function toggleRowSilent(r, checked) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${r.cam.id}`, { [r.flag]: checked, ...(r.flag === "use_anpr" && checked ? { stream: "main" } : {}) }); }
 /* Redraw an area on the camera picture */
 async function openRedraw() {
   const r = S.cur.rows[S.edit.i]; S.redraw = { pts: [], snap: null }; const tmp = { target: r.cam, snap: null }; await loadSnap(tmp); S.redraw.snap = tmp.snap; drawRedraw();
@@ -585,8 +606,9 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-editev],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
+  if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
   try {
     if ("scrim" in d) { if (ev.target !== t) return; return closeModal(); }
@@ -644,7 +666,11 @@ document.addEventListener("click", async (ev) => {
     if (d.erec) { S.ev.rec = { id: d.erec }; S.ev.target = null; S.ev.snap = null; return render(true); }
     if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; S.ev.zones = null; S.ev.pts = []; S.ev.touched = false; S.ev.whole = false; S.ev.flip = false; return render(true); }
     if (d.etype) { const x = evMeta(d.etype); S.ev.key = d.etype; S.ev.v = {}; if (!needsCam(d.etype)) S.ev.target = null; if (S.cur.recs.length === 1) S.ev.rec = { id: S.cur.recs[0].id }; if (!S.ev.name || S.ev.nameAuto) { S.ev.name = x.title; S.ev.nameAuto = true; } return render(true); }
-    if (d.editev) { const r = S.cur.rows[+d.editev]; if (r.k === "data") return openMark(+d.editev); openEditEvent(+d.editev); return; }
+    if (d.evrow !== undefined) { openEditEvent(+d.evrow); return; }
+    if (d.evgrp) { S.evOpen[d.evgrp] = !S.evOpen[d.evgrp]; return render(true); }
+    if (d.editmark !== undefined) return openMark(+d.editmark);
+    if (d.confirm === "rowoff") { const r = S.cur.rows[S.pendingOff]; await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${r.cam.id}`, { [r.flag]: false, enabled: false }); closeModal(); await loadCurrent(S.cid); toast("Switched off"); return render(true); }
+    if (d.confirm === "rowkeep") { closeModal(); return render(true); }
     if ("mflip" in d) { S.mark.flip = !S.mark.flip; S.mark.touched = true; return drawMark(); }
     if ("mwhole" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
     if ("mclear" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
@@ -682,10 +708,10 @@ document.addEventListener("input", (ev) => {
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "lq") { S.logQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "tq") { S.tq = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#tq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
-  if (S.edit && (t.dataset.xv || t.dataset.xto || t.id === "x-name" || t.dataset.act === "xclip" || t.dataset.ev)) { const E = S.edit, d = t.dataset;
+  if (S.edit && (t.dataset.xv || t.dataset.xto || t.id === "x-name" || t.dataset.act === "xclip" || t.dataset.act === "xon" || t.dataset.ev)) { const E = S.edit, d = t.dataset;
     if (d.xv) { E.v[d.xv] = t.value; if (["when", "target"].includes(d.xv)) drawEdit(); } else if (d.ev) { E.v[d.ev] = t.value; if (["when", "target"].includes(d.ev)) drawEdit(); }
     else if (d.xto) { const i = E.to.indexOf(d.xto); if (t.checked && i < 0) E.to.push(d.xto); if (!t.checked && i >= 0) E.to.splice(i, 1); }
-    else if (t.id === "x-name") E.name = t.value; else if (d.act === "xclip") E.clip = t.checked; return; }
+    else if (t.id === "x-name") E.name = t.value; else if (d.act === "xclip") E.clip = t.checked; else if (d.act === "xon") E.on = t.checked; return; }
   if (S.route === "event" && S.ev) { const v = S.ev, d = t.dataset;
     if (d.ebind) { v[d.ebind] = t.value; if (d.ebind === "name") v.nameAuto = false; } else if (d.eto) { const i = v.to.indexOf(d.eto); if (t.checked && i < 0) v.to.push(d.eto); if (!t.checked && i >= 0) v.to.splice(i, 1); } else if (d.ev) { v.v[d.ev] = t.value; if (d.ev === "when") render(true); } else if ("enotice" in d) v.notice = t.checked;
     else if (d.act === "eon") v.on = t.checked; else if (d.act === "eclip") v.clip = t.checked; return; }
@@ -701,7 +727,7 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("change", async (ev) => {
   const t = ev.target, d = t.dataset;
   try {
-    if (d.act?.startsWith("evon:") && S.cur) { const type = d.act.slice(5), e = S.cur.events.find((x) => x.type === type); await api.put(`/admin/v1/tenants/${S.cid}/shop/events/${type}`, { label: e.label, enabled: t.checked, params: e.params, recipient_ids: e.recipient_ids, quiet_start: e.quiet_start, quiet_end: e.quiet_end }); e.enabled = t.checked; toast(t.checked ? "Event is on" : "Event is off"); return render(true); }
+    if (d.act?.startsWith("evsw:") && S.cur) { return toggleRow(+d.act.slice(5), t.checked); }
     if (d.act?.startsWith("camfoot:") || d.act?.startsWith("camplate:")) { const plate = d.act.startsWith("camplate:"), id = d.act.split(":")[1], c = S.cur.cams.find((x) => x.id === id);
       const body = plate ? { use_anpr: t.checked, ...(t.checked ? { stream: "main" } : {}) } : { use_footfall: t.checked };
       await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
