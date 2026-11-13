@@ -341,3 +341,17 @@ async def test_deleting_a_console_user_keeps_the_record_of_what_they_viewed(clie
     assert d.status_code == 204, d.text
     row = await su.fetchrow("SELECT staff_id, staff_name, reason FROM platform.impersonation_sessions WHERE tenant_id=$1", t)
     assert row["staff_id"] is None and row["staff_name"] == "Staff support" and row["reason"] == "Checking a complaint"
+
+
+async def test_a_plate_camera_keeps_the_in_direction_staff_set_and_the_worker_is_told_about_it(client, make, su):
+    t, u, (cam,), rec = await setup_cameras(client, make, plan="full", anpr=1)
+    onboarding = await make.staff("onboarding")
+    base = f"/admin/v1/tenants/{t}/shop/cameras/{cam}/zones"
+    whole = [[0, 0], [1, 0], [1, 1], [0, 1]]
+    r = await client.put(base, json={"zones": [{"kind": "anpr_zone", "points": whole, "in_direction": [1, 0]}]}, headers=onboarding["headers"])
+    assert r.status_code == 200, r.text
+    got = (await client.get(base, headers=onboarding["headers"])).json()
+    assert got[0]["kind"] == "anpr_zone" and got[0]["in_direction"] == [1.0, 0.0] and got[0]["points"] == [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    cfg = (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()
+    zone = [z for z in cfg["zones"] if z["kind"] == "anpr_zone"][0]
+    assert zone["in_direction"] == [1.0, 0.0], "the worker marks reads in or out from this"

@@ -36,7 +36,7 @@ async def vehicle_overstay() -> int:
     plainly did not stay where it was (an exit the camera read badly, or a missed exit followed by the next visit)."""
     n = 0
     async with db.service_tx() as conn:
-        rules = await conn.fetch("SELECT tenant_id, params FROM app.alert_rules WHERE rule_type='vehicle_overstay' AND enabled")
+        rules = await conn.fetch("SELECT r.tenant_id, r.params, t.timezone FROM app.alert_rules r JOIN app.tenants t ON t.id=r.tenant_id WHERE r.rule_type='vehicle_overstay' AND r.enabled")
         for rule in rules:
             minutes = overstay_minutes(rule["params"])
             rows = await conn.fetch(
@@ -51,7 +51,8 @@ async def vehicle_overstay() -> int:
             for r in rows:
                 if await raise_alert(conn, rule["tenant_id"], "vehicle_overstay", title=f"Vehicle overstay: {r['plate_text']}",
                                      body=f"Entered at {r['camera']} and has not left after {stay_text(minutes)}.", camera_id=r["camera_id"], camera_name=r["camera"],
-                                     details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes)},
+                                     details={"plate": r["plate_text"], "minutes": str(minutes), "hours": f"{minutes / 60:g}", "stay": stay_text(minutes),
+                                              "entered_at": r["seen_at"].astimezone(ZoneInfo(rule["timezone"])).strftime("%d %b, %I:%M %p").lstrip("0")},
                                      dedupe_key=f"overstay:{r['id']}", cooldown_minutes=60 * 24 * 7, evidence_id=r["evidence_id"]):
                     n += 1
     return n

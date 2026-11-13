@@ -102,3 +102,11 @@ Setup, Console users: **Edit** changes a person's name, email and role. **Delete
 ## "View as customer" removed
 
 There is no customer app any more, so staff can no longer open a customer's account on screen. The endpoints and the button in the old Platform Admin console are gone. The saved records of earlier views stay in the database (with the staff member's name) and old activity-log lines still read normally.
+
+## Plate events: one setup, in and out
+
+**Read number plates** is the one place that sets up a plate camera: the camera, the plate area and **which way is IN** (the way a vehicle moves in the picture when it comes in: left, right, away from or towards the camera). The wizard will not go on until the direction is chosen. No corners drawn means the whole picture. The direction is saved with the plate area, once per camera.
+- **Vehicle overstay**, **Blocked vehicle** and **Number plate needs review** no longer ask for a camera or an area. They work on every camera that reads plates. If none does, the wizard says so and offers "Set up Read number plates".
+- Overstay needs the direction (it only looks at vehicles that came in); a plate camera without one shows "No direction" in the Events list, and the Overstay row shows "No direction on N cameras". Nothing is changed or deleted behind anyone's back: open the Read number plates row, press "Mark the plate area and direction".
+- An exit is matched to the latest unmatched entry of the same plate at any of the shop's plate cameras, up to 7 days back.
+- The Vehicle overstay message has a new shortcode, `{entered_at}` (when the vehicle came in, on the shop's clock), next to `{plate}`, `{minutes}`, `{hours}` and `{stay}`. Add it to the overstay webhook payload if the WhatsApp template should show it.

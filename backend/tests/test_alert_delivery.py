@@ -620,6 +620,8 @@ async def test_overstay_detector(client, make, su, world):
     assert await detectors.vehicle_overstay() >= 1
     titles = [r["title"] for r in await su.fetch("SELECT title FROM app.alerts WHERE tenant_id=$1", t)]
     assert titles == ["Vehicle overstay: KA05MN4321"]                                                # left in time / not long enough: none
+    d = json.loads((await su.fetchrow("SELECT details::text AS d FROM app.alerts WHERE tenant_id=$1", t))["d"])
+    assert d["entered_at"].endswith(("AM", "PM")), "the message says when the vehicle came in, on the shop's clock"
     await detectors.vehicle_overstay()
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1", t) == 1                      # one alert per visit
 

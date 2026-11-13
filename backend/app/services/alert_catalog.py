@@ -83,11 +83,11 @@ CATALOG: dict[str, dict] = {
                     media="image_clip", shortcodes=["area", "seconds", *CLIP_TIME], needs="Person and phone detection in a marked area", uses_evidence=True, params=CLIP_PARAM),
     # ---- Smart Alerts: vehicles
     "blocked_plate": _a(SMART, "Vehicles", "Blocked vehicle detected", "A vehicle on your blocked list is read at any camera.", built=True, severity="critical", uses_evidence=True, media="image_clip",
-                        shortcodes=["plate", "direction", *CLIP_TIME], needs="Number plates", params=CLIP_PARAM),
-    "vehicle_overstay": _a(SMART, "Vehicles", "Vehicle overstay", "A vehicle entered and has not left after the time you set.", built=True, shortcodes=["plate", "minutes", "hours", "stay"], needs="Number plates", media="image", uses_evidence=True,
+                        shortcodes=["plate", "direction", *CLIP_TIME], needs="Read number plates", params=CLIP_PARAM),
+    "vehicle_overstay": _a(SMART, "Vehicles", "Vehicle overstay", "A vehicle came in and has not gone out after the time you set. Needs the plate cameras to have an IN direction, which is set under Read number plates.", built=True, shortcodes=["plate", "minutes", "hours", "stay", "entered_at"], needs="Read number plates, with the IN direction set", media="image", uses_evidence=True,
                            params={"max_minutes": {"type": "integer", "default": 480, "min": 5, "max": 10080}}),
     "low_confidence_plate": _a(SMART, "Vehicles", "Number plate needs review", "A number plate could not be read with confidence and needs a person to check it.", built=True, severity="info",
-                               uses_evidence=True, media="image", shortcodes=["plate", "confidence"], needs="Number plates"),
+                               uses_evidence=True, media="image", shortcodes=["plate", "confidence"], needs="Read number plates"),
 }
 ALERT_TYPES = CATALOG                       # the name the rest of the code already uses
 BUILT = [k for k, v in CATALOG.items() if v["built"] and not v["internal"]]               # alerts a customer can have

@@ -51,8 +51,17 @@ const AREA_KIND = { people_in_area: "area_count", queue_long: "queue_area", phon
 const CARRIES = { view_changed: "image", picture_poor: "image", crowding: "image", after_hours: "image", people_in_area: "image", queue_long: "image", phone_use: "image", area_activity: "image", blocked_plate: "clip", vehicle_overstay: "image", low_confidence_plate: "image", daily_summary: "direct", weekly_summary: "direct", __count: "data", __plates: "data" };
 const DATA_TYPES = [
   { type: "__count", title: "Count people", group: "On this camera", ai: false, settings: {}, description: "Counts the people passing this camera. Used for the shop's visitor numbers and for crowding, after-hours and counting alerts. Sends no message." },
-  { type: "__plates", title: "Read number plates", group: "On this camera", ai: false, settings: {}, description: "Reads the number plates of vehicles on this camera, for the vehicle list and the blocked and overstay alerts. Sends no message." }];
+  { type: "__plates", title: "Read number plates", group: "On this camera", ai: false, settings: {}, description: "Reads the number plates of vehicles on this camera and which way they move, in or out. Used for the vehicle list and the blocked, overstay and review alerts. Sends no message." }];
 const NEEDS_COUNT = new Set(["crowding", "after_hours", "counting_stopped"]), NEEDS_PLATES = new Set(["blocked_plate", "vehicle_overstay", "low_confidence_plate"]);
+/* Which way is IN for a plate camera: the way a vehicle moves in the picture when it comes in. Saved with the plate area, once per camera. */
+const DIRS = { right: [1, 0], left: [-1, 0], up: [0, -1], down: [0, 1] };
+const DIR_LABEL = { left: "Moving left", right: "Moving right", up: "Moving away from the camera", down: "Moving towards the camera" };
+const DIR_ARROW = { left: "←", right: "→", up: "↑", down: "↓" };
+const dirName = (v) => !v || v.length !== 2 ? null : Math.abs(v[0]) >= Math.abs(v[1]) ? (v[0] > 0 ? "right" : "left") : (v[1] > 0 ? "down" : "up");
+const plateDirOf = (c) => dirName(((S.cur.zones || {})[c.id] || []).find((q) => q.kind === "anpr_zone")?.in_direction);
+const plateCams = () => S.cur.cams.filter((c) => c.use_anpr);
+const noDirCams = () => plateCams().filter((c) => !plateDirOf(c));
+const dirPicker = (cur, attr) => `<div class="dirs" role="group" aria-label="Which way is IN">${Object.keys(DIRS).map((k) => `<button class="btn sm" type="button" ${attr}="${k}" aria-pressed="${cur === k}">${DIR_ARROW[k]} ${DIR_LABEL[k]}</button>`).join("")}</div>`;
 const evMeta = (type) => DATA_TYPES.find((x) => x.type === type) || S.cur.events.find((x) => x.type === type);
 const MEDIA = { data: ["No message", "mute"], none: ["Text only", "mute"], image: ["Picture", "ai"], clip: ["Picture + video", "brand"], direct: ["Direct text", "mute"] };
 const carries = (t) => CARRIES[t] || "none";
@@ -106,9 +115,9 @@ const NSTEPS = [["shop", "Customer", "store"], ["people", "Who gets messages", "
 const ESTEPS = [["event", "Event", "bell"], ["type", "Event type", "list"], ["recorder", "Recorder", "rec"], ["camera", "Camera", "cam"], ["area", "Mark on the picture", "area"], ["settings", "Settings", "gear"]];
 const needsArea = () => !!(S.ev && S.ev.key && AREA_KIND[S.ev.key]);
 /* What has to be marked on the picture: an area (area events), a counting line (counting people) or the area plates are read in (reading plates) */
-const markMode = (k) => !k ? null : AREA_KIND[k] ? "area" : (k === "__count" || NEEDS_COUNT.has(k)) ? "line" : (k === "__plates" || NEEDS_PLATES.has(k)) ? "zone" : null;
+const markMode = (k) => !k ? null : AREA_KIND[k] ? "area" : (k === "__count" || NEEDS_COUNT.has(k)) ? "line" : k === "__plates" ? "zone" : null;
 const MARK_TITLE = { area: "Mark the area", line: "Mark the counting line", zone: "Mark the plate area" };
-const needsCam = (k) => !!(k && (AREA_KIND[k] || NEEDS_COUNT.has(k) || NEEDS_PLATES.has(k) || k.startsWith("__")));
+const needsCam = (k) => !!(k && (AREA_KIND[k] || NEEDS_COUNT.has(k) || k.startsWith("__")));
 const eorder = () => { const o = ["event", "type"]; if (S.ev.key && needsCam(S.ev.key)) { if (S.cur.recs.length > 1) o.push("recorder"); o.push("camera"); } if (markMode(S.ev.key)) o.push("area"); o.push("settings"); return o; };
 const cname = () => cust(S.cid)?.name || "";
 function side() {
@@ -133,8 +142,14 @@ function lineSvg(pts, flip) {
   const head = `${ex},${ey} ${ex - ux * 14 - uy * 8},${ey - uy * 14 + ux * 8} ${ex - ux * 14 + uy * 8},${ey - uy * 14 - ux * 8}`;
   return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#2F8BFF" stroke-width="4" stroke-linecap="round"/><line x1="${mx}" y1="${my}" x2="${ex - ux * 10}" y2="${ey - uy * 10}" stroke="#fff" stroke-width="3"/><polygon points="${head}" fill="#fff"/><text x="${ex + ux * 14}" y="${ey + uy * 14 + 5}" fill="#fff" font-size="16" font-weight="700" text-anchor="middle" stroke="#0a2a55" stroke-width="3" paint-order="stroke">IN</text>${pts.map(dot).join("")}`;
 }
-function videoFrame(title, pts, drawable, snap, mode, flip) {
-  const shape = mode === "line" ? lineSvg(pts, flip) : (pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : "");
+function dirSvg(pts, dir) {
+  if (!dir) return "";
+  const v = DIRS[dir], cx = pts && pts.length >= 3 ? pts.reduce((a, p) => a + p[0], 0) / pts.length : 320, cy = pts && pts.length >= 3 ? pts.reduce((a, p) => a + p[1], 0) / pts.length : 180;
+  const ux = v[0], uy = v[1], x1 = cx - ux * 55, y1 = cy - uy * 55, x2 = cx + ux * 55, y2 = cy + uy * 55, head = `${x2 + ux * 16},${y2 + uy * 16} ${x2 - uy * 11},${y2 + ux * 11} ${x2 + uy * 11},${y2 - ux * 11}`;
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#fff" stroke-width="6" stroke-linecap="round"/><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2F8BFF" stroke-width="3" stroke-linecap="round"/><polygon points="${head}" fill="#fff" stroke="#2F8BFF" stroke-width="2"/><text x="${x2 + ux * 34 + (uy ? 22 : 0)}" y="${y2 + uy * 34 + 5}" fill="#fff" font-size="16" font-weight="700" text-anchor="middle" stroke="#0a2a55" stroke-width="3" paint-order="stroke">IN</text>`;
+}
+function videoFrame(title, pts, drawable, snap, mode, flip, pdir) {
+  const shape = mode === "line" ? lineSvg(pts, flip) : mode === "zone" ? `${pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : ""}${dirSvg(pts, pdir)}` : (pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : "");
   const poly = (pts && pts.length) || drawable ? `<svg class="draw" ${drawable ? 'id="draw"' : ""} viewBox="0 0 640 360" preserveAspectRatio="none">${shape}</svg>` : "";
   return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk">Live</span><span class="sp"></span>${ico("photo", 20)}${ico("gear", 20)}</div><div class="vpic">${snap ? `<img class="snap" src="${snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
 }
@@ -269,8 +284,8 @@ async function pageCustomer() {
   else if (S.section === "cams") body = secCams();
   else if (S.section === "log") { await loadLog(S.cid, false, true); body = logTable(false); }
   else body = (S.section === "hours" ? secHours(f) + secSummaries(f) : secPeople(f)) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
-  return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span>
-   <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-editc ${can("editc") ? "" : "disabled title='Not for your role'"}>${ico("edit", 15)}Edit</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></div>
+  return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span><span class="hb">
+   <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-editc ${can("editc") ? "" : "disabled title='Not for your role'"}>${ico("edit", 15)}Edit</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></span></div>
    ${c.ownerPhones.length ? "" : `<div class="whyline t-warn">The owner's mobile number is missing. Add it with Edit.</div>`}
    ${whyOf(c) ? `<div class="whyline ${st[1] === "warn" ? "t-warn" : st[1] === "crit" ? "t-crit" : "sub"}">${esc(whyOf(c))}</div>` : ""}
    <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log"].includes(S.section) ? "full" : ""}">${body}</div></div>`;
@@ -352,23 +367,23 @@ function pageEvent() {
   if (S.estep === "event") body = `<div class="f"><label for="e-name">Event name<small>Shown in your list. It fills in when you choose the type.</small></label><input class="in" id="e-name" data-ebind="name" value="${esc(e.name)}" placeholder="For example, Queue at the counter" autocomplete="off">
     <span class="lb">Send to<small>Only these people get this event</small></span><div class="stack">${S.cur.people.length ? S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-eto="${p.id}" ${e.to.includes(p.id) ? "checked" : ""}>${esc(p.name)} <span class="sub">${esc(p.phone || "")}</span></label>`).join("") : `<div class="note warn">This shop has nobody to message yet. Add people under Who gets messages first.</div>`}</div></div>`;
   else if (S.estep === "type") { const all = DATA_TYPES.concat(S.cur.events.filter((x) => !HIDDEN.has(x.type)));
-    body = `<div class="pick scroll"><table class="tbl"><tbody>${GROUPS.map((g) => { const rows = all.filter((x) => x.group === g); return rows.length ? `<tr><td colspan="4" class="sec-h grp">${g}</td></tr>` + rows.map((x) => `<tr data-etype="${x.type}"><td class="radio"><input type="radio" name="ty" aria-label="${esc(x.title)}" ${e.key === x.type ? "checked" : ""}></td><td class="main-c">${esc(x.title)}${x.ai ? ' <span class="tag ai">Smart</span>' : ""}${typeOn(x) ? ' <span class="tag ok">On for this shop</span>' : ""}<br><span class="sub small wrap">${esc(x.description)}</span></td><td><span class="tag ${MEDIA[carries(x.type)][1]}">${MEDIA[carries(x.type)][0]}</span></td><td>${{ area: '<span class="tag">Marks an area</span> ', line: '<span class="tag">Marks a counting line</span> ', zone: '<span class="tag">Marks the plate area</span> ' }[markMode(x.type)] || ""}${needsCam(x.type) ? '<span class="tag">Needs a camera</span>' : ""}</td></tr>`).join("") : ""; }).join("")}</tbody></table></div>`; }
+    body = `<div class="pick scroll"><table class="tbl"><tbody>${GROUPS.map((g) => { const rows = all.filter((x) => x.group === g); return rows.length ? `<tr><td colspan="4" class="sec-h grp">${g}</td></tr>` + rows.map((x) => `<tr data-etype="${x.type}"><td class="radio"><input type="radio" name="ty" aria-label="${esc(x.title)}" ${e.key === x.type ? "checked" : ""}></td><td class="main-c">${esc(x.title)}${x.ai ? ' <span class="tag ai">Smart</span>' : ""}${typeOn(x) ? ' <span class="tag ok">On for this shop</span>' : ""}<br><span class="sub small wrap">${esc(x.description)}</span></td><td><span class="tag ${MEDIA[carries(x.type)][1]}">${MEDIA[carries(x.type)][0]}</span></td><td>${{ area: '<span class="tag">Marks an area</span> ', line: '<span class="tag">Marks a counting line</span> ', zone: '<span class="tag">Marks the plate area</span> ' }[markMode(x.type)] || ""}${needsCam(x.type) ? '<span class="tag">Needs a camera</span>' : NEEDS_PLATES.has(x.type) ? '<span class="tag">Uses Read number plates</span>' : ""}</td></tr>`).join("") : ""; }).join("")}</tbody></table></div>`; }
   else if (S.estep === "recorder") body = `<div class="pick scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th></th><th>Recorder</th><th>Brand</th><th>Status</th></tr></thead><tbody>${S.cur.recs.map((r) => `<tr data-erec="${r.id}"><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="radio"><input type="radio" name="rc" aria-label="${esc(r.name || r.device_id)}" ${e.rec?.id === r.id ? "checked" : ""}></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td></tr>`).join("")}</tbody></table></div>`;
   else if (S.estep === "camera") { const list = S.cur.cams.filter((c) => !e.rec || S.cur.recs.length <= 1 || c.recorder_id === e.rec.id);
     body = list.length ? `<div class="cams big">${list.map((c) => { const rec = S.cur.recs.find((r) => r.id === c.recorder_id), down = rec && rec.status === "offline"; return `<div class="cam ${e.target?.id === c.id ? "sel" : ""} ${down ? "offl" : ""}" data-ecam="${c.id}" role="radio" aria-checked="${e.target?.id === c.id}" tabindex="0"><div class="pic" ${down ? "" : `data-campic-box="${c.id}"`}>${ico("cam", 24)}<span class="picmsg">${down ? esc((rec.name || rec.device_id) + " is offline") : "Loading picture…"}</span></div><div class="cb"><b class="dark">${esc(c.name)}</b><div>${usedFor(c)}</div>${down ? '<span class="tag crit">Offline</span>' : ""}${e.target?.id === c.id ? '<span class="tag brand">Selected</span>' : ""}</div></div>`; }).join("")}</div>` : `<div class="note warn">${e.rec && S.cur.recs.length > 1 ? "This recorder has no cameras added yet." : "This shop has no cameras added yet."} Add them under Recorder and cameras first.</div>`; }
-  else if (S.estep === "area") { const m = markMode(e.key), help = { area: "Click on the picture to add the corners of the area. At least 3 corners.", line: "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN, the others OUT.", zone: "Click the corners of the area where vehicles and their plates should be read. Or use the whole picture." }[m];
+  else if (S.estep === "area") { const m = markMode(e.key), help = { area: "Click on the picture to add the corners of the area. At least 3 corners.", line: "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN, the others OUT.", zone: "Click the corners of the area where vehicles and their plates should be read, or leave it to use the whole picture. Then choose which way a vehicle moves when it comes in." }[m];
     const had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
     if (e.loadingPic) body = `<div class="note">Getting the picture from ${esc(e.target?.name || "the camera")}… this can take up to 30 seconds.</div>`;
-    else if (e.snapErr) body = `<div class="note warn">${blockedText(e.target?.name || "This camera", e.snapErr, m === "area" ? "The area cannot be marked." : m === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked on the picture.")}</div><div class="row"><button class="btn pri" type="button" data-snaptry>Try again</button>${m === "zone" ? '<button class="btn" type="button" data-whole>Use the whole picture</button>' : ""}</div>`;
-    else body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>`; }
+    else if (e.snapErr) body = `<div class="note warn">${blockedText(e.target?.name || "This camera", e.snapErr, m === "area" ? "The area cannot be marked." : m === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked on the picture.")}</div><div class="row"><button class="btn pri" type="button" data-snaptry>Try again</button></div>`;
+    else body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip, e.pdir)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>${m === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way in the picture counts as coming in, the other way as going out. Needed to match entries with exits.</small></span>${dirPicker(e.pdir, "data-pdir")}${e.pdir ? "" : `<div class="note warn">Choose a direction to continue.</div>`}</div>` : ""}`; }
   else body = settingsBody(e);
   const pos = o.indexOf(S.estep), last = pos === o.length - 1;
   const m = markMode(e.key), had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
-  const markOk = e.loadingPic ? false : e.snapErr ? m === "zone" && !!e.whole : m === "line" ? (e.pts.length === 2 || (had && !e.touched)) : m === "zone" ? true : e.pts.length >= 3;
+  const markOk = e.loadingPic ? false : e.snapErr ? false : m === "line" ? (e.pts.length === 2 || (had && !e.touched)) : m === "zone" ? (!!e.pdir && (e.pts.length === 0 || e.pts.length >= 3)) : e.pts.length >= 3;
   const ok = { event: true, type: !!e.key, recorder: !!e.rec, camera: !!e.target, area: markOk, settings: true }[S.estep];
   const title = S.estep === "area" ? MARK_TITLE[m] : ESTEPS.find((s) => s[0] === S.estep)[1];
   return `<div class="rise"><div class="title"><h1>${title}</h1><span class="tag brand">Step ${pos + 1} of ${o.length}</span><span class="sub">${esc(cname())}</span></div><div class="form">${body}
-   <div class="actions">${last ? `<button class="btn pri" type="button" data-evcreate>Create event</button>` : `<button class="btn pri" type="button" data-evnext ${ok ? "" : "disabled"}>Next</button>`}${pos ? `<button class="btn" type="button" data-evprev>Back</button>` : ""}<button class="btn bare" type="button" data-go="customer">Cancel</button></div></div></div>`;
+   <div class="actions">${last ? `<button class="btn pri" type="button" data-evcreate ${NEEDS_PLATES.has(e.key) && !plateCams().length ? "disabled" : ""}>Create event</button>` : `<button class="btn pri" type="button" data-evnext ${ok ? "" : "disabled"}>Next</button>`}${pos ? `<button class="btn" type="button" data-evprev>Back</button>` : ""}<button class="btn bare" type="button" data-go="customer">Cancel</button></div></div></div>`;
 }
 const usedFor = (c) => [c.use_footfall ? "Counts people" : "", c.use_anpr ? "Reads plates" : "", c.use_areas ? "Marked areas" : ""].filter(Boolean).map((x) => `<span class="tag">${x}</span>`).join(" ") || '<span class="sub">Nothing yet</span>';
 const CHOICE_LABEL = { person: "People", vehicle: "Vehicles", closed: "When the shop is closed", between: "Between these times", always: "At any time" };
@@ -391,10 +406,19 @@ function settingsBody(e) {
   else for (const [k, s] of Object.entries(x.settings || {})) { if (s.type === "boolean") { rows.push(`<div class="cfg"><span>Include a short video</span><span>${sw("e-clip", e.clip, false, "eclip")}</span><span></span></div>`); continue; } const [label, unit] = PARAM[k] || [humanize(k), ""]; rows.push(`<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="${s.min}" max="${s.max}" aria-label="${label}" data-ev="${k}" value="${e.v[k] ?? s.default}"><span class="sub">${unit}</span></div>`); }
   if (e.key === "phone_use") rows.push(`<label class="chk dark notice"><input type="checkbox" data-enotice ${e.notice ? "checked" : ""}>I have told the staff that this area is watched for phone use.</label>`);
   const m = MEDIA[carries(e.key)];
-  const needs = NEEDS_COUNT.has(e.key) ? "People counting will be switched on for the camera you chose, because this event needs it." : NEEDS_PLATES.has(e.key) ? "Number plate reading will be switched on for the camera you chose, because this event needs it. It uses the camera's full-quality picture." : !needsCam(e.key) ? (REC_LEVEL.has(e.key) ? "This covers every recorder in the shop." : "This covers every camera in the shop.") : "";
+  const needs = NEEDS_COUNT.has(e.key) ? "People counting will be switched on for the camera you chose, because this event needs it." : NEEDS_PLATES.has(e.key) ? "" : !needsCam(e.key) ? (REC_LEVEL.has(e.key) ? "This covers every recorder in the shop." : "This covers every camera in the shop.") : "";
   if (needs) rows.push(`<div class="note">${needs}</div>`);
+  if (NEEDS_PLATES.has(e.key)) rows.push(platesNote(e.key));
   return `<div class="stack"><div class="f f-narrow"><span class="lb">${esc(x.title)}<small>${esc(x.description)}</small></span><div class="stack">${rows.join("") || `<div class="sub">No setting needed for this event.</div>`}
     <div class="cfg"><span>Message carries</span><span class="tag ${m[1]}">${m[0]}</span><span></span></div><div class="cfg"><span>Switch on now</span><span>${sw("e-on", e.on !== false, false, "eon")}</span><span></span></div></div></div></div>`;
+}
+/* The plate alerts have no camera of their own: they use the cameras set up under Read number plates. Say what that means for this shop. */
+function platesNote(type) {
+  const cams = plateCams(), bad = noDirCams();
+  if (!cams.length) return `<div class="note warn">No camera reads number plates yet, so this event has nothing to watch. Set up Read number plates first.<div class="row"><button class="btn pri sm" type="button" data-goplates>Set up Read number plates</button></div></div>`;
+  const names = cams.map((c) => esc(c.name)).join(", ");
+  if (type === "vehicle_overstay" && bad.length) return `<div class="note warn">This works on the cameras that read plates (${names}). ${bad.map((c) => esc(c.name)).join(", ")} ${bad.length === 1 ? "has" : "have"} no IN direction, so vehicles there cannot be matched coming in and going out. Set the direction under Read number plates.<div class="row"><button class="btn sm" type="button" data-goplates>Set the direction</button></div></div>`;
+  return `<div class="note">This works on the cameras that read plates: ${names}. Add or change cameras under Read number plates.</div>`;
 }
 async function wizardPicture() {
   const E = S.ev; E.loadingPic = true; render();                           // show the wait at once, then the picture (or why there is none)
@@ -407,6 +431,7 @@ async function loadZones(e) {
   try {
     e.zones = await api.get(`/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/zones`);
     const m = markMode(e.key), z = e.zones.find((q) => q.kind === (m === "line" ? "count_line" : "anpr_zone"));
+    if (m === "zone" && z && e.pdir === undefined) e.pdir = dirName(z.in_direction);
     if (z && !e.pts.length && m !== "area") { e.pts = z.points.map((p) => [Math.round(p[0] * 640), Math.round(p[1] * 360)]); if (m === "line" && z.in_direction) { const [a, b] = z.points, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1; e.flip = (-dy / len) * z.in_direction[0] + (dx / len) * z.in_direction[1] < 0; } }
   } catch { e.zones = []; }
 }
@@ -435,7 +460,7 @@ function blockedModal(name, err, what, retry) {
 }
 const norm1 = (p) => [Math.round(p[0] / 640 * 1000) / 1000, Math.round(p[1] / 360 * 1000) / 1000];
 /* Save the counting line or the plate area of a camera. What is not being changed is sent again, because the server replaces both together. */
-async function saveGeometry(camId, mode, pts, flip, touched) {
+async function saveGeometry(camId, mode, pts, flip, touched, pdir) {
   if (!mode || mode === "area") return;
   const base = `/admin/v1/tenants/${S.cid}/shop/cameras/${camId}/zones`, cur = await api.get(base);
   const keep = (kind) => cur.filter((z) => z.kind === kind).map((z) => ({ kind: z.kind, points: z.points, in_direction: z.in_direction || null }));
@@ -448,13 +473,14 @@ async function saveGeometry(camId, mode, pts, flip, touched) {
   } else {
     if (!touched) return;
     if (pts.length && pts.length < 3) throw new Error("A plate area needs at least 3 corners. Or press Use the whole picture.");
-    zones = [...keep("count_line"), ...(pts.length >= 3 ? [{ kind: "anpr_zone", points: pts.map(norm1), in_direction: null }] : [])];
+    if (!pdir) throw new Error("Choose which way a vehicle moves when it comes in.");
+    zones = [...keep("count_line"), { kind: "anpr_zone", points: pts.length >= 3 ? pts.map(norm1) : [[0, 0], [1, 0], [1, 1], [0, 1]], in_direction: DIRS[pdir] }];        // no corners drawn means the whole picture
   }
   await api.put(base, { zones });
 }
 async function openMark(i) {
   const r = S.cur.rows[i], mode = r.flag === "use_footfall" ? "line" : "zone";
-  S.mark = { i, mode, pts: [], flip: false, touched: false, snap: null, key: mode === "line" ? "__count" : "__plates", target: { kind: "cam", id: r.cam.id, name: r.cam.name }, zones: null };
+  S.mark = { i, mode, pts: [], flip: false, pdir: undefined, touched: false, snap: null, key: mode === "line" ? "__count" : "__plates", target: { kind: "cam", id: r.cam.id, name: r.cam.name }, zones: null };
   modal(`${mh(MARK_TITLE[mode])}<div class="note" data-loading>Getting the picture from ${esc(r.cam.name)}… this can take up to 30 seconds.</div><div class="row"><button class="btn" type="button" data-close>Cancel</button></div>`);
   await loadSnap(S.mark);
   if (!$("#layer [data-loading]")) return;                                  // closed while waiting
@@ -463,7 +489,7 @@ async function openMark(i) {
 }
 function drawMark() {
   const M = S.mark, r = S.cur.rows[M.i];
-  modal(`${mh(MARK_TITLE[M.mode])}${videoFrame(r.cam.name + " · " + cname(), M.pts, true, M.snap, M.mode, M.flip)}<div class="vtool"><span class="sub">${M.mode === "line" ? "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN." : "Click the corners of the area where plates should be read, or use the whole picture."}</span><span class="grow"></span>${M.mode === "line" ? '<button class="btn sm" type="button" data-mflip>Swap IN and OUT</button>' : '<button class="btn sm" type="button" data-mwhole>Use the whole picture</button>'}<button class="btn sm" type="button" data-mclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-msave>Save</button><button class="btn" type="button" data-close>Cancel</button></div>`);
+  modal(`${mh(MARK_TITLE[M.mode])}${videoFrame(r.cam.name + " · " + cname(), M.pts, true, M.snap, M.mode, M.flip, M.pdir)}<div class="vtool"><span class="sub">${M.mode === "line" ? "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN." : "Click the corners of the area where plates should be read, or use the whole picture. Then choose which way is IN."}</span><span class="grow"></span>${M.mode === "line" ? '<button class="btn sm" type="button" data-mflip>Swap IN and OUT</button>' : '<button class="btn sm" type="button" data-mwhole>Use the whole picture</button>'}<button class="btn sm" type="button" data-mclear>Start again</button></div>${M.mode === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way counts as coming in, the other way as going out.</small></span>${dirPicker(M.pdir, "data-mpdir")}</div>` : ""}<div class="row"><button class="btn pri" type="button" data-msave ${M.mode === "zone" && (!M.pdir || (M.pts.length > 0 && M.pts.length < 3)) ? "disabled" : ""}>Save</button><button class="btn" type="button" data-close>Cancel</button></div>`);
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); if (M.mode === "line" && M.pts.length >= 2) M.pts = []; M.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); M.touched = true; drawMark(); });
 }
 async function createEvent() {
@@ -472,7 +498,8 @@ async function createEvent() {
   try {
     if (!e.key.startsWith("__") && !e.to.length) throw new Error("Choose at least one person to send this to. Add people first if the shop has none.");
     if (needsCam(e.key) && !cam) throw new Error("Choose a camera first.");
-    if (cam && markMode(e.key) && markMode(e.key) !== "area") await saveGeometry(cam.id, markMode(e.key), e.pts, e.flip, e.touched);
+    if (NEEDS_PLATES.has(e.key) && !plateCams().length) throw new Error("No camera reads number plates yet. Set up Read number plates first.");
+    if (cam && markMode(e.key) && markMode(e.key) !== "area") await saveGeometry(cam.id, markMode(e.key), e.pts, e.flip, e.touched, e.pdir);
     if (e.key.startsWith("__")) {
       await api.patch(`${base}/cameras/${cam.id}`, e.key === "__count" ? { use_footfall: e.on !== false } : { use_anpr: e.on !== false, ...(e.on !== false ? { stream: "main" } : {}) });
       await loadCurrent(S.cid);
@@ -487,7 +514,6 @@ async function createEvent() {
     const params = {}; if (!kind) for (const [k, s] of Object.entries(x.settings || {})) params[k] = s.type === "boolean" ? !!e.clip : +(e.v[k] ?? s.default);
     await api.put(`${base}/events/${e.key}`, { label: e.name || x.title, enabled: e.on !== false, params, recipient_ids: e.to });
     if (cam && NEEDS_COUNT.has(e.key)) await api.patch(`${base}/cameras/${cam.id}`, { use_footfall: true });
-    if (cam && NEEDS_PLATES.has(e.key)) await api.patch(`${base}/cameras/${cam.id}`, { use_anpr: true, stream: "main" });
   } catch (err) { if (btn) btn.disabled = false; return toast(errText(err), true); }
   await loadCurrent(S.cid);
   modal(`${mh("Setup complete!")}<p class="sub nm center">${esc(e.name || x.title)} is on${cam ? " for " + esc(cam.name) : " for this shop"}.</p>${kind ? videoFrame(cam.name + " · " + cname(), e.pts, false, e.snap) : ""}<button class="btn pri wide" type="button" data-evdone>Manage events</button>`);
@@ -507,6 +533,13 @@ function eventRows() {
   for (const e of events) if (!HIDDEN.has(e.type) && !AREA_TYPES.has(e.type) && (e.saved || e.default)) rows.push({ k: "rule", g: e.default ? "default" : "alert", type: e.type, rule: e, on: !!e.enabled });
   return rows;
 }
+/* A short warning for a row that cannot do its job yet (empty when it is fine) */
+function warnText(r) {
+  if (r.k === "data" && r.flag === "use_footfall" && !r.marked) return "No line marked";
+  if (r.k === "data" && r.flag === "use_anpr" && r.on && !plateDirOf(r.cam)) return "No direction";
+  if (r.k === "rule" && NEEDS_PLATES.has(r.type) && r.on) { if (!plateCams().length) return "No plate camera"; if (r.type === "vehicle_overstay" && noDirCams().length) return `No direction on ${noDirCams().length} camera${noDirCams().length === 1 ? "" : "s"}`; }
+  return "";
+}
 const namesOf = (ids) => (ids || []).map((i) => S.cur.people.find((p) => p.id === i)?.name).filter(Boolean).join(", ") || "—";
 const rowName = (r) => r.k === "data" ? `${r.t} · ${r.cam.name}` : r.k === "area" ? r.area.name : (r.rule.label || r.rule.title);
 const rowType = (r) => r.k === "data" ? r.t : r.k === "area" ? (evMeta(r.type)?.title || r.type) + (r.type === "area_activity" ? ` · ${{ person: "people", vehicle: "vehicles" }[r.area.params?.target || "person"]}, ${{ closed: "when closed", between: `${r.area.params?.from}–${r.area.params?.to}`, always: "at any time" }[r.area.params?.when || "closed"]}` : "") : r.rule.title;
@@ -516,8 +549,8 @@ function secEvents() {
   const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length, k = S.evQ.trim().toLowerCase();
   const list = rows.filter((r) => !k || `${rowName(r)} ${rowType(r)} ${rowWhere(r)} ${r.k === "data" ? "" : namesOf(r.rule?.recipient_ids)}`.toLowerCase().includes(k));
   const line = (r) => {
-    const i = rows.indexOf(r), m = rowSends(r), warn = r.k === "data" && r.flag === "use_footfall" && !r.marked, goes = r.k === "data" ? "—" : namesOf(r.rule?.recipient_ids);
-    return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="dotc"><span class="dot ${r.on ? (warn ? "warn" : "ok") : ""}"></span></td><td class="main-c">${esc(rowName(r))}${warn ? ' <span class="tag warn">No line marked</span>' : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(rowType(r))}</td><td>${esc(rowWhere(r))}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(goes)}</td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
+    const i = rows.indexOf(r), m = rowSends(r), warn = !!warnText(r), goes = r.k === "data" ? "—" : namesOf(r.rule?.recipient_ids);
+    return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="dotc"><span class="dot ${r.on ? (warn ? "warn" : "ok") : ""}"></span></td><td class="main-c">${esc(rowName(r))}${warn ? ` <span class="tag warn">${warnText(r)}</span>` : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(rowType(r))}</td><td>${esc(rowWhere(r))}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(goes)}</td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
   };
   return `<div class="stack"><div class="bar flush"><span class="sub">${on} on of ${rows.length}. Click an event to see it, change it or delete it.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
   <div class="bar flush"><label class="search">${ico("search")}<span class="sr">Search events</span><input id="evq" placeholder="Search events" value="${esc(S.evQ)}" autocomplete="off"></label>${k ? `<span class="sub">${list.length} found</span>` : ""}</div>
@@ -546,14 +579,15 @@ function drawEdit() {
   const { i, v, to, name } = S.edit, r = S.cur.rows[i], kind = r.k === "area" ? AREA_KIND[r.type] : null, data = r.k === "data", def = r.g === "default", ro = !can("events"), m = rowSends(r);
   const x = data ? { title: r.t, description: r.flag === "use_footfall" ? "Counts the people crossing the line marked on this camera. Used for the shop's visitor numbers and for crowding, after-hours and counting alerts. Sends no message." : "Reads the number plates of vehicles on this camera, for the vehicle list and the vehicle alerts. Sends no message.", settings: {} } : evMeta(r.type);
   const fields = data ? [] : kind ? areaFields(kind, v).map((f) => f.replace(/data-ev=/g, "data-xv=")) : Object.entries(x.settings || {}).map(([k, s]) => { if (s.type === "boolean") return `<div class="cfg"><span>Include a short video</span><span>${sw("x-clip", S.edit.clip, false, "xclip")}</span><span></span></div>`; const [label, unit] = PARAM[k] || [humanize(k), ""]; return `<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="${s.min}" max="${s.max}" aria-label="${label}" data-xv="${k}" value="${v[k] ?? s.default}"><span class="sub">${unit}</span></div>`; });
-  const marked = data && r.marked, warn = data && r.flag === "use_footfall" && !marked;
+  const marked = data && r.marked, warn = !!warnText(r), pdir = data && r.flag === "use_anpr" ? plateDirOf(r.cam) : null;
   const shared = r.k === "area" ? "Switching this on or off applies to every area of this kind in the shop." : def ? "Default alerts can be switched off, not deleted." : "Switch off to stop this without deleting it.";
   $("#layer").innerHTML = `<div class="shade" data-close></div><aside class="drawer ev" role="dialog" aria-label="${esc(name)}"><div class="dh"><div><h2>${esc(name)}</h2><div class="sub">${esc(rowType(r))} · ${esc(rowWhere(r))}</div></div><button class="ibtn" type="button" id="dclose" aria-label="Close">${ico("x")}</button></div>
   <div class="dbody"><div class="rowsw"><span><b>On</b><br><span class="sub small">${shared}</span></span>${sw("x-on", S.edit.on, ro, "xon")}</div>
   ${data ? "" : `<div><div class="sec-h">Name</div><input class="in full" id="x-name" value="${esc(name)}" ${ro ? "disabled" : ""}></div><div><div class="sec-h">Goes to</div><div class="stack">${S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-xto="${p.id}" ${to.includes(p.id) ? "checked" : ""}>${esc(p.name)}</label>`).join("") || '<span class="sub">Nobody yet</span>'}</div>${kind ? '<div class="sub small mt6">This list is shared by every area of this kind in the shop.</div>' : ""}</div>`}
   ${fields.length ? `<div><div class="sec-h">Settings</div><div class="stack">${fields.join("")}</div></div>` : ""}
   <div><div class="sec-h">Sends</div><span class="tag ${m[1]}">${m[0]}</span></div>
-  ${data ? `<div class="${warn ? "note warn" : "sub"}">${r.flag === "use_footfall" ? (warn ? "No line is marked on this camera, so nothing is counted yet." : "A counting line is marked. People crossing the way the arrow points are counted IN.") : (marked ? "A plate area is marked." : "Plates are read in the whole picture.")}</div><div><button class="btn ${warn ? "pri" : ""}" type="button" data-editmark="${i}" ${ro ? "disabled" : ""}>${r.flag === "use_footfall" ? (marked ? "Mark the line again" : "Mark the line") : "Mark the plate area"}</button></div>` : ""}
+  ${data ? `<div class="${warn ? "note warn" : "sub"}">${r.flag === "use_footfall" ? (warn ? "No line is marked on this camera, so nothing is counted yet." : "A counting line is marked. People crossing the way the arrow points are counted IN.") : (pdir ? `${marked ? "A plate area is marked." : "Plates are read in the whole picture."} ${DIR_LABEL[pdir]} counts as coming in.` : "No direction is set, so vehicles on this camera have no in or out. Mark the plate area and choose the direction.")}</div><div><button class="btn ${warn ? "pri" : ""}" type="button" data-editmark="${i}" ${ro ? "disabled" : ""}>${r.flag === "use_footfall" ? (marked ? "Mark the line again" : "Mark the line") : (pdir ? "Change the plate area or direction" : "Mark the plate area and direction")}</button></div>` : ""}
+  ${!data && NEEDS_PLATES.has(r.type) ? platesNote(r.type) : ""}
   ${kind ? `<div><button class="btn" type="button" data-redraw ${ro ? "disabled" : ""}>Redraw the area</button></div>` : ""}</div>
   <div class="df"><button class="btn pri" type="button" data-esave ${ro ? "disabled" : ""}>Save</button><button class="btn" type="button" id="dclose2">Cancel</button><span class="grow"></span>${def ? "" : `<button class="btn danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button>`}</div></aside>`;
 }
@@ -693,7 +727,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -774,7 +808,7 @@ document.addEventListener("click", async (ev) => {
     if (d.estep) { S.estep = d.estep; if (d.estep === "area" && S.ev.target) return wizardPicture(); return render(); }
     if (d.erec) { S.ev.rec = { id: d.erec }; S.ev.target = null; S.ev.snap = null; return render(true); }
     if (d.ecam && t.classList.contains("offl")) return toast("This camera cannot send a picture right now, so it cannot be marked. Choose it when it is back online.", true);
-    if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; S.ev.snapErr = null; S.ev.zones = null; S.ev.pts = []; S.ev.touched = false; S.ev.whole = false; S.ev.flip = false; return render(true); }
+    if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; S.ev.snapErr = null; S.ev.zones = null; S.ev.pts = []; S.ev.touched = false; S.ev.whole = false; S.ev.flip = false; S.ev.pdir = undefined; return render(true); }
     if (d.etype) { const x = evMeta(d.etype); S.ev.key = d.etype; S.ev.v = {}; if (!needsCam(d.etype)) S.ev.target = null; if (S.cur.recs.length === 1) S.ev.rec = { id: S.cur.recs[0].id }; if (!S.ev.name || S.ev.nameAuto) { S.ev.name = x.title; S.ev.nameAuto = true; } return render(true); }
     if (d.evrow !== undefined) { openEditEvent(+d.evrow); return; }
     if (d.evgrp) { S.evOpen[d.evgrp] = !S.evOpen[d.evgrp]; return render(true); }
@@ -784,7 +818,7 @@ document.addEventListener("click", async (ev) => {
     if ("mflip" in d) { S.mark.flip = !S.mark.flip; S.mark.touched = true; return drawMark(); }
     if ("mwhole" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
     if ("mclear" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
-    if ("msave" in d) { const M = S.mark, r = S.cur.rows[M.i]; await saveGeometry(r.cam.id, M.mode, M.pts, M.flip, true); closeModal(); await loadCurrent(S.cid); toast("Saved"); return render(true); }
+    if ("msave" in d) { const M = S.mark, r = S.cur.rows[M.i]; await saveGeometry(r.cam.id, M.mode, M.pts, M.flip, true, M.pdir); closeModal(); await loadCurrent(S.cid); toast("Saved"); return render(true); }
     if (d.delev) { confirmDelete(+d.delev); return; }
     if (d.confirm === "delev") return doDelete(+d.i);
     if ("esave" in d) return saveEdit();
@@ -795,6 +829,9 @@ document.addEventListener("click", async (ev) => {
     if ("clearpts" in d) { S.ev.pts = []; S.ev.touched = true; S.ev.whole = false; return render(true); }
     if ("snaptry" in d) { S.ev.snap = null; S.ev.snapErr = null; return wizardPicture(); }
     if ("retry2" in d) { const f = S.retry; closeModal(); return f && f(); }
+    if (d.pdir) { S.ev.pdir = d.pdir; S.ev.touched = true; return render(true); }
+    if (d.mpdir) { S.mark.pdir = d.mpdir; S.mark.touched = true; return drawMark(); }
+    if ("goplates" in d) { S.ev = newEv(); S.ev.key = "__plates"; S.ev.name = "Read number plates"; S.estep = eorder()[2]; return render(true); }
     if ("flip" in d) { S.ev.flip = !S.ev.flip; S.ev.touched = true; return render(true); }
     if ("whole" in d) { S.ev.pts = []; S.ev.whole = true; S.ev.touched = true; return render(true); }
     if ("evnext" in d) { S.ev.done[S.estep] = true; const o = eorder(); S.estep = o[o.indexOf(S.estep) + 1]; if (S.estep === "area") return wizardPicture(); return render(); }

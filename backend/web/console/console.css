@@ -298,3 +298,7 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .more{justify-content:flex-end}
 .more{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px;padding:14px 12px 6px;justify-content:stretch}
 .more .end{text-align:right;white-space:nowrap}
+
+.dirs{display:flex;gap:8px;flex-wrap:wrap}.dirs .btn[aria-pressed="true"]{background:var(--brand-soft);color:var(--brand);border-color:var(--brand);font-weight:700}
+.pdir .lb small{display:block;color:var(--fg2);font-size:13px;font-weight:400;margin-top:2px}.pdir .lb{display:block;font-weight:700}
+.hb{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
