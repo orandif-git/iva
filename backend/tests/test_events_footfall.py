@@ -132,9 +132,3 @@ async def test_bad_queries_are_explained(client, make, params, code):
     assert r.status_code == 422 and r.json()["error"]["code"] == code
 
 
-async def test_view_as_customer_can_read_footfall(client, make):
-    t, u, (foot,), _ = await setup_cameras(client, make)
-    staff = await make.staff("support")
-    imp = (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Customer reports wrong counts", "minutes": 15}, headers=staff["headers"])).json()
-    r = await client.get("/v1/footfall/summary", params={"from": iso(now() - timedelta(hours=1)), "to": iso(now())}, headers={"Authorization": "Bearer " + imp["token"]})
-    assert r.status_code == 200

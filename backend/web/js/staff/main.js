@@ -36,7 +36,7 @@ const X = {
   go: (hash) => { location.hash = hash; },
   refresh: () => render(true),
   onLeave: (fn) => leaveFns.push(fn),
-  openDetail, closeDetail, signOut, viewAs,
+  openDetail, closeDetail, signOut,
   desk,
 };
 
@@ -139,33 +139,6 @@ function search() {
   });
 }
 searchShortcuts(() => !!ui, search);
-
-// ------------------------------------------------------------------------------- open the customer's app
-const waiting = new Set();
-let payload = null;
-addEventListener("message", (e) => {
-  if (e.origin !== location.origin || e.data?.type !== "gi-viewas-ready") return;
-  if (payload) e.source.postMessage({ type: "gi-viewas", ...payload }, location.origin);
-  else waiting.add(e.source);
-});
-/** Opens the customer's app in a new tab with a view-only session. The window is opened first, inside the click, so the browser allows it. */
-async function viewAs(tenantId, reason) {
-  const w = window.open("/?viewas=1", "_blank");
-  if (!w) throw new Error("Your browser blocked the new window. Allow pop-ups for this site and try again.");
-  try {
-    const s = await api.post(`/admin/v1/tenants/${tenantId}/impersonate`, { reason, minutes: 30, notify: true });
-    const t = await api.get(`/admin/v1/tenants/${tenantId}`);
-    payload = { token: s.token, session_id: s.session_id, expires_at: s.expires_at, tenant: t.name };
-    waiting.forEach((src) => { try { src.postMessage({ type: "gi-viewas", ...payload }, location.origin); } catch { /* window closed */ } });
-    waiting.clear();
-    setTimeout(() => { payload = null; }, 15000);                       // the hand-off is only kept for a moment
-    return s;
-  } catch (e) { w.close(); throw e; }
-}
-addEventListener("message", async (e) => {
-  if (e.origin !== location.origin || e.data?.type !== "gi-viewas-stop" || !e.data.session_id) return;
-  try { await api.del("/admin/v1/impersonations/" + e.data.session_id); } catch { /* already ended */ }
-});
 
 // ------------------------------------------------------------------------------------------------- sign-in
 function authPage(...body) {

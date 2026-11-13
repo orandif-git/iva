@@ -67,8 +67,6 @@ async def staff_set_password(body: SetPasswordIn, request: Request):
 
 @customer.post("/change-password", status_code=204)
 async def change_password(body: ChangePasswordIn, ctx: CustomerCtx = Depends(customer_ctx())):
-    if ctx.viewing_as_staff:
-        raise ApiError(403, "read_only_session", "This is a view-only session.")
     async with db.admin_tx() as conn:
         u = await conn.fetchrow("SELECT id, email, password_hash FROM app.tenant_users WHERE id=$1 AND tenant_id=$2", ctx.user_id, ctx.tenant_id)
         if not u or not await passwords.verify_async(body.current_password, u["password_hash"]):

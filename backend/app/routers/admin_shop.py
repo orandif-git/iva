@@ -43,7 +43,7 @@ def shop_ctx(*roles: str):
                 raise ApiError(404, "tenant_not_found", "Customer not found.")
         settings = {"app.actor_id": str(sid), "app.actor_name": st["name"], "app.actor_role": f"staff:{st['role']}", "app.request_id": request.state.request_id}
         async with db.tenant_tx(tenant_id, settings=settings) as conn:
-            yield CustomerCtx(conn, tenant_id, sid, st["name"], "admin", False, request.state.request_id, all_kinds=True)
+            yield CustomerCtx(conn, tenant_id, sid, st["name"], "admin", request.state.request_id, all_kinds=True)
 
     return dep
 

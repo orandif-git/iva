@@ -82,20 +82,6 @@ class PlanIn(Strict):
     reason: Reason
 
 
-class ImpersonateIn(Strict):
-    reason: Reason
-    minutes: int = Field(30, ge=15, le=60)
-    notify: bool = True
-
-
-class ImpersonateOut(BaseModel):
-    session_id: UUID
-    token: str
-    expires_at: datetime
-    read_only: bool = True
-
-
-# --------------------------------------------------------------------- recorders
 class RecorderOut(BaseModel):
     id: UUID
     tenant_id: UUID

@@ -141,7 +141,6 @@ export async function customerDetail(X, id, ds, redraw) {
     body = group(...(inv.length ? inv.map((i) => row({ icon: "doc", title: money(i.total_paise), sub: `${i.number || "Draft"} · ${i.period_month.slice(0, 7)}`, right: h("span", { class: "rowend" }, statusPill(INV_STATUS, i.overdue ? "overdue" : i.status), ic("chev", "chev")), onclick: () => invoiceSheet(X, i, after) })) : [h("div", { class: "gi static" }, h("div", { class: "muted" }, "No invoices yet."))]));
   }
   const actions = [];
-  if (X.isOwner || X.state.me.role === "support") actions.push(row({ icon: "eye", title: `Open ${c.name.split(" ")[0]}'s app`, sub: "See what they see, view only. A reason is required and logged.", onclick: () => openCustomerApp(X, c) }));
   if (X.isOwner) {
     actions.push(row({ icon: "edit", title: "Edit business details", sub: c.city || "", onclick: () => editDetails(X, c, after) }));
     actions.push(row({ icon: "card", title: "Plan and camera limit", sub: `${plan ? plan.name : c.plan_id} · ${c.camera_limit} cameras`, onclick: () => planSheet(X, c, plans.items, after) }));
@@ -217,15 +216,6 @@ const suspend = (X, c, after) => reasonSheet({ title: `Suspend ${c.name}?`, text
   run: async (reason) => { await X.api.post(`/admin/v1/tenants/${c.id}/suspend`, { reason }); closeSheet(); toast(`${c.name} suspended`); after(); } });
 const reactivate = (X, c, after) => reasonSheet({ title: `Reactivate ${c.name}?`, text: "They can sign in again and their cameras start being analysed.", label: "Reactivate",
   run: async (reason) => { await X.api.post(`/admin/v1/tenants/${c.id}/reactivate`, { reason }); closeSheet(); toast(`${c.name} reactivated`); after(); } });
-
-function openCustomerApp(X, c) {
-  // The window must be opened by the click that confirms, so the button below starts it.
-  const why = h("input", { type: "text", placeholder: "For example: customer says plate reads are missing", autocomplete: "off", "aria-label": "Reason" });
-  const err = h("div"), btn = h("button", { class: "btn", type: "button", disabled: true }, "Open customer app");
-  why.oninput = () => { btn.disabled = why.value.trim().length < 5; };
-  btn.onclick = async () => { btn.disabled = true; clear(err); try { await X.viewAs(c.id, why.value.trim()); closeSheet(); toast("Opened in a new tab. View only for 30 minutes."); } catch (e) { err.append(note(errText(e), "err")); btn.disabled = false; } };
-  openSheet(`Open ${c.name}'s app?`, h("p", {}, "You will see exactly what they see, view only, for up to 30 minutes. Every page you open is logged under your name."), field("Reason (saved in the audit log)", why), err, h("div", { class: "acts" }, btn, h("button", { class: "btn gray", type: "button", onclick: () => closeSheet() }, "Cancel")));
-}
 
 async function messagingTab(X, c, after) {
   const m = await X.api.get(`/admin/v1/messaging/tenants/${c.id}`);

@@ -98,3 +98,7 @@ Setup, Console users: **Edit** changes a person's name, email and role. **Delete
 - You cannot change your own role or delete yourself, and the last active Owner can never be changed or deleted.
 - A changed role signs the person out, so the old permissions do not linger.
 - The record of which customers a person viewed ("view as customer") stays after they are deleted, with their name.
+
+## "View as customer" removed
+
+There is no customer app any more, so staff can no longer open a customer's account on screen. The endpoints and the button in the old Platform Admin console are gone. The saved records of earlier views stay in the database (with the staff member's name) and old activity-log lines still read normally.

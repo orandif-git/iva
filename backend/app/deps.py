@@ -95,7 +95,6 @@ class CustomerCtx:
     user_id: uuid.UUID
     name: str
     role: str
-    viewing_as_staff: bool
     request_id: str
     all_kinds: bool = False        # the Control Center sees every kind of marked area; a customer's own app sees the first three
 
@@ -113,47 +112,27 @@ def customer_ctx(*roles: str):
         claims = verify_token("customer", _bearer(request))
         tenant_id = _uuid(claims.get("tenant_id"))
         sub = _uuid(claims["sub"])
-        imp_id = claims.get("imp")
-
-        staff_name = None
-        if imp_id:
-            if request.method not in ("GET", "HEAD", "OPTIONS"):
-                raise ApiError(403, "read_only_session", "This is a view-only session. Changes are blocked.")
-            async with db.admin_tx() as c:
-                s = await c.fetchrow(
-                    """SELECT st.name FROM platform.impersonation_sessions s
-                       JOIN platform.staff_users st ON st.id = s.staff_id
-                       WHERE s.id=$1 AND s.tenant_id=$2 AND s.staff_id=$3
-                         AND s.ended_at IS NULL AND s.expires_at > now() AND st.status='active'""",
-                    _uuid(imp_id), tenant_id, sub,
-                )
-            if not s:
-                raise ApiError(401, "session_ended", "This view-only session has ended.")
-            staff_name = s["name"]
 
         settings = {
             "app.actor_id": str(sub),
-            "app.actor_name": staff_name or "",
-            "app.actor_role": "staff_view" if imp_id else "",
+            "app.actor_name": "",
+            "app.actor_role": "",
             "app.request_id": request.state.request_id,
         }
-        async with db.tenant_tx(tenant_id, read_only=bool(imp_id), settings=settings) as conn:
+        async with db.tenant_tx(tenant_id, settings=settings) as conn:
             tenant = await conn.fetchrow("SELECT status::text AS status FROM app.tenants WHERE id=$1", tenant_id)
             if not tenant:
                 raise ApiError(401, "invalid_token", "Sign in again.")
-            if imp_id:
-                name, role = staff_name, "admin"
-            else:
-                u = await conn.fetchrow("SELECT name, role::text AS role, status FROM app.tenant_users WHERE id=$1", sub)
-                if not u or u["status"] != "active":
-                    raise ApiError(401, "invalid_token", "Sign in again.")
-                name, role = u["name"], u["role"]
-                if tenant["status"] in ("suspended", "cancelled"):
-                    raise ApiError(403, "tenant_suspended", "This account is suspended. Contact support.")
-                await conn.execute("SELECT set_config('app.actor_name', $1, true), set_config('app.actor_role', $2, true)", name, role)
+            u = await conn.fetchrow("SELECT name, role::text AS role, status FROM app.tenant_users WHERE id=$1", sub)
+            if not u or u["status"] != "active":
+                raise ApiError(401, "invalid_token", "Sign in again.")
+            name, role = u["name"], u["role"]
+            if tenant["status"] in ("suspended", "cancelled"):
+                raise ApiError(403, "tenant_suspended", "This account is suspended. Contact support.")
+            await conn.execute("SELECT set_config('app.actor_name', $1, true), set_config('app.actor_role', $2, true)", name, role)
             if role not in allowed:
                 raise ApiError(403, "forbidden", "Only an administrator can do this.")
-            yield CustomerCtx(conn, tenant_id, sub, name, role, bool(imp_id), request.state.request_id)
+            yield CustomerCtx(conn, tenant_id, sub, name, role, request.state.request_id)
 
     return dep
 

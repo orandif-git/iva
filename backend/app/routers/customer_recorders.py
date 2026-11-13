@@ -16,7 +16,7 @@ async def me(ctx: CustomerCtx = Depends(customer_ctx())):
         """SELECT t.id, t.name, t.status::text AS status, t.plan_id, t.camera_limit, p.name AS plan_name, p.features,
                   (SELECT count(*) FROM app.cameras c WHERE c.enabled) AS cameras_in_use
            FROM app.tenants t JOIN platform.plans p ON p.id = t.plan_id WHERE t.id = $1""", ctx.tenant_id)
-    return {"user": {"id": ctx.user_id, "name": ctx.name, "role": ctx.role}, "viewing_as_staff": ctx.viewing_as_staff, "tenant": dict(t)}
+    return {"user": {"id": ctx.user_id, "name": ctx.name, "role": ctx.role}, "tenant": dict(t)}
 
 
 @router.get("/recorders", response_model=list[RecorderOut])

@@ -17,8 +17,7 @@ Four separate APIs on the same backend. Each has its own base path, its own toke
 - **Times:** ISO 8601 UTC in the API. The UI shows the site's timezone.
 - **Idempotency:** `POST` routes that create things or send messages accept an `Idempotency-Key` header and return the first result on a retry.
 - **Rate limits:** per token and per IP. Stricter on login and on recorder credential routes.
-- **Every write** by staff, partners or an impersonation session writes a row to `platform.audit_log` in the same transaction.
-- **Impersonation tokens** carry `imp_session_id` and `read_only=true`. The customer API opens their transactions with `SET TRANSACTION READ ONLY`, so even a bug cannot write.
+- **Every write** by staff or partners writes a row to `platform.audit_log` in the same transaction.
 
 ---
 
@@ -198,9 +197,6 @@ Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analys
 ### View as customer
 | Method | Route | Role | Purpose |
 |---|---|---|---|
-| POST | `/admin/v1/tenants/{id}/impersonate` | O S | `{ reason, minutes (15-60), notify }`. Creates a session and returns a read-only customer token. |
-| DELETE | `/admin/v1/impersonations/{session_id}` | O S | End early |
-| GET | `/admin/v1/impersonations` | O | Active and past sessions |
 
 ### Partners, billing, plans
 | Method | Route | Role | Purpose |

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
 from ..pagination import decode_cursor, encode_cursor
-from ..schemas import ImpersonateIn, ImpersonateOut, PlanIn, ReasonIn, TenantCreate, TenantOut, TenantPatch
+from ..schemas import PlanIn, ReasonIn, TenantCreate, TenantOut, TenantPatch
 from ..security import issue_token
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
@@ -188,8 +188,6 @@ async def suspend(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin
     if before["status"] == "suspended":
         raise ApiError(409, "already_suspended", "This tenant is already suspended.")
     await ctx.conn.execute("UPDATE app.tenants SET status='suspended', suspended_at=now(), suspended_reason=$2 WHERE id=$1", tenant_id, body.reason)
-    # End any open view-as-customer sessions for this tenant.
-    await ctx.conn.execute("UPDATE platform.impersonation_sessions SET ended_at=now() WHERE tenant_id=$1 AND ended_at IS NULL", tenant_id)
     await ctx.audit("tenant.suspend", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, before={"status": before["status"]}, after={"status": "suspended"})
     return await _get(ctx, tenant_id)
 
@@ -228,29 +226,3 @@ async def change_plan(tenant_id: UUID, body: PlanIn, ctx: AdminCtx = Depends(adm
 
 
 # ------------------------------------------------------------ view as customer
-@router.post("/tenants/{tenant_id}/impersonate", response_model=ImpersonateOut, status_code=201)
-async def impersonate(tenant_id: UUID, body: ImpersonateIn, ctx: AdminCtx = Depends(admin_ctx("owner", "support"))):
-    await _get(ctx, tenant_id)
-    expires = datetime.now(timezone.utc) + timedelta(minutes=body.minutes)
-    sid = await ctx.conn.fetchval(
-        """INSERT INTO platform.impersonation_sessions (staff_id, staff_name, tenant_id, reason, notified, expires_at)
-           VALUES ($1,$6,$2,$3,$4,$5) RETURNING id""",
-        ctx.staff.id, tenant_id, body.reason, body.notify, expires, ctx.staff.name,
-    )
-    await ctx.audit("impersonate.start", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, after={"session_id": str(sid), "minutes": body.minutes})
-    # TODO(notifications slice): when body.notify is true, email the tenant admins that support is viewing the account.
-    token = issue_token("customer", {"sub": str(ctx.staff.id), "tenant_id": str(tenant_id), "imp": str(sid), "read_only": True},
-                        ttl_seconds=body.minutes * 60)
-    return ImpersonateOut(session_id=sid, token=token, expires_at=expires)
-
-
-@router.delete("/impersonations/{session_id}", status_code=204)
-async def end_impersonation(session_id: UUID, ctx: AdminCtx = Depends(admin_ctx("owner", "support"))):
-    s = await ctx.conn.fetchrow("SELECT staff_id, tenant_id, started_at, ended_at FROM platform.impersonation_sessions WHERE id=$1", session_id)
-    if not s:
-        raise ApiError(404, "session_not_found", "Session not found.")
-    if s["staff_id"] != ctx.staff.id and ctx.staff.role != "owner":
-        raise ApiError(403, "forbidden", "Only the person who started a session, or an owner, can end it.")
-    if s["ended_at"] is None:
-        await ctx.conn.execute("UPDATE platform.impersonation_sessions SET ended_at=now() WHERE id=$1", session_id)
-        await ctx.audit("impersonate.end", tenant_id=s["tenant_id"], target_type="impersonation", target_id=session_id, reason="Session ended")

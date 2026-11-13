@@ -289,17 +289,6 @@ async def test_tenants_cannot_see_or_use_each_others_people_and_alerts(client, m
     assert (await client.patch(f"/v1/recipients/{r1}", json={"name": "Hacked"}, headers=u2["headers"])).status_code == 404
 
 
-async def test_a_view_only_staff_session_cannot_change_alert_settings(client, make, world):
-    t, u, cam, rid = await customer(client, make, world)
-    imp = await make.staff("support")
-    r = await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Customer asked us to check alert settings", "minutes": 15}, headers=imp["headers"])
-    assert r.status_code == 201, r.text
-    tok = {"Authorization": "Bearer " + r.json()["token"]}
-    assert (await client.get("/v1/alert-types", headers=tok)).status_code == 200
-    assert (await client.put("/v1/alert-types/crowding", json={"enabled": True}, headers=tok)).status_code == 403
-    assert (await client.post("/v1/recipients", json={"name": "X", "email": "x@y.co"}, headers=tok)).status_code == 403
-
-
 # ---------------------------------------------------------------------------------- the whole journey
 async def test_blocked_vehicle_reaches_the_webhook_with_picture_links_and_a_signature(client, make, su, world):
     rx = world["hook"]

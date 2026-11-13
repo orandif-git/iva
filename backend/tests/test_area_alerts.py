@@ -138,14 +138,11 @@ async def test_a_staff_area_needs_the_confirmation_that_staff_were_told(client, 
         assert r.status_code == 422 and r.json()["error"]["code"] == "notice_required"
 
 
-async def test_only_an_administrator_can_draw_and_a_staff_view_cannot(client, make, su):
+async def test_only_an_administrator_can_draw(client, make, su):
     t, u, cam = await shop(client, make, su)
     reg = await make.user(t, "regular")
     assert (await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area()]}, headers=reg["headers"])).status_code == 403
     assert (await client.get(f"/v1/cameras/{cam}/areas", headers=reg["headers"])).status_code == 200
-    imp = await make.staff("support")
-    tok = {"Authorization": "Bearer " + (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Checking the areas for the customer", "minutes": 15}, headers=imp["headers"])).json()["token"]}
-    assert (await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area()]}, headers=tok)).status_code == 403
     other, ou, ocam = await shop(client, make, su)
     assert (await client.get(f"/v1/cameras/{cam}/areas", headers=ou["headers"])).status_code == 404          # another customer's camera does not exist
 

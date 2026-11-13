@@ -173,10 +173,6 @@ async def test_regular_users_and_staff_views_cannot_change_reads(client, make):
     assert (await client.get("/v1/plates", params={"from": iso(now() - timedelta(days=1))}, headers=regular["headers"])).status_code == 200
     assert (await client.patch(f"/v1/plates/{pid}", json={"confirm": True}, headers=regular["headers"])).status_code == 403
     assert (await client.get("/v1/plates/review-queue", headers=regular["headers"])).status_code == 403
-    staff = await make.staff("support")
-    imp = {"Authorization": "Bearer " + (await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Customer asked us to check", "minutes": 15}, headers=staff["headers"])).json()["token"]}
-    assert (await client.get(f"/v1/plates/{pid}", headers=imp)).status_code == 200
-    assert (await client.patch(f"/v1/plates/{pid}", json={"confirm": True}, headers=imp)).json()["error"]["code"] == "read_only_session"
 
 
 async def test_one_tenant_cannot_see_or_touch_anothers_plates(client, make):

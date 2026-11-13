@@ -291,17 +291,6 @@ async def test_a_session_that_is_not_theirs_cannot_be_used_to_keep_a_device(clie
     assert (await client.post("/v1/auth/refresh", json={"refresh_token": theirs["refresh_token"]})).status_code == 200          # and the other person was not touched
 
 
-async def test_staff_viewing_as_a_customer_cannot_change_their_password(client, make, su):
-    staff = await make.staff("owner")
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    r = await client.post(f"/admin/v1/tenants/{t}/impersonate", json={"reason": "Checking a report"}, headers=staff["headers"])
-    assert r.status_code == 201
-    r2 = await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password"},
-                           headers={"Authorization": "Bearer " + r.json()["token"]})
-    assert r2.status_code == 403
-
-
 # ------------------------------------------------------------------------------------------------ staff
 async def staff_login(client, email, password=PW, code="000000"):
     return await client.post("/admin/v1/auth/login", json={"email": email, "password": password, "code": code})
