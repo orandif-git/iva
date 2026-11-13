@@ -58,7 +58,7 @@ def test_the_three_area_alerts_are_smart_alerts_that_are_built():
         assert cat.CATALOG[k]["family"] == "smart" and cat.CATALOG[k]["built"] and cat.AREA_ALERTS[kind] == k
     assert "image_url" in cat.shortcodes_for("phone_use") and {"area", "people", "limit", "minutes"} <= set(cat.shortcodes_for("people_in_area"))
     assert {"area", "length", "wait_minutes"} <= set(cat.shortcodes_for("queue_long")) and "image_url" in cat.shortcodes_for("queue_long") and "image_url" in cat.shortcodes_for("people_in_area")
-    assert len(cat.LISTED) == 25 and len(cat.BUILT) == 25
+    assert len(cat.LISTED) == 26 and len(cat.BUILT) == 26
 
 
 def test_a_new_database_starts_with_the_area_alerts_switched_off():

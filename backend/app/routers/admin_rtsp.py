@@ -13,7 +13,7 @@ from ..services import rtsp
 from .admin_framerate import parse_source
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: rtsp cameras"])
-ROLES = ("owner",)
+ROLES = ("owner", "onboarding")
 
 
 class RtspCameraIn(Strict):

@@ -17,7 +17,7 @@ async def test_create_tenant_and_audit(client, make, su):
 
 
 async def test_suspend_requires_owner_and_a_reason_and_blocks_customers(client, make):
-    owner, finance = await make.staff("owner"), await make.staff("support")
+    owner, finance = await make.staff("owner"), await make.staff("onboarding")
     t = await make.tenant()
     u = await make.user(t)
     url = f"/admin/v1/tenants/{t}/suspend"

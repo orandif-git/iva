@@ -296,7 +296,7 @@ async def run() -> int:
             return 0
         has_key = await summary_config.key(conn) is not None
         statuses = ("trial", "active", "past_due") if cfg["skip_inactive"] else ("trial", "active", "past_due", "suspended")
-        tenants = await conn.fetch("SELECT id, name, timezone, open_time, close_time, closed_days FROM app.tenants WHERE status::text = ANY($1)", list(statuses))
+        tenants = await conn.fetch("SELECT id, name, timezone, open_time, close_time, closed_days, day_hours FROM app.tenants WHERE status::text = ANY($1)", list(statuses))
         for t in tenants:
             local = datetime.now(ZoneInfo(t["timezone"] if cfg["tz"] == "customer" else cfg["tz"]))
             rules = {r["rule_type"]: r for r in await conn.fetch("SELECT rule_type, enabled, params FROM app.alert_rules WHERE tenant_id=$1 AND rule_type IN ('daily_summary','weekly_summary')", t["id"])}

@@ -16,7 +16,9 @@ router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
 
 TENANT_SELECT = """
 SELECT t.id, t.name, t.slug::text AS slug, t.city, t.state, t.status::text AS status, t.plan_id, t.partner_id, t.camera_limit,
-       t.price_override_paise, t.trial_ends_at, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
+       t.price_override_paise, t.trial_ends_at, t.ends_on, t.msg_language, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
+       (SELECT string_agg(r.name, ', ' ORDER BY r.name) FROM app.recipients r WHERE r.tenant_id=t.id AND r.active) AS people,
+       (SELECT max(n.created_at) FROM app.notifications n WHERE n.tenant_id=t.id) AS last_message_at,
        (SELECT count(*) FROM app.cameras c WHERE c.tenant_id=t.id AND c.enabled) AS cameras_in_use,
        (SELECT count(*) FROM app.recorders r WHERE r.tenant_id=t.id) AS recorders_total,
        (SELECT count(*) FROM app.recorders r WHERE r.tenant_id=t.id AND r.status='online') AS recorders_online
@@ -82,7 +84,7 @@ async def tenant_health(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
 
 
 @router.post("/tenants", response_model=TenantOut, status_code=201)
-async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner", "onboarding"))):
     if not await ctx.conn.fetchval("SELECT 1 FROM platform.plans WHERE id=$1 AND active", body.plan_id):
         raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
     if body.partner_id and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1 AND status='active'", body.partner_id):
@@ -94,9 +96,9 @@ async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("o
         try:
             async with ctx.conn.transaction():
                 tenant_id = await ctx.conn.fetchval(
-                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days') RETURNING id""",
-                    body.name, slug, body.city, body.plan_id, body.partner_id, body.camera_limit,
+                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language)
+                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8) RETURNING id""",
+                    body.name, slug, body.city, body.plan_id, body.partner_id, body.camera_limit, body.ends_on, body.msg_language,
                 )
             break
         except asyncpg.UniqueViolationError:
@@ -133,7 +135,7 @@ async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depen
 
 
 @router.post("/tenants/{tenant_id}/suspend", response_model=TenantOut)
-async def suspend(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def suspend(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin_ctx("owner", "support"))):
     before = await _get(ctx, tenant_id)
     if before["status"] == "suspended":
         raise ApiError(409, "already_suspended", "This tenant is already suspended.")
@@ -145,13 +147,21 @@ async def suspend(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin
 
 
 @router.post("/tenants/{tenant_id}/reactivate", response_model=TenantOut)
-async def reactivate(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def reactivate(tenant_id: UUID, body: ReasonIn, ctx: AdminCtx = Depends(admin_ctx("owner", "support"))):
     before = await _get(ctx, tenant_id)
     if before["status"] != "suspended":
         raise ApiError(409, "not_suspended", "Only a suspended tenant can be reactivated.")
     await ctx.conn.execute("UPDATE app.tenants SET status='active', suspended_at=NULL, suspended_reason=NULL WHERE id=$1", tenant_id)
     await ctx.audit("tenant.reactivate", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, before={"status": "suspended"}, after={"status": "active"})
     return await _get(ctx, tenant_id)
+
+
+@router.delete("/tenants/{tenant_id}", status_code=204)
+async def delete_tenant(tenant_id: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    """Removes a customer and everything of theirs (recorders, cameras, people, alerts, messages). It cannot be undone. The record of who did it stays in the audit log."""
+    before = await _get(ctx, tenant_id)
+    await ctx.audit("tenant.delete", tenant_id=None, target_type="tenant", target_id=tenant_id, reason=reason, before={"name": before["name"], "status": before["status"]})
+    await ctx.conn.execute("DELETE FROM app.tenants WHERE id=$1", tenant_id)
 
 
 @router.post("/tenants/{tenant_id}/plan", response_model=TenantOut)

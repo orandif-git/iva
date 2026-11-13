@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Jas iVision Control Center</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="stylesheet" href="/console/console.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="top-l">
+      <button class="logo" id="home" type="button" aria-label="Jas iVision, go to Overview"><img src="/console/logo-compact.svg" alt="Jas iVision"></button>
+      <nav class="areas" id="areas" aria-label="Areas"></nav>
+    </div>
+    <div class="ttl">Jas iVision Control Center</div>
+    <div class="top-r">
+      <button class="ibtn" id="theme" type="button" aria-label="Switch light or dark"></button>
+      <div class="me"><div class="av" id="av"></div><span class="role" id="role"></span><button class="ibtn" id="signout" type="button" aria-label="Sign out" title="Sign out"></button></div>
+    </div>
+  </header>
+  <div class="main">
+    <nav class="rail" id="rail" aria-label="Sections"></nav>
+    <aside class="side" id="side" hidden></aside>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+<div id="layer"></div>
+<noscript><p class="noscript">Please turn on JavaScript to use this page.</p></noscript>
+<script type="module" src="/console/app.js"></script>
+</body>
+</html>

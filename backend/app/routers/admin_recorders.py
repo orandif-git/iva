@@ -10,7 +10,7 @@ from ..schemas import AdminRecorderOut, RecorderConnection, RecorderCreateAdmin,
 from ..services import recorders as svc
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: recorders"])
-ROLES = ("owner",)
+ROLES = ("owner", "onboarding")
 
 
 @router.post("/tenants/{tenant_id}/recorders", response_model=RecorderCredentials, status_code=201)

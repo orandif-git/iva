@@ -21,7 +21,7 @@ DO $$ BEGIN
 END $$;
 
 -- ---------- enums ----------
-CREATE TYPE platform.staff_role   AS ENUM ('owner','support','technician','finance','analyst');   -- only owner and support are used; the others are legacy values, never assigned
+CREATE TYPE platform.staff_role   AS ENUM ('owner','support','technician','finance','analyst','admin','onboarding');   -- owner, admin, onboarding and support are used; technician, finance and analyst are legacy values, never assigned
 
 CREATE TYPE platform.actor_type   AS ENUM ('staff','partner_user','tenant_user','system');
 CREATE TYPE app.tenant_status     AS ENUM ('trial','active','past_due','suspended','cancelled');
@@ -294,6 +294,10 @@ CREATE TABLE app.tenants (
   open_time                time,
   close_time               time,
   closed_days              smallint[] NOT NULL DEFAULT '{}',
+  -- Different hours on different days: {"0": ["09:00","21:00"], ...}, a day missing from the object is closed. NULL: every open day uses open_time and close_time.
+  day_hours                jsonb,
+  msg_language             text NOT NULL DEFAULT 'en+ta' CHECK (msg_language IN ('en','ta','en+ta')),   -- the language of this shop's messages
+  ends_on                  date,                    -- the last day of service: after it everything stops (see services/service_end.py). NULL: no end date.
   msg_monthly_cap          integer CHECK (msg_monthly_cap IS NULL OR msg_monthly_cap >= 0),   -- WhatsApp messages per calendar month, NULL = no cap
   suspended_at             timestamptz,
   suspended_reason         text,
@@ -634,6 +638,7 @@ CREATE TABLE app.alert_rules (
   recipients  uuid[] NOT NULL DEFAULT '{}',            -- app.recipients.id
   quiet_start time,                                    -- no messages between these local times (the alert is still recorded)
   quiet_end   time,
+  label       text,                                    -- the name the Control Center shows for this event
   created_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, rule_type)
 );

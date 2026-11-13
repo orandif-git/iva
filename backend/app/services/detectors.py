@@ -172,7 +172,7 @@ async def counting_stopped() -> int:
     async with db.service_tx() as conn:
         if await conn.fetchval("SELECT EXISTS (SELECT 1 FROM platform.faults WHERE ended_at IS NULL)"):
             return 0
-        tenants = await conn.fetch("SELECT id, timezone, open_time, close_time, closed_days FROM app.tenants WHERE open_time IS NOT NULL AND close_time IS NOT NULL AND status::text IN ('trial','active','past_due')")
+        tenants = await conn.fetch("SELECT id, timezone, open_time, close_time, closed_days, day_hours FROM app.tenants WHERE open_time IS NOT NULL AND close_time IS NOT NULL AND status::text IN ('trial','active','past_due')")
         for t in tenants:
             hours, local = Hours.of(t), _local_now(t["timezone"])
             session = hours.session(local)
@@ -200,7 +200,7 @@ async def after_hours() -> int:
     n = 0
     async with db.service_tx() as conn:
         rules = await conn.fetch(
-            """SELECT r.tenant_id, r.params, t.timezone, t.open_time, t.close_time, t.closed_days FROM app.alert_rules r JOIN app.tenants t ON t.id = r.tenant_id
+            """SELECT r.tenant_id, r.params, t.timezone, t.open_time, t.close_time, t.closed_days, t.day_hours FROM app.alert_rules r JOIN app.tenants t ON t.id = r.tenant_id
                WHERE r.rule_type='after_hours' AND r.enabled AND t.open_time IS NOT NULL AND t.close_time IS NOT NULL AND t.status::text IN ('trial','active','past_due')""")
         for rule in rules:
             hours, local = Hours.of(rule), _local_now(rule["timezone"])

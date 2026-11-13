@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import Annotated, Literal
 from uuid import UUID
@@ -29,6 +29,10 @@ class TenantOut(BaseModel):
     camera_limit: int
     price_override_paise: int | None = None
     trial_ends_at: datetime | None
+    ends_on: date | None = None
+    msg_language: str = "en+ta"
+    people: str | None = None
+    last_message_at: datetime | None = None
     retention_events_days: int
     retention_snapshots_days: int
     suspended_at: datetime | None
@@ -45,6 +49,8 @@ class TenantCreate(Strict):
     plan_id: str
     partner_id: UUID | None = None
     camera_limit: int = Field(5, ge=0, le=5000)
+    ends_on: date | None = None
+    msg_language: Literal["en", "ta", "en+ta"] = "en+ta"
 
 
 class TenantPatch(Strict):
@@ -54,6 +60,8 @@ class TenantPatch(Strict):
     camera_limit: int | None = Field(None, ge=0, le=5000)
     retention_events_days: int | None = Field(None, ge=1, le=730)
     retention_snapshots_days: int | None = Field(None, ge=1, le=90)
+    ends_on: date | None = None
+    msg_language: Literal["en", "ta", "en+ta"] | None = None
 
 
 class ReasonIn(Strict):
@@ -514,12 +522,12 @@ class UserPatchIn(Strict):
 class StaffCreateIn(Strict):
     name: Name
     email: Email
-    role: Literal["owner", "support"] = "support"
+    role: Literal["owner", "admin", "onboarding", "support"] = "support"
 
 
 class StaffPatchIn(Strict):
     name: Name | None = None
-    role: Literal["owner", "support"] | None = None
+    role: Literal["owner", "admin", "onboarding", "support"] | None = None
 
 
 class UserInviteIn(Strict):

@@ -45,6 +45,7 @@ CATALOG: dict[str, dict] = {
                              shortcodes=["recorder", "times"], needs="Reading from the recorder"),
     "hardware_fault": _a(SYSTEM, "Devices", "Recorder hardware warning", "The recorder reports it is too hot, a fan has stopped, or a camera power port has failed.", built=True,
                          shortcodes=["recorder", "what"], needs="Reading from the recorder", params={"temperature": {"type": "integer", "default": 70, "min": 40, "max": 100}}),
+    "service_ended": _a(SYSTEM, "Account", "Service ended", "The shop's service reached its end date. Everything has stopped. Sent once.", built=True, severity="critical", shortcodes=["ended_on"], needs="Already available"),
     # ---- System Alerts: recording
     "storage_full": _a(SYSTEM, "Recording", "Recorder storage low", "The recorder warns that it has run out of room and is not replacing its oldest video, so new video may not be saved.", built=True,
                        shortcodes=["recorder", "percent_full", "days_left"], needs="Reading from the recorder"),

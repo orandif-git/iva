@@ -103,7 +103,7 @@ async def apply(conn, cam, sample: dict) -> list[str]:
                 upd["baseline_sharp"] = sharp if base is None else base * 0.98 + sharp * 0.02
                 upd["day_samples"] = n + 1
         if bright < DARK_BELOW:
-            hrs = await conn.fetchrow("SELECT open_time, close_time, closed_days, timezone FROM app.tenants WHERE id=$1", cam["tenant_id"])
+            hrs = await conn.fetchrow("SELECT open_time, close_time, closed_days, day_hours, timezone FROM app.tenants WHERE id=$1", cam["tenant_id"])
             h = Hours.of(hrs)
             if h.set and h.is_open(at.astimezone(ZoneInfo(hrs["timezone"])).replace(tzinfo=None)):
                 poor = "dark"

@@ -1,5 +1,5 @@
 """Owner-only management of the people who run the platform. A new person gets a one-time link to choose their own password.
-There are two roles: owner (everything) and support (look, help, open a customer's app with a logged reason)."""
+Four roles: owner (everything), admin (everything except the WhatsApp connection and making Owners), onboarding (sets up new customers) and support (looks after live customers)."""
 from uuid import UUID
 
 import asyncpg
@@ -30,8 +30,15 @@ async def list_staff(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     return {"items": [dict(r) for r in await ctx.conn.fetch(f"SELECT {COLS} FROM platform.staff_users ORDER BY created_at")]}
 
 
+def _guard(ctx: AdminCtx, role_after: str | None, role_now: str | None = None) -> None:
+    """An Admin runs the team but cannot make or change an Owner."""
+    if ctx.staff.role != "owner" and "owner" in (role_after, role_now):
+        raise ApiError(403, "owner_only", "Only an Owner can make or change an Owner.")
+
+
 @router.post("", status_code=201)
 async def create_staff(body: StaffCreateIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    _guard(ctx, body.role)
     try:
         sid = await ctx.conn.fetchval("INSERT INTO platform.staff_users (email, name, role) VALUES ($1,$2,$3::platform.staff_role) RETURNING id", body.email.lower(), body.name, body.role)
     except asyncpg.UniqueViolationError:
@@ -45,6 +52,7 @@ async def create_staff(body: StaffCreateIn, ctx: AdminCtx = Depends(admin_ctx("o
 async def edit_staff(sid: UUID, body: StaffPatchIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     cur = await _get(ctx, sid)
     ch = body.model_dump(exclude_unset=True)
+    _guard(ctx, ch.get("role"), cur["role"])
     if not ch:
         raise ApiError(422, "nothing_to_change", "Send at least one field to change.")
     if "role" in ch and ch["role"] != cur["role"]:
@@ -60,6 +68,7 @@ async def edit_staff(sid: UUID, body: StaffPatchIn, ctx: AdminCtx = Depends(admi
 @router.post("/{sid}/disable", status_code=204)
 async def disable_staff(sid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
     cur = await _get(ctx, sid)
+    _guard(ctx, None, cur["role"])
     if sid == ctx.staff.id:
         raise ApiError(409, "own_account", "You cannot disable your own account.")
     if cur["role"] == "owner" and not await _another_owner(ctx, sid):
@@ -71,7 +80,7 @@ async def disable_staff(sid: UUID, reason: str = Query(..., min_length=5, max_le
 
 @router.post("/{sid}/enable", status_code=204)
 async def enable_staff(sid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    await _get(ctx, sid)
+    _guard(ctx, None, (await _get(ctx, sid))["role"])
     await ctx.conn.execute("UPDATE platform.staff_users SET status='active', failed_logins=0, locked_until=NULL WHERE id=$1", sid)
     await ctx.audit("staff.enable", target_type="staff", target_id=sid, reason=reason)
 
@@ -79,6 +88,7 @@ async def enable_staff(sid: UUID, reason: str = Query(..., min_length=5, max_len
 @router.post("/{sid}/reset-link", status_code=201)
 async def staff_reset_link(sid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
     cur = await _get(ctx, sid)
+    _guard(ctx, None, cur["role"])
     if cur["status"] != "active":
         raise ApiError(409, "staff_disabled", "This account is disabled.")
     raw, exp = await auth.make_link_token(ctx.conn, "reset" if cur["has_password"] else "invite", sid, ctx.staff.id, "staff")

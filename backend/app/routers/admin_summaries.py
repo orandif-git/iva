@@ -106,12 +106,12 @@ async def _state(ctx: AdminCtx) -> dict:
 
 
 @router.get("")
-async def get_all(ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def get_all(ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     return await _state(ctx)
 
 
 @router.put("")
-async def save(body: SaveIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def save(body: SaveIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     cur = (await _state(ctx))["config"]
     new = _apply(cur, body.config)
     _check(new)
@@ -126,7 +126,7 @@ class KeyIn(Strict):
 
 
 @router.put("/key")
-async def set_key(body: KeyIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def set_key(body: KeyIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     """Replaces the provider's key. It is stored encrypted and can never be read back; only its last four characters are kept, to say which one is in use."""
     k = body.key.strip()
     if any(c.isspace() for c in k):
@@ -139,7 +139,7 @@ async def set_key(body: KeyIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
 
 
 @router.post("/reach")
-async def reach(ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def reach(ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     """Checks that the provider's address answers. It cannot check the key: the provider has no way to test one without sending a message, so use "Send a test" for that."""
     cfg = (await _state(ctx))["config"]
     if not cfg["url"]:
@@ -177,7 +177,7 @@ async def _compose(ctx: AdminCtx, body: PreviewIn):
 
 
 @router.post("/preview")
-async def preview(body: PreviewIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def preview(body: PreviewIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     built, cfg, t = await _compose(ctx, body)
     return {**built, "chars": len(built["text"]), "max": int(cfg["maxchars"]), "customer": t["name"],
             "request": {"source": cfg["source"], "content": built["text"], "category": cfg["category"]}}
@@ -188,7 +188,7 @@ class TestIn(PreviewIn):
 
 
 @router.post("/test")
-async def test_send(body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def test_send(body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     """Writes one customer's summary and sends it, right now, to the number given. Nothing is saved for the customer and they are not told."""
     built, cfg, t = await _compose(ctx, body)
     k = await sc.key(ctx.conn)
@@ -200,7 +200,7 @@ async def test_send(body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
 
 
 @router.get("/sends")
-async def sends(status: str | None = Query(None, pattern="^(queued|sent|failed|suppressed|cancelled)$"), limit: int = Query(40, ge=1, le=200), ctx: AdminCtx = Depends(admin_ctx("owner"))):
+async def sends(status: str | None = Query(None, pattern="^(queued|sent|failed|suppressed|cancelled)$"), limit: int = Query(40, ge=1, le=200), ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     rows = await ctx.conn.fetch(
         """SELECT n.id, n.created_at, n.sent_at, n.status::text AS status, n.attempts, n.error, n.response_status, n.provider_message_id, n.recipient, t.name AS tenant, a.rule_type
            FROM app.notifications n JOIN app.alerts a ON a.id = n.alert_id JOIN app.tenants t ON t.id = n.tenant_id

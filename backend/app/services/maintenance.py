@@ -46,6 +46,13 @@ async def run_forever() -> None:
                     await job()
                 except Exception:
                     log.exception("maintenance job %s failed", job.__name__)
+        if loop_time - _last_run.get("service_end", -1e9) >= 900:           # every 15 minutes
+            _last_run["service_end"] = loop_time
+            try:
+                from . import service_end
+                await service_end.run()
+            except Exception:
+                log.exception("ending service failed")
         try:
             every = await check_intervals()
         except Exception:

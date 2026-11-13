@@ -17,7 +17,7 @@ from .db import db
 from .errors import ApiError
 from .security import verify_token
 
-STAFF_ROLES = ("owner", "support")
+STAFF_ROLES = ("owner", "admin", "onboarding", "support")
 
 
 def _bearer(request: Request) -> str:
@@ -64,7 +64,12 @@ class AdminCtx:
 
 
 def admin_ctx(*roles: str):
+    """Who may call an endpoint. `owner` also lets in `admin` (the Owner's trusted manager); `owner!` means the Owner and nobody else (the WhatsApp connection and key)."""
     allowed = set(roles) or set(STAFF_ROLES)
+    if "owner!" in allowed:
+        allowed = {"owner"}
+    elif "owner" in allowed:
+        allowed.add("admin")
 
     async def dep(request: Request):
         claims = verify_token("platform", _bearer(request))

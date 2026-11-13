@@ -29,8 +29,8 @@ async def fire(tenant_id, rule_type="camera_offline"):
 def test_there_are_two_families_and_smart_alerts_are_marked_as_ai():
     fams = {c["family"] for c in cat.CATALOG.values()}
     assert fams == {"system", "smart"}
-    assert len(cat.LISTED) == 25 and len(cat.CATALOG) == 27 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready", "platform_fault"]       # system events, not customer alerts
-    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours", "clock_wrong", "storage_full", "disk_fault", "recording_stopped", "view_changed", "picture_poor", "recorder_restarted", "hardware_fault", "disk_wear", "retention_low",
+    assert len(cat.LISTED) == 26 and len(cat.CATALOG) == 28 and [k for k, v in cat.CATALOG.items() if v["internal"]] == ["report_ready", "platform_fault"]       # system events, not customer alerts
+    assert {k for k in cat.BUILT} == {"recorder_offline", "camera_offline", "connection_unstable", "back_to_normal", "counting_stopped", "after_hours", "clock_wrong", "storage_full", "disk_fault", "recording_stopped", "view_changed", "picture_poor", "recorder_restarted", "hardware_fault", "disk_wear", "retention_low", "service_ended",
                                                                   "daily_summary", "weekly_summary", "blocked_plate", "vehicle_overstay", "crowding", "low_confidence_plate", "people_in_area", "queue_long", "phone_use"}
     assert cat.event_name("camera_offline") == "system.camera_offline" and cat.event_name("blocked_plate") == "smart.blocked_plate"
     assert cat.alert_for_event("smart.crowding") == "crowding" and cat.alert_for_event("system.nothing") is None
