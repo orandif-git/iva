@@ -16,6 +16,27 @@ const fail = (id, msg) => { $("#err").textContent = msg; const e = id && $("#" +
 const clear = () => { $("#err").textContent = ""; document.querySelectorAll(".in.bad").forEach((e) => e.classList.remove("bad")); };
 document.addEventListener("input", (e) => { if (e.target.classList?.contains("in")) { e.target.classList.remove("bad"); $("#err").textContent = ""; } });
 
+/* ---------------------------------------------------------------------------- show or hide a password (an eye on the right of each password box) */
+const NS = "http://www.w3.org/2000/svg";
+function eye(off) {
+  const svg = document.createElementNS(NS, "svg");
+  for (const [k, v] of Object.entries({ width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 1.7, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+  const add = (tag, attrs) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); svg.appendChild(el); };
+  add("path", { d: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" }); add("circle", { cx: 12, cy: 12, r: 3 });
+  if (off) add("path", { d: "M4 4l16 16" });
+  return svg;
+}
+document.querySelectorAll('input[type="password"]').forEach((input) => {
+  const wrap = document.createElement("div"); wrap.className = "si-pw";
+  input.parentNode.insertBefore(wrap, input); wrap.appendChild(input);
+  const b = document.createElement("button"); b.type = "button"; b.className = "si-eye"; b.setAttribute("aria-label", "Show password"); b.setAttribute("aria-pressed", "false"); b.appendChild(eye(false));
+  b.addEventListener("click", () => {
+    const show = input.type === "password"; input.type = show ? "text" : "password";
+    b.setAttribute("aria-label", show ? "Hide password" : "Show password"); b.setAttribute("aria-pressed", String(show)); b.replaceChildren(eye(show)); input.focus();
+  });
+  wrap.appendChild(b);
+});
+
 /* ---------------------------------------------------------------------------- the same plain password rules as the server */
 function strength(p) {
   if (!p) return [0, "At least 10 characters. A long phrase is best."];
