@@ -5,6 +5,7 @@ the payload is sent once for each person who should be told, and the owner's own
 The owner can turn an endpoint on or off, send a test, look at the delivery log, and send a failed event again."""
 import json
 import secrets as _secrets
+from urllib.parse import urlparse
 from uuid import UUID
 
 import asyncpg
@@ -17,7 +18,7 @@ from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
 from ..messaging import delivery, webhook
 from ..schemas import Strict
-from ..services import alert_catalog as cat
+from ..services import alert_catalog as cat, summary_config as sc
 
 router = APIRouter(prefix="/admin/v1/webhooks", tags=["admin: webhooks"])
 Reason = Field(None, min_length=5, max_length=500)
@@ -58,11 +59,18 @@ def _seal(ep_id, headers: dict) -> bytes | None:
     return vault().encrypt(json.dumps(headers), str(ep_id)) if headers else None
 
 
+def _key_info(r) -> dict:
+    """Which headers an endpoint sends and the end of its key, never the key itself."""
+    h = delivery.endpoint_headers(r)
+    auth = h.get("Authorization") or ""
+    return {"header_names": sorted(h), "key_hint": auth[-4:] if len(auth) >= 8 else None}
+
+
 def _public(r, stats: dict | None = None) -> dict:
     meta = cat.CATALOG[r["alert_type"]]
     st = (stats or {}).get(r["id"], {})
     return {"id": r["id"], "name": r["name"], "alert_type": r["alert_type"], "event": cat.event_name(r["alert_type"]), "alert_title": meta["title"], "ai": meta["family"] == cat.SMART,
-            "url": r["url"], "headers": delivery.endpoint_headers(r), "payload_template": r["payload_template"], "preview": webhook.preview(r["payload_template"]),
+            "url": r["url"], **_key_info(r), "payload_template": r["payload_template"], "preview": webhook.preview(r["payload_template"]),
             "shortcodes": cat.shortcodes_for(r["alert_type"]), "active": r["active"], "updated_at": r["updated_at"],
             "deliveries": st.get("n", 0), "sent": st.get("sent", 0), "failed": st.get("failed", 0)}
 
@@ -191,6 +199,47 @@ async def resend(notification_id: UUID, ctx: AdminCtx = Depends(admin_ctx("owner
         raise ApiError(409, "not_failed", "Only an event that failed can be sent again.")
     await ctx.audit("webhook.resend", tenant_id=row["tenant_id"], target_type="notification", target_id=notification_id, after={"event": row["event"]})
     return {"queued": True}
+
+
+class KeyIn(Strict):
+    endpoint_id: UUID | None = None            # the alert being edited; empty means every alert
+    key: str | None = Field(None, min_length=8, max_length=500)
+    use_connection: bool = False                # take the key from the WhatsApp connection instead of typing it
+    all_on_address: bool = True                 # also every other alert that sends to the same address
+    reason: str | None = Reason
+
+
+@router.post("/key")
+async def set_key(body: KeyIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    """Saves the access key (sent as `Authorization: Bearer <key>`) on one alert, on every alert with the same address, or on all of them. Other headers are kept."""
+    if bool(body.key) == body.use_connection:
+        raise ApiError(422, "key_needed", "Paste a key, or choose to use the WhatsApp connection key.")
+    if body.use_connection:
+        if ctx.staff.role != "owner":
+            raise ApiError(403, "forbidden", "Only the Owner can reuse the WhatsApp connection key.")
+        key = await sc.key(ctx.conn)
+        if not key:
+            raise ApiError(409, "no_connection_key", "The WhatsApp connection has no key saved yet.")
+    else:
+        key = body.key.strip()
+    key = key[7:].strip() if key.lower().startswith("bearer ") else key
+    try:
+        value = webhook.validate_headers({"Authorization": "Bearer " + key})["Authorization"]
+    except ValueError as e:
+        raise ApiError(422, "invalid_key", str(e))
+    rows = await ctx.conn.fetch("SELECT * FROM platform.webhook_endpoints ORDER BY created_at")
+    if body.endpoint_id:
+        one = next((r for r in rows if r["id"] == body.endpoint_id), None)
+        if not one:
+            raise ApiError(404, "webhook_not_found", "Webhook not found.")
+        host = urlparse(one["url"]).netloc.lower()
+        rows = [r for r in rows if r["id"] == one["id"] or (body.all_on_address and urlparse(r["url"]).netloc.lower() == host)]
+    for r in rows:
+        merged = {**delivery.endpoint_headers(r), "Authorization": value}
+        await ctx.conn.execute("UPDATE platform.webhook_endpoints SET headers_ciphertext=$2, updated_at=now() WHERE id=$1", r["id"], _seal(r["id"], merged))
+    await ctx.audit("webhook.key", target_type="webhook", target_id=body.endpoint_id, reason=body.reason,
+                    after={"endpoints": len(rows), "from_connection": body.use_connection, "ends": key[-4:]})
+    return {"updated": len(rows), "key_hint": key[-4:]}
 
 
 # ------------------------------------------------------------------------------------------------ one endpoint

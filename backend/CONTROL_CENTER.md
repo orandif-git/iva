@@ -143,3 +143,9 @@ storage and the biggest database tables, a rough "more cameras fit" estimate, an
 - Every 5 minutes the API saves one reading in `platform.health_samples` (migration 027), kept 8 days. The charts and the disk estimate come from these, so they fill in after the first hours.
 - The gateway and registrar are checked by connecting to their local video ports (`GI_DAHUA_RELAY_URL`, `GI_GB_RELAY_URL`). The worker is "running" when it asked for its cameras in the last 2.5 minutes.
 - Processor is the server's load divided by its processors, so it is right when the worker runs on the same machine as the API (the case today).
+
+## Access key on alerts
+
+Each alert (Setup, WhatsApp templates) sends to its own address and needs the provider's key. Open the alert, then "Access key": paste the key, or press "Use the WhatsApp connection key" (Owner) when it is the same key as the summaries use. Ticked "Use it for every alert with this address", it is saved on all alerts that send to the same address in one go. The key goes out as `Authorization: Bearer <key>`; other headers set earlier are kept.
+
+- Endpoint: `POST /admin/v1/webhooks/key` (`endpoint_id`, `key` or `use_connection`, `all_on_address`). The screen only ever learns the last 4 characters (`key_hint`), never the key; the old `headers` field of the alert list was replaced by `header_names` and `key_hint`.

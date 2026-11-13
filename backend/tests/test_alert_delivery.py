@@ -146,7 +146,7 @@ async def test_an_endpoint_can_be_edited_turned_off_and_deleted(client, world, s
     ep = await endpoint_of(client, world, "recorder_offline")
     r = await client.put(f"/admin/v1/webhooks/{ep['id']}", json={"payload_template": '{"to": "{to_phone}", "r": "{recorder}"}', "name": "Recorder alert"}, headers=h)
     assert r.status_code == 200 and r.json()["name"] == "Recorder alert" and json.loads(r.json()["preview"]) == {"to": "919876543210", "r": "Warehouse"}
-    assert r.json()["headers"] == {"Authorization": TOKEN}                                                    # unchanged headers are kept
+    assert r.json()["header_names"] == ["Authorization"] and r.json()["key_hint"] == TOKEN[-4:] and "headers" not in r.json()    # unchanged headers are kept, and the key is never shown
     assert (await client.put(f"/admin/v1/webhooks/{ep['id']}", json={"payload_template": '{"x": "{plate}"}'}, headers=h)).status_code == 422
     off = await client.put(f"/admin/v1/webhooks/{ep['id']}", json={"active": False}, headers=h)
     assert off.json()["active"] is False
@@ -592,3 +592,32 @@ async def test_the_old_whatsapp_provider_and_template_routes_are_gone(client, wo
     assert (await client.post("/hooks/messaging/" + str(uuid.uuid4()), content=b"{}")).status_code in (404, 405)
     r = await client.post("/admin/v1/messaging/providers", json={"channel": "whatsapp", "name": "x", "kind": "http", "config": {}, "reason": "should be refused"}, headers=h)
     assert r.status_code in (404, 405)
+
+
+# ---------------------------------------------------------------------------------- the access key on an alert
+async def test_a_key_can_be_saved_on_one_alert_or_on_every_alert_with_the_same_address(client, world):
+    h = world["admin"]
+    items = (await client.get("/admin/v1/webhooks", headers=h)).json()["items"]
+    one, other = items[0], items[1]
+    r = await client.post("/admin/v1/webhooks/key", json={"endpoint_id": one["id"], "key": "NEWKEY-1234567890", "all_on_address": False}, headers=h)
+    assert r.status_code == 200 and r.json() == {"updated": 1, "key_hint": "7890"}
+    after = {e["id"]: e for e in (await client.get("/admin/v1/webhooks", headers=h)).json()["items"]}
+    assert after[one["id"]]["key_hint"] == "7890" and after[other["id"]]["key_hint"] != "7890", "only the chosen alert changed"
+    assert "NEWKEY" not in str(after[one["id"]]), "the key is never sent back to the screen"
+    r = await client.post("/admin/v1/webhooks/key", json={"endpoint_id": one["id"], "key": "Bearer ALLKEY-0000000000", "all_on_address": True}, headers=h)
+    assert r.json()["updated"] == len(items) and r.json()["key_hint"] == "0000"          # a pasted "Bearer " prefix is not doubled
+    after = (await client.get("/admin/v1/webhooks", headers=h)).json()["items"]
+    assert {e["key_hint"] for e in after} == {"0000"}
+    assert (await client.post("/admin/v1/webhooks/key", json={"endpoint_id": one["id"]}, headers=h)).status_code == 422
+    assert (await client.post("/admin/v1/webhooks/key", json={"endpoint_id": one["id"], "key": "short"}, headers=h)).status_code == 422
+
+
+async def test_the_whatsapp_connection_key_can_be_reused_by_the_owner_only(client, make, world):
+    owner, admin = await make.staff("owner"), await make.staff("admin")
+    ep = (await client.get("/admin/v1/webhooks", headers=owner["headers"])).json()["items"][0]
+    none = await client.post("/admin/v1/webhooks/key", json={"endpoint_id": ep["id"], "use_connection": True}, headers=owner["headers"])
+    assert none.status_code in (200, 409)
+    await client.put("/admin/v1/summaries/key", json={"key": "CONNECTION-KEY-5555"}, headers=owner["headers"])
+    ok = await client.post("/admin/v1/webhooks/key", json={"endpoint_id": ep["id"], "use_connection": True, "all_on_address": False}, headers=owner["headers"])
+    assert ok.status_code == 200 and ok.json()["key_hint"] == "5555"
+    assert (await client.post("/admin/v1/webhooks/key", json={"endpoint_id": ep["id"], "use_connection": True}, headers=admin["headers"])).status_code == 403
