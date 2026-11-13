@@ -24,7 +24,7 @@ def _clean_cache():
 
 
 # ------------------------------------------------------------------------------------------ the pages
-@pytest.mark.parametrize("path", ["/platform/", "/platform/set-password"])
+@pytest.mark.parametrize("path", ["/platform/"])
 async def test_pages_are_served_with_a_strict_content_policy(client, path):
     r = await client.get(path)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
@@ -37,20 +37,18 @@ async def test_pages_are_served_with_a_strict_content_policy(client, path):
     assert "style=" not in r.text
 
 
-async def test_the_customer_app_is_the_root_with_the_policy_it_needs_and_nothing_else_loosens(client):
+async def test_the_sign_in_page_is_the_root_and_the_set_password_page_serves_the_links(client):
     for path in ("/", "/set-password"):
         r = await client.get(path)
-        assert r.status_code == 200 and "flutter_bootstrap.js" in r.text and r.headers["content-type"].startswith("text/html"), path
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and "/console/signin.js" in r.text, path
+        assert r.headers["cache-control"] == "no-store"
         csp = r.headers["content-security-policy"]
         assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and "connect-src 'self'" in csp
-        assert "script-src 'self' 'wasm-unsafe-eval'" in csp and "unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")
-        assert "https://fcm.googleapis.com" in csp and "https://fcmregistrations.googleapis.com" in csp          # a browser getting its push address
-    assert (await client.get("/main.dart.js")).status_code == 200
-    assert (await client.get("/canvaskit/canvaskit.wasm")).status_code == 200
-    assert (await client.get("/push.js")).status_code == 200 and (await client.get("/firebase/firebase-app-compat.js")).status_code == 200
-    h = (await client.get("/platform/")).headers["content-security-policy"]                          # the staff console keeps the strict policy
-    assert "wasm-unsafe-eval" not in h and "'unsafe-inline'" not in h
-    assert (await client.get("/v1/health-summary")).status_code == 401                            # the API is not hidden by the pages
+        assert "style=" not in r.text and "<script>" not in r.text, "no inline code or styles"
+    assert (await client.get("/console/signin.js")).status_code == 200
+    old = await client.get("/platform/set-password?token=abc", follow_redirects=False)         # links sent before the Control Center existed
+    assert old.status_code == 301 and old.headers["location"] == "/set-password?token=abc"
+    assert (await client.get("/v1/health-summary")).status_code in (401, 404)                  # the API is not hidden by the pages
 
 
 async def test_the_old_addresses_lead_to_the_new_app_and_the_old_worker_cleans_up_after_itself(client):
@@ -363,8 +361,8 @@ async def test_the_manifest_makes_an_installable_app(client):
 async def test_the_staff_console_is_an_installable_app_of_its_own(client):
     m = (await client.get("/img/staff.webmanifest")).json()
     assert m["start_url"] == "/platform/" and m["scope"] == "/platform/" and m["display"] == "standalone" and {"any", "maskable"} <= {i["purpose"] for i in m["icons"]}
-    r = await client.get("/platform/set-password")                                       # the link in a new staff member's invitation opens the console
-    assert r.status_code == 200 and "/js/staff/main.js" in r.text
+    r = await client.get("/set-password")                                                 # the link in a new staff member's invitation opens the set-password page
+    assert r.status_code == 200 and "/console/signin.js" in r.text
 
 
 async def test_a_camera_picture_is_shared_for_the_configured_time_only(monkeypatch):

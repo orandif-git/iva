@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Jas iVision Control Center</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="stylesheet" href="/console/console.css">
+</head>
+<body class="si-body">
+<main class="si-wrap">
+  <form class="si-card" id="form" novalidate>
+    <img class="si-logo" src="/console/logo-compact.svg" alt="Jas iVision">
+    <h1 id="ttl">Jas iVision Control Center</h1>
+    <p class="sub si-sub" id="sub">Sign in to continue.</p>
+
+    <div id="in-fields">
+      <label class="si-l" for="email">Email</label>
+      <input class="in" id="email" type="email" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" autofocus>
+      <label class="si-l" for="pw">Password</label>
+      <input class="in" id="pw" type="password" autocomplete="current-password">
+      <div id="code-box" hidden>
+        <label class="si-l" for="code">6-digit code<small>From your authenticator app</small></label>
+        <input class="in" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456">
+      </div>
+    </div>
+
+    <div id="set-fields" hidden>
+      <label class="si-l" for="p1">New password</label>
+      <input class="in" id="p1" type="password" autocomplete="new-password">
+      <div class="pf-meter" id="meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="pf-tip" id="mtext">At least 10 characters. A long phrase is best.</div>
+      <label class="si-l" for="p2">New password again</label>
+      <input class="in" id="p2" type="password" autocomplete="new-password">
+    </div>
+
+    <div class="si-err" id="err" role="alert"></div>
+    <button class="btn pri wide" id="go" type="submit">Sign in</button>
+    <div class="si-foot" id="foot">Trouble signing in? Ask an Owner or Admin.</div>
+  </form>
+</main>
+<noscript><p class="noscript">Please turn on JavaScript to sign in.</p></noscript>
+<script type="module" src="/console/signin.js"></script>
+</body>
+</html>

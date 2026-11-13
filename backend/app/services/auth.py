@@ -184,7 +184,7 @@ async def make_link_token(conn, kind: str, account_id, created_by, account_type:
 
 
 def link(raw: str, staff: bool = False) -> str:
-    return f"{get_settings().public_base_url.rstrip('/')}/{'platform/' if staff else ''}set-password?token={raw}"
+    return f"{get_settings().public_base_url.rstrip('/')}/set-password?token={raw}"
 
 
 async def set_password_with_token(conn, raw: str, password: str) -> None:

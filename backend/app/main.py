@@ -98,13 +98,21 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         app.include_router(r.router)
 
     web = Path(s.web_dir) if s.web_dir else Path(__file__).resolve().parents[1] / "web"
+    # Everyone signs in at "/", and the links from an invitation or a password reset open "/set-password". One small page serves both (web/console/signin.html).
+    signin = web / "console" / "signin.html"
+    if signin.is_file():
+        @app.get("/", include_in_schema=False)
+        @app.get("/set-password", include_in_schema=False)
+        async def signin_page():
+            return FileResponse(signin, headers={"Cache-Control": "no-store"})
+    @app.get("/platform/set-password", include_in_schema=False)
+    async def old_set_password_link(request: Request):
+        q = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"/set-password{q}", status_code=301)         # links sent before the Control Center existed
     nxt = web.parent / "web_next"            # the customer app (Flutter, built from /app by scripts/build_app.sh)
     # Platform Admin (the panel Jas iVision's own staff use) lives at /platform. It has no sign-in page of its own: everyone signs in at "/", and a staff
     # account is handed on to it. It used to be at /staff, which still works.
     if (web / "staff" / "index.html").is_file():
-        @app.get("/platform/set-password", include_in_schema=False)
-        async def staff_set_password_page():
-            return FileResponse(web / "staff" / "index.html")
         @app.get("/staff", include_in_schema=False)
         @app.get("/staff/{rest:path}", include_in_schema=False)
         async def old_staff_address(request: Request, rest: str = ""):
