@@ -288,3 +288,6 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .cam.offl .pic{filter:grayscale(1)}
 .cam .cb .tag{align-self:flex-start}
 .more{text-align:center;padding:12px}
+.logbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.logbar .count{white-space:nowrap}
+.in.sel{width:auto;min-width:150px;max-width:none;height:36px;padding:0 12px}

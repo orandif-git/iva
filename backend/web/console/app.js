@@ -290,9 +290,11 @@ const kindOf = (m) => m.status === "failed" ? "Failed" : m.status === "queued" ?
 function logTable(withCustomer) {
   const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"], ["Held back", "Held back"]], D = S.logData, rows = D.items;
   const cls = (m) => ({ Failed: "crit", Waiting: "warn", "Held back": "", Sent: "ok" }[kindOf(m)]), txt = (m) => ({ Failed: "t-crit", Waiting: "t-warn", "Held back": "t-mute", Sent: "t-ok" }[kindOf(m)]);
-  return `<div class="bar"><div class="seg" role="group" aria-label="Date range">${RANGES.map((c) => `<button type="button" data-lrange="${c[0]}" aria-pressed="${S.logRange === c[0]}">${c[1]}</button>`).join("")}</div>
-    ${S.logRange === "custom" ? `<label class="sub">From <input class="in time" type="date" id="lfrom" value="${esc(S.logFrom)}"></label><label class="sub">To <input class="in time" type="date" id="lto" value="${esc(S.logTo)}"></label>` : ""}</div>
-  <div class="bar"><label class="search">${ico("search")}<span class="sr">Search messages</span><input id="lq" placeholder="Search" value="${esc(S.logQ)}" autocomplete="off"></label><div class="seg" role="group" aria-label="Filter">${chips.map((c) => `<button type="button" data-lchip="${c[0]}" aria-pressed="${S.logChip === c[0]}">${c[1]}</button>`).join("")}</div><span class="sp"></span><span class="sub">${D.total ? `Showing ${rows.length} of ${D.total}` : ""}</span></div>
+  return `<div class="logbar"><label class="search">${ico("search")}<span class="sr">Search messages</span><input id="lq" placeholder="Search" value="${esc(S.logQ)}" autocomplete="off"></label><span class="sp"></span>
+    ${D.total ? `<span class="sub count">Showing ${rows.length} of ${D.total}</span>` : ""}
+    ${S.logRange === "custom" ? `<label class="sub">From <input class="in time" type="date" id="lfrom" value="${esc(S.logFrom)}"></label><label class="sub">To <input class="in time" type="date" id="lto" value="${esc(S.logTo)}"></label>` : ""}
+    <label class="sr" for="lrange">Date range</label><select class="in sel" id="lrange" data-lrangesel>${RANGES.map((c) => `<option value="${c[0]}" ${S.logRange === c[0] ? "selected" : ""}>${c[0] === "custom" ? "Custom range" : c[1]}</option>`).join("")}</select>
+    <label class="sr" for="lstatus">Status</label><select class="in sel" id="lstatus" data-lchipsel>${chips.map((c) => `<option value="${c[0]}" ${S.logChip === c[0] ? "selected" : ""}>${c[0] === "all" ? "All messages" : c[1]}</option>`).join("")}</select></div>
   ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${rows.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div>${rows.length < D.total ? `<div class="more"><button class="btn" type="button" data-lmore>Load more</button></div>` : ""}` : `<div class="empty">No messages in this range${S.logQ || S.logChip !== "all" ? " match" : ""}.</div>`}`;
 }
 async function saveSection() {
@@ -812,6 +814,8 @@ document.addEventListener("change", async (ev) => {
       const body = plate ? { use_anpr: t.checked, ...(t.checked ? { stream: "main" } : {}) } : { use_footfall: t.checked };
       await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
     if (d.act?.startsWith("camon:")) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.act.slice(6)}`, { enabled: t.checked }); toast("Saved"); return loadCurrent(S.cid).then(() => render(true)); }
+    if ("lrangesel" in d) { S.logRange = t.value; return render(true); }
+    if ("lchipsel" in d) { S.logChip = t.value; return render(true); }
     if ("keepdays" in d) { S.keepDays = +t.value; return render(true); }
     if (t.id === "lfrom" || t.id === "lto") { if (t.id === "lfrom") S.logFrom = t.value; else S.logTo = t.value; return render(true); }
     if (d.camName) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.camName}`, { name: t.value.trim() }); toast("Saved"); }
