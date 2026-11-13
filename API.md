@@ -112,6 +112,10 @@ Generated from the code. All `/admin/v1` routes need a staff token (`Authorizati
 - `PUT /admin/v1/summaries/key`
 - `POST /admin/v1/summaries/test`
 
+## admin_system
+
+- `GET /admin/v1/system/health`
+
 ## admin_tenants
 
 - `GET /admin/v1/tenants`

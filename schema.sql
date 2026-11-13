@@ -120,6 +120,19 @@ CREATE TABLE platform.summary_settings (
 );
 
 -- Our own video analysis: when each analysis worker last asked for its cameras, and the faults we have had.
+CREATE TABLE IF NOT EXISTS platform.health_samples (
+  ts                timestamptz PRIMARY KEY DEFAULT now(),
+  disk_pct          real,
+  mem_pct           real,
+  load_pct          real,
+  cameras_expected  integer,
+  cameras_streaming integer,
+  evidence_mb       real,
+  db_mb             real
+);
+GRANT SELECT, INSERT, DELETE ON platform.health_samples TO service_worker;
+GRANT SELECT ON platform.health_samples TO platform_admin;
+
 CREATE TABLE platform.worker_seen (
   shard   integer NOT NULL,
   of      integer NOT NULL,

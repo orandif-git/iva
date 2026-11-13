@@ -127,6 +127,7 @@ WantedBy=multi-user.target
 1. [ ] On a database made from the current `schema.sql` nothing more is needed. On an older one, apply the numbered files in `backend/migrations/` that you have not applied yet, in order (each is safe to repeat):
    ```bash
    cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/026_owner_numbers_for_summaries.sql"
+   su postgres -c "psql -d gateinsight -f migrations/027_health_samples.sql"   # System health: a saved reading every 5 minutes
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice):

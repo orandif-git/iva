@@ -356,3 +356,22 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .si-foot{color:var(--fg2);font-size:12px;text-align:center;margin-top:14px}
 .si-card .in.bad{border-color:var(--crit);background:var(--crit-soft)}
 .si-card [hidden]{display:none!important}
+
+/* System health */
+.hv{display:flex;gap:12px;align-items:flex-start;border-radius:10px;padding:14px 16px;margin-bottom:16px;background:var(--ok-soft)}
+.hv.warn{background:var(--warn-soft)}.hv.crit{background:var(--crit-soft)}
+.hv>.dot{margin-top:7px;flex:none}.hv b{color:var(--head);font-size:16px}
+.hv ul{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}.hv li{display:flex;gap:8px;align-items:flex-start}.hv li .dot{margin-top:6px;flex:none}
+.mts{display:flex;flex-direction:column;gap:14px}
+.mt{display:flex;flex-direction:column;gap:5px}.mtl{display:flex;justify-content:space-between}.mtl b{font-variant-numeric:tabular-nums;color:var(--head)}
+.mtb{height:8px;border-radius:99px;background:var(--field);overflow:hidden}.mtb i{display:block;height:100%;border-radius:99px;background:var(--ok);width:0;transition:width .4s var(--ease)}
+.mtb i.warn{background:var(--warn)}.mtb i.crit{background:var(--crit)}.mth{font-size:12.5px}
+.mini{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px}.mini b{display:block;font-size:22px;color:var(--head);font-variant-numeric:tabular-nums;line-height:1.15}.mini span{color:var(--fg2);font-size:12.5px}
+.pn-n{margin-top:12px;max-width:none}
+.trends{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.trends b{font-size:13px;color:var(--head)}
+.spk{display:block;width:100%;height:auto;margin-top:4px}.spk-p{fill:none;stroke:var(--brand);stroke-width:2;stroke-linejoin:round}.spk-a{fill:var(--brand-soft);stroke:none}
+.spk-l{stroke:var(--warn);stroke-width:1;stroke-dasharray:3 3}.spk-e{fill:var(--brand)}
+.tbl td.end{text-align:right;font-variant-numeric:tabular-nums}
+.st b.t-ok{color:var(--ok)}.st b.t-warn{color:var(--warn)}.st b.t-crit{color:var(--crit)}
+.mini b.t-warn{color:var(--warn)}
+.bars i.zero{background:var(--line)}

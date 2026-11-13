@@ -131,3 +131,15 @@ Click your avatar at the top right: a compact panel drops down (the light/dark s
 - **Sign out everywhere else**: shows how many devices you are signed in on and ends the others after a yes.
 - **Sign out** is at the bottom of the panel.
 - There is no authenticator set-up in the profile. Endpoints: `GET/PATCH /admin/v1/me`, `POST /admin/v1/me/change-password`, `POST /admin/v1/me/sign-out-others`. The activity log records that a change happened, never a password.
+
+## System health
+
+Setup, System health (Owner and Admin). One page for our own system, read only: a verdict at the top ("Everything is healthy" or the list of things that need attention, each with what to do),
+the services (API, analysis worker, Dahua gateway, registrar, database) and when each last reported in, the server's processor, memory and disk (with "about N days left at this pace"),
+the camera pipeline (cameras analysed against cameras expected, and any camera that sent nothing for 10 minutes), WhatsApp messages in the last 24 hours (waiting, failed, the oldest one stuck),
+storage and the biggest database tables, a rough "more cameras fit" estimate, and three 24-hour charts. The page refreshes itself every 30 seconds.
+
+- Endpoint: `GET /admin/v1/system/health` (`routers/admin_system.py`, `services/system_health.py`). Amber starts at 80% disk, 85% memory, 70% processor; red at 90%, 95%, 90%.
+- Every 5 minutes the API saves one reading in `platform.health_samples` (migration 027), kept 8 days. The charts and the disk estimate come from these, so they fill in after the first hours.
+- The gateway and registrar are checked by connecting to their local video ports (`GI_DAHUA_RELAY_URL`, `GI_GB_RELAY_URL`). The worker is "running" when it asked for its cameras in the last 2.5 minutes.
+- Processor is the server's load divided by its processors, so it is right when the worker runs on the same machine as the API (the case today).

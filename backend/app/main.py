@@ -13,9 +13,9 @@ from . import errors
 from .config import get_settings
 from .db import db
 from .routers import (auth as auth_routes, admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_plans, admin_recorders, admin_shop, admin_staff, admin_storage,
-                      admin_summaries, admin_tenants, admin_views, admin_webhooks, internal, internal_evidence, internal_events, public_messaging)
+                      admin_summaries, admin_system, admin_tenants, admin_views, admin_webhooks, internal, internal_evidence, internal_events, public_messaging)
 from .messaging import delivery, evidence as delivery_evidence
-from .services import maintenance, reports, sweeper
+from .services import maintenance, reports, sweeper, system_health
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,7 +38,7 @@ _PROXIED = ("x-forwarded-for", "x-real-ip", "forwarded", "x-forwarded-host")
 async def lifespan(app: FastAPI):
     s = get_settings()
     await db.init(s.database_url, s.db_pool_min, s.db_pool_max)
-    tasks = [asyncio.create_task(sweeper.run_forever()), asyncio.create_task(delivery_evidence.refresh_forever()), asyncio.create_task(maintenance.run_forever()), asyncio.create_task(delivery.run_forever()), asyncio.create_task(reports.run_forever())]
+    tasks = [asyncio.create_task(sweeper.run_forever()), asyncio.create_task(delivery_evidence.refresh_forever()), asyncio.create_task(maintenance.run_forever()), asyncio.create_task(delivery.run_forever()), asyncio.create_task(reports.run_forever()), asyncio.create_task(system_health.run_forever())]
     try:
         yield
     finally:
@@ -84,7 +84,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         return {"ok": True}
 
     app.include_router(auth_routes.staff)
-    for r in (admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_plans, admin_recorders, admin_shop, admin_staff, admin_storage, admin_summaries, admin_tenants,
+    for r in (admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_plans, admin_recorders, admin_shop, admin_staff, admin_storage, admin_summaries, admin_system, admin_tenants,
               admin_views, admin_webhooks, internal, internal_evidence, internal_events, public_messaging):
         app.include_router(r.router)
 
