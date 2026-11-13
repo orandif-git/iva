@@ -3,7 +3,7 @@
 What is shown is what the customer's cameras saved: counts per minute at the counting line, and plate reads with their picture. The pages follow the days set under
 Setup, Data kept, because older data is removed. Excel files use the same builders as the scheduled reports."""
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo

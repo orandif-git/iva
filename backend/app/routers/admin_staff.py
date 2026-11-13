@@ -43,9 +43,9 @@ async def create_staff(body: StaffCreateIn, ctx: AdminCtx = Depends(admin_ctx("o
         sid = await ctx.conn.fetchval("INSERT INTO platform.staff_users (email, name, role) VALUES ($1,$2,$3::platform.staff_role) RETURNING id", body.email.lower(), body.name, body.role)
     except asyncpg.UniqueViolationError:
         raise ApiError(409, "email_in_use", "This email already has a staff account.")
-    raw, exp = await auth.make_link_token(ctx.conn, "invite", sid, ctx.staff.id, "staff")
+    raw, exp = await auth.make_link_token(ctx.conn, "invite", sid, ctx.staff.id)
     await ctx.audit("staff.create", target_type="staff", target_id=sid, after={"email": body.email.lower(), "role": body.role})
-    return {"staff_id": sid, "email": body.email.lower(), "role": body.role, "link": auth.link(raw, staff=True), "expires_at": exp}
+    return {"staff_id": sid, "email": body.email.lower(), "role": body.role, "link": auth.link(raw), "expires_at": exp}
 
 
 @router.patch("/{sid}")
@@ -66,7 +66,7 @@ async def edit_staff(sid: UUID, body: StaffPatchIn, ctx: AdminCtx = Depends(admi
     except asyncpg.UniqueViolationError:
         raise ApiError(409, "email_taken", "Another person already uses this email.")
     if ch.get("role", cur["role"]) != cur["role"]:
-        await auth.revoke_all(ctx.conn, "staff", sid)            # a new role starts with a fresh sign-in, so the old permissions cannot linger
+        await auth.revoke_all(ctx.conn, sid)            # a new role starts with a fresh sign-in, so the old permissions cannot linger
     await ctx.audit("staff.update", target_type="staff", target_id=sid, before={"name": cur["name"], "role": cur["role"], "email": cur["email"]},
                     after={"name": ch.get("name", cur["name"]), "role": ch.get("role", cur["role"]), "email": email})
     return dict(await _get(ctx, sid))
@@ -81,7 +81,7 @@ async def delete_staff(sid: UUID, reason: str = Query(..., min_length=5, max_len
         raise ApiError(409, "own_account", "You cannot delete your own account.")
     if cur["role"] == "owner" and cur["status"] == "active" and not await _another_owner(ctx, sid):
         raise ApiError(409, "last_owner", "There must always be one active owner.")
-    await auth.revoke_all(ctx.conn, "staff", sid)
+    await auth.revoke_all(ctx.conn, sid)
     try:
         async with ctx.conn.transaction():
             await ctx.conn.execute("DELETE FROM platform.staff_users WHERE id=$1", sid)
@@ -99,7 +99,7 @@ async def disable_staff(sid: UUID, reason: str = Query(..., min_length=5, max_le
     if cur["role"] == "owner" and not await _another_owner(ctx, sid):
         raise ApiError(409, "last_owner", "There must always be one active owner.")
     await ctx.conn.execute("UPDATE platform.staff_users SET status='disabled' WHERE id=$1", sid)
-    await auth.revoke_all(ctx.conn, "staff", sid)
+    await auth.revoke_all(ctx.conn, sid)
     await ctx.audit("staff.disable", target_type="staff", target_id=sid, reason=reason)
 
 
@@ -116,6 +116,6 @@ async def staff_reset_link(sid: UUID, reason: str = Query(..., min_length=5, max
     _guard(ctx, None, cur["role"])
     if cur["status"] != "active":
         raise ApiError(409, "staff_disabled", "This account is disabled.")
-    raw, exp = await auth.make_link_token(ctx.conn, "reset" if cur["has_password"] else "invite", sid, ctx.staff.id, "staff")
+    raw, exp = await auth.make_link_token(ctx.conn, "reset" if cur["has_password"] else "invite", sid, ctx.staff.id)
     await ctx.audit("staff.reset_link", target_type="staff", target_id=sid, reason=reason)
-    return {"staff_id": sid, "link": auth.link(raw, staff=True), "expires_at": exp}
+    return {"staff_id": sid, "link": auth.link(raw), "expires_at": exp}

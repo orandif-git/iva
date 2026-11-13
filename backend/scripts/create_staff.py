@@ -1,11 +1,9 @@
-"""Create a staff member (for example the first super admin), or reset their password or authenticator.
+"""Create a staff member (for example the first super admin), or reset their password.
 
     python -m scripts.create_staff --email you@company.in --name "Your Name" --role owner
 
-Run on the server, as a user that can read the application's .env. It asks for the password (hidden, typed twice) and prints a QR-less setup
-key and link for an authenticator app (Google Authenticator, Microsoft Authenticator, Authy): add it there, then sign in with the 6-digit code.
-Running it again for an existing email sets a new password and a new authenticator, and signs the person out everywhere.
-A staff member can never sign in without both."""
+Run on the server, as a user that can read the application's .env. It asks for the password (hidden, typed twice).
+Running it again for an existing email sets a new password and signs the person out everywhere."""
 import argparse
 import asyncio
 import getpass
@@ -14,8 +12,7 @@ import sys
 import asyncpg
 
 from app.config import get_settings
-from app.crypto import vault
-from app.services import passwords, totp
+from app.services import passwords
 
 ROLES = ("owner", "admin", "onboarding", "support")
 
@@ -26,7 +23,6 @@ async def main() -> int:
     a.add_argument("--name", required=True)
     a.add_argument("--role", required=True, choices=ROLES)
     a.add_argument("--dsn", help="a database owner connection (default: the application's own)")
-    a.add_argument("--no-authenticator", action="store_true", help="do not create an authenticator key (for a server running with GI_STAFF_REQUIRE_MFA=false)")
     args = a.parse_args()
     email = args.email.strip().lower()
     pw = getpass.getpass("Password (at least 10 characters): ")
@@ -38,7 +34,6 @@ async def main() -> int:
     except Exception as e:
         print(getattr(e, "message", e), file=sys.stderr)
         return 1
-    secret = None if args.no_authenticator else totp.new_secret()
     dsn = args.dsn or get_settings().database_url
     c = await asyncpg.connect(dsn)
     try:
@@ -47,20 +42,13 @@ async def main() -> int:
             sid = await c.fetchval(
                 """INSERT INTO platform.staff_users (email, name, role, status, password_hash) VALUES ($1,$2,$3::platform.staff_role,'active',$4)
                    ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role, status='active', password_hash=EXCLUDED.password_hash,
-                                                      failed_logins=0, locked_until=NULL, totp_last_step=0 RETURNING id""",
+                                                      failed_logins=0, locked_until=NULL RETURNING id""",
                 email, args.name, args.role, await passwords.hash_async(pw))
-            await c.execute("UPDATE platform.staff_users SET totp_secret_ciphertext=$2, mfa_enabled=$3 WHERE id=$1", sid, vault().encrypt(secret, f"totp:{sid}") if secret else None, bool(secret))
             await c.execute("UPDATE platform.auth_tokens SET revoked_at=now() WHERE account_type='staff' AND account_id=$1 AND revoked_at IS NULL", sid)
     finally:
         await c.close()
     print(f"\nStaff member ready: {email} ({args.role})\n")
-    if secret:
-        print("Add this to your authenticator app (type the key in, or open the link on your phone):")
-        print("  key :", secret)
-        print("  link:", totp.uri(secret, email))
-        print("\nSign in with your email, password and the 6-digit code the app shows.")
-    else:
-        print("No authenticator key was made. Sign in with your email and password (the server must have GI_STAFF_REQUIRE_MFA=false).")
+    print("Sign in at the Control Center with your email and password.")
     return 0
 
 

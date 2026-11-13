@@ -54,20 +54,16 @@ async function startSignIn() {
   if (rt) {                                                    // already signed in on this browser: go straight on
     try { const j = await post("/admin/v1/auth/refresh", { refresh_token: rt }); store.set(j.refresh_token); return location.replace("/console/"); } catch { store.set(null); }
   }
-  let mfa = true;
-  try { const r = await fetch("/admin/v1/auth/options", { cache: "no-store" }); mfa = (await r.json()).mfa_required !== false; } catch { /* ask for the code; the server decides */ }
-  $("#code-box").hidden = !mfa;
   $("#form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); clear();
-    const email = $("#email").value.trim(), pw = $("#pw").value, code = $("#code").value.replace(/\s/g, "");
+    const email = $("#email").value.trim(), pw = $("#pw").value;
     if (!email) return fail("email", "Enter your email.");
     if (!pw) return fail("pw", "Enter your password.");
-    if (mfa && !/^\d{6}$/.test(code)) return fail("code", "Enter the 6-digit code from your authenticator app.");
     $("#go").disabled = true; $("#go").textContent = "Signing in…";
     try {
-      const j = await post("/admin/v1/auth/login", { email, password: pw, code: code || undefined });
+      const j = await post("/admin/v1/auth/login", { email, password: pw });
       store.set(j.refresh_token); location.replace("/console/");
-    } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign in"; fail(null, e.message); $("#pw").value = ""; $("#code").value = ""; ($("#pw")).focus(); }
+    } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign in"; fail(null, e.message); $("#pw").value = ""; $("#pw").focus(); }
   });
 }
 setting ? startSetPassword() : startSignIn();

@@ -13,8 +13,7 @@ class Settings(BaseSettings):
     db_pool_min: int = 2
     db_pool_max: int = 10
 
-    # One secret per token audience, so a customer token can never be accepted by the admin API.
-    jwt_secret_customer: str
+    # Different secrets for staff sign-in tokens and for the worker's service token, so one can never be accepted for the other.
     jwt_secret_platform: str
     service_token: str                      # registrar and AI workers (also protect with mTLS in production)
     key_encryption_key: str                 # base64 of 32 bytes. Replace with KMS in production.
@@ -29,9 +28,7 @@ class Settings(BaseSettings):
     heartbeat_timeout_seconds: int = 90
     # Sign-in
     access_token_minutes: int = 15
-    customer_refresh_days: int = 30
     staff_refresh_hours: int = 12
-    staff_require_mfa: bool = True           # staff sign in with a password AND an authenticator code. False: password only (weaker; see DEPLOY.md)
     invite_days: int = 7
     reset_hours: int = 1
     lockout_failures: int = 5                # wrong passwords before an account is locked
@@ -45,7 +42,6 @@ class Settings(BaseSettings):
     messaging_allow_private_hosts: bool = False         # tests only: lets an integration call a local server
     delivery_poll_seconds: float = 2.0
     rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
-    push_tamil: bool = True                              # add the Tamil line under the English one in phone notifications (GI_PUSH_TAMIL=false to turn off)
     fcm_project_id: str = ""                             # Firebase project for push notifications; push is off while this is empty
     fcm_service_account_file: str = ""                   # path to that project's service-account key (JSON). Never stored in the database.
     live_stream_max: int = 8                             # moving live views running at once on this server; more are told to try again
@@ -71,7 +67,7 @@ class Settings(BaseSettings):
     r2_bucket: str = ""
     r2_endpoint_url: str = ""                           # empty = https://<account>.r2.cloudflarestorage.com
 
-    @field_validator("jwt_secret_customer", "jwt_secret_platform", "service_token")
+    @field_validator("jwt_secret_platform", "service_token")
     @classmethod
     def _long_enough(cls, v: str) -> str:
         if len(v) < 32:
@@ -101,8 +97,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _distinct(self):
-        if len({self.jwt_secret_customer, self.jwt_secret_platform, self.service_token}) != 3:
-            raise ValueError("jwt_secret_customer, jwt_secret_platform and service_token must all differ")
+        if self.jwt_secret_platform == self.service_token:
+            raise ValueError("jwt_secret_platform and service_token must differ")
         return self
 
 

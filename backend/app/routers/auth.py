@@ -1,13 +1,14 @@
-"""Sign-in routes. Public: they are how a token is obtained. Sign-in attempts are limited per address, per email and per account."""
-from fastapi import APIRouter, Depends, Request, Response
+"""Sign-in routes for staff. Public: they are how a token is obtained. Attempts are limited per address, per email and per account."""
+from fastapi import APIRouter, Request, Response
 
+from ..config import get_settings
 from ..db import db
-from ..deps import CustomerCtx, client_ip, customer_ctx
+from ..deps import client_ip
 from ..errors import ApiError
-from ..schemas import ChangePasswordIn, LoginIn, RefreshIn, SetPasswordIn, SignInIn, StaffLoginIn
-from ..services import auth, passwords
+from ..schemas import RefreshIn, SetPasswordIn, StaffLoginIn
+from ..services import auth
+from ..services.loginguard import guard
 
-customer = APIRouter(prefix="/v1/auth", tags=["sign-in"])
 staff = APIRouter(prefix="/admin/v1/auth", tags=["sign-in"])
 
 
@@ -21,82 +22,11 @@ def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-@customer.post("/login")
-async def customer_login(body: LoginIn, request: Request, response: Response):
-    _no_store(response)
-    async with db.admin_tx() as conn:
-        result = await auth.customer_login(conn, body.email, body.password, body.tenant, client_ip(request), request.headers.get("user-agent"))
-    return _raise_if_error(result)
-
-
-@customer.post("/refresh")
-async def customer_refresh(body: RefreshIn, response: Response):
-    _no_store(response)
-    async with db.admin_tx() as conn:
-        result = await auth.refresh(conn, "customer", body.refresh_token)
-    return _raise_if_error(result)
-
-
-@customer.post("/logout", status_code=204)
-async def customer_logout(body: RefreshIn):
-    async with db.admin_tx() as conn:
-        await auth.logout(conn, "customer", body.refresh_token)
-
-
-@customer.post("/set-password", status_code=204)
-async def set_password(body: SetPasswordIn, request: Request):
-    """From an invitation or a reset link. The link works once."""
-    from ..config import get_settings
-    from ..services.loginguard import guard
-    s = get_settings()
-    guard.check(client_ip(request), "set-password", s.login_ip_limit, 10 ** 9, 1)       # per-address limit only
-    async with db.admin_tx() as conn:
-        await auth.set_password_with_token(conn, body.token, body.password)
-
-
-@staff.post("/set-password", status_code=204)
-async def staff_set_password(body: SetPasswordIn, request: Request):
-    """From a staff invitation or reset link. The link works once."""
-    from ..config import get_settings
-    from ..services.loginguard import guard
-    s = get_settings()
-    guard.check(client_ip(request), "staff-set-password", s.login_ip_limit, 10 ** 9, 1)
-    async with db.admin_tx() as conn:
-        await auth.set_staff_password_with_token(conn, body.token, body.password)
-
-
-@customer.post("/change-password", status_code=204)
-async def change_password(body: ChangePasswordIn, ctx: CustomerCtx = Depends(customer_ctx())):
-    async with db.admin_tx() as conn:
-        u = await conn.fetchrow("SELECT id, email, password_hash FROM app.tenant_users WHERE id=$1 AND tenant_id=$2", ctx.user_id, ctx.tenant_id)
-        if not u or not await passwords.verify_async(body.current_password, u["password_hash"]):
-            result = ApiError(401, "wrong_credentials", "Your current password is not right.")
-        else:
-            passwords.check_policy(body.new_password, str(u["email"]))
-            await conn.execute("UPDATE app.tenant_users SET password_hash=$2 WHERE id=$1", u["id"], await passwords.hash_async(body.new_password))
-            keep = None
-            if body.refresh_token:                                       # this device's own session: it stays signed in
-                keep = await conn.fetchval("SELECT family FROM platform.auth_tokens WHERE token_hash=$1 AND kind='refresh' AND account_type='customer' AND account_id=$2 AND revoked_at IS NULL",
-                                           auth.token_hash(body.refresh_token), u["id"])
-            if body.sign_out_others:
-                await auth.revoke_all(conn, "customer", u["id"], except_family=keep)            # without a session to keep (an older app), every device signs in again
-            result = None
-    if result:
-        raise result
-
-
-@staff.get("/options")
-async def staff_options():
-    """Whether the staff sign-in page should ask for an authenticator code."""
-    from ..config import get_settings
-    return {"mfa_required": get_settings().staff_require_mfa}
-
-
 @staff.post("/login")
 async def staff_login(body: StaffLoginIn, request: Request, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.staff_login(conn, body.email, body.password, body.code or "", client_ip(request))
+        result = await auth.staff_login(conn, body.email, body.password, client_ip(request))
     return _raise_if_error(result)
 
 
@@ -104,21 +34,20 @@ async def staff_login(body: StaffLoginIn, request: Request, response: Response):
 async def staff_refresh(body: RefreshIn, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.refresh(conn, "staff", body.refresh_token)
+        result = await auth.refresh(conn, body.refresh_token)
     return _raise_if_error(result)
 
 
 @staff.post("/logout", status_code=204)
 async def staff_logout(body: RefreshIn):
     async with db.admin_tx() as conn:
-        await auth.logout(conn, "staff", body.refresh_token)
+        await auth.logout(conn, body.refresh_token)
 
 
-@customer.post("/sign-in")
-async def sign_in(body: SignInIn, request: Request, response: Response):
-    """The one sign-in form. The answer says who the person is (kind: customer or staff), so the page knows where to send them,
-    or says a code is needed ({"next": "code"}) for a staff member."""
-    _no_store(response)
+@staff.post("/set-password", status_code=204)
+async def staff_set_password(body: SetPasswordIn, request: Request):
+    """From an invitation or reset link. The link works once."""
+    s = get_settings()
+    guard.check(client_ip(request), "staff-set-password", s.login_ip_limit, 10 ** 9, 1)
     async with db.admin_tx() as conn:
-        result = await auth.sign_in(conn, body.email, body.password, body.tenant, body.code, client_ip(request), request.headers.get("user-agent"))
-    return _raise_if_error(result)
+        await auth.set_staff_password_with_token(conn, body.token, body.password)

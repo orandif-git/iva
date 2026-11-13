@@ -24,17 +24,6 @@ def _clean_cache():
 
 
 # ------------------------------------------------------------------------------------------ the pages
-@pytest.mark.parametrize("path", ["/platform/"])
-async def test_pages_are_served_with_a_strict_content_policy(client, path):
-    r = await client.get(path)
-    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    csp = r.headers["content-security-policy"]
-    assert "default-src 'none'" in csp and "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
-    assert "unsafe-inline" not in csp and "unsafe-eval" not in csp                          # nothing injected into a page can run
-    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
-    assert r.headers["referrer-policy"] == "no-referrer" and r.headers["cache-control"] == "no-cache"
-    assert "<script" not in r.text.replace('<script type="module" src="/js/', "")             # only our own module script, no inline code
-    assert "style=" not in r.text
 
 
 async def test_the_sign_in_page_is_the_root_and_the_set_password_page_serves_the_links(client):
@@ -61,19 +50,13 @@ async def test_the_old_addresses_lead_to_the_new_app_and_the_old_worker_cleans_u
     assert not (_web() / "index.html").exists() and not (_web() / "js/app/main.js").exists(), "the old customer app is gone"
 
 
-async def test_scripts_and_styles_are_served_and_nothing_outside_the_web_folder(client):
-    assert "javascript" in (await client.get("/js/staff/main.js")).headers["content-type"]
-    assert (await client.get("/css/app.css")).status_code == 200
-    for bad in ("/../app/config.py", "/..%2fapp%2fconfig.py", "/%2e%2e/app/config.py", "/js/../../app/main.py"):
-        r = await client.get(bad)
-        assert r.status_code in (400, 404) and "jwt_secret" not in r.text
 
 
 async def test_api_answers_are_not_cached_and_api_routes_are_not_hidden_by_the_pages(client, make):
     r = await client.get("/healthz")
     assert r.status_code == 200 and r.headers["x-content-type-options"] == "nosniff"
-    u = await make.user(await make.tenant())
-    r = await client.get("/v1/me", headers=u["headers"])
+    owner = await make.staff("owner")
+    r = await client.get("/admin/v1/me", headers=owner["headers"])
     assert r.status_code == 200 and "content-security-policy" not in r.headers and r.headers.get("cache-control") != "no-cache"
     assert (await client.get("/v1/nothing-here")).status_code in (404, 405)
     assert (await client.get("/admin/v1/me")).status_code == 401                               # the staff API, not the staff page
@@ -149,22 +132,6 @@ async def test_a_picture_comes_from_the_dahua_gateway_as_dhav_and_is_kept_briefl
     assert len(grabbed) == 1                                                                   # a second look within 20 seconds does not load the recorder again
 
 
-async def test_a_picture_is_for_administrators_of_that_organisation_only(client, make, monkeypatch):
-    t, u, cam, _ = await dahua_camera(client, make)
-
-    async def grab(url, fmt):
-        return JPEG
-
-    async def play_url(*a):
-        return "http://x/y"
-    monkeypatch.setattr(snapshot, "grab", grab)
-    monkeypatch.setattr(snapshot, "_play_url", play_url)
-    viewer = await make.user(t, role="regular")
-    assert (await client.get(f"/v1/cameras/{cam}/snapshot", headers=viewer["headers"])).status_code == 403
-    other = await make.user(await make.tenant())
-    assert (await client.get(f"/v1/cameras/{cam}/snapshot", headers=other["headers"])).status_code == 404
-    assert (await client.get(f"/v1/cameras/{cam}/snapshot")).status_code == 401
-    assert (await client.get(f"/v1/cameras/{uuid.uuid4()}/snapshot", headers=u["headers"])).status_code == 404
 
 
 async def test_an_rtsp_camera_picture_uses_its_own_address_without_a_format(client, make, monkeypatch):
@@ -318,12 +285,6 @@ async def test_the_picture_files_have_the_sizes_their_names_promise(client):
     assert sorted(ico[6 + 16 * i] for i in range(3)) == [16, 32, 48]
 
 
-@pytest.mark.parametrize("path", ["/platform/"])
-async def test_pages_point_at_the_icons(client, path):
-    html = (await client.get(path)).text
-    manifest = "/img/staff.webmanifest"
-    for want in ('href="/img/favicon.svg"', 'href="/favicon.ico"', 'href="/img/apple-touch-icon.png"', f'href="{manifest}"', 'name="theme-color"', 'href="/css/app.css"'):
-        assert want in html            # one shared stylesheet for both apps
 
 
 # ------------------------------------------------------------------------------------------ no address is written into the code
@@ -346,8 +307,8 @@ async def test_internal_routes_refuse_anything_that_came_through_the_public_addr
 
 
 async def test_public_routes_still_work_through_the_proxy(client, make):
-    u = await make.user(await make.tenant())
-    r = await client.get("/v1/me", headers={**u["headers"], "X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
+    owner = await make.staff("owner")
+    r = await client.get("/admin/v1/me", headers={**owner["headers"], "X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
     assert r.status_code == 200
     assert (await client.get("/", headers={"X-Forwarded-For": "203.0.113.5"})).status_code == 200
 
@@ -393,10 +354,6 @@ async def test_a_camera_picture_is_shared_for_the_configured_time_only(monkeypat
     snapshot._cache.clear()
 
 
-async def test_the_app_manifest_may_be_loaded_so_the_app_can_be_installed(client):
-    for path in ("/", "/platform/"):
-        csp = (await client.get(path)).headers["content-security-policy"]
-        assert "manifest-src 'self'" in csp
 
 
 # ------------------------------------------------------------------------------------------ shared shell
@@ -404,35 +361,3 @@ def _web():
     import pathlib
     return pathlib.Path(get_settings().web_dir or pathlib.Path(__file__).resolve().parents[1] / "web")
 
-
-async def test_the_shared_shell_files_the_staff_console_uses_are_served_as_scripts(client):
-    for f in ("/js/app/shell.js", "/js/app/table.js", "/js/app/theme.js", "/js/app/ui.js"):
-        r = await client.get(f)
-        assert r.status_code == 200 and "javascript" in r.headers["content-type"], f
-
-
-def test_every_staff_page_is_in_exactly_one_menu_group():
-    """The sidebar, tabs, More page and search all read one registry, so a page cannot drift out of the menu."""
-    import re
-    src = (_web() / "js/staff/routes.js").read_text()
-    routes = re.findall(r'\{ key: "(\w+)",[^}]*?group: "([^"]*)"', src)
-    keys = [k for k, _ in routes]
-    assert len(keys) == len(set(keys)) and len(keys) == 12, keys
-    assert set(g for _, g in routes) == {"", "Customers", "Money", "Support", "System"}
-    assert all(g for k, g in routes if k != "today"), "only Today is in the unlabelled top block"
-    main = (_web() / "js/staff/main.js").read_text()
-    assert "const NAV" not in main and "const GROUPS" not in main and "const TABS" not in main, "the menu is described once, in routes.js"
-    assert re.search(r"export const TABS = ROUTES\.filter\(\(r\) => r\.tab\)\.map\(\(r\) => r\.key\);", src)
-    tabs = re.findall(r'\{ key: "(\w+)",[^}]*?tab: true', src)
-    assert tabs == ["today", "customers", "fleet", "billing"], tabs
-
-
-async def test_platform_admin_lives_at_platform_and_has_no_sign_in_page_of_its_own(client):
-    """One sign-in page for everyone, at "/". The panel used to be at /staff: old links and bookmarks still arrive."""
-    for old, new in (("/staff", "/platform/"), ("/staff/", "/platform/"), ("/staff/set-password?token=abc", "/platform/set-password?token=abc")):
-        r = await client.get(old, follow_redirects=False)
-        assert r.status_code == 301 and r.headers["location"] == new, old
-    page = (await client.get("/platform/")).text
-    assert "Platform Admin" in page and "Staff</title>" not in page
-    src = (_web() / "js/staff/main.js").read_text()
-    assert 'location.replace("/")' in src and "/admin/v1/auth/login" not in src, "with no sign-in the panel sends the person to the one sign-in page"

@@ -40,45 +40,10 @@ async def first_plate(client, u):
 
 
 # ------------------------------------------------------------------------------------------- plate pictures
-async def test_a_plate_read_keeps_its_picture_and_the_customer_can_see_it(client, make):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    await read_with_picture(client, make, cam)
-    p = await first_plate(client, u)
-    assert p["has_snapshot"] is True
-    img = await client.get(f"/v1/plates/{p['id']}/image", headers=u["headers"])
-    assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg" and img.content == JPEG and "private" in img.headers["cache-control"]
 
 
-async def test_a_read_without_a_picture_says_so_and_nobody_sees_anothers_picture(client, make):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    await read_with_picture(client, make, cam, picture=False)
-    p = await first_plate(client, u)
-    assert p["has_snapshot"] is False
-    assert (await client.get(f"/v1/plates/{p['id']}/image", headers=u["headers"])).json()["error"]["code"] == "picture_not_found"
-    # another customer cannot fetch a picture by guessing the number, and cannot attach someone else's picture to their own reads
-    t2, u2, _, (cam2,) = await setup_cameras(client, make)
-    await read_with_picture(client, make, cam2, plate="MH12QR4471")
-    mine = await first_plate(client, u2)
-    assert (await client.get(f"/v1/plates/{mine['id']}/image", headers=u["headers"])).status_code == 404
-    assert (await client.get(f"/v1/plates/{mine['id']}/image")).status_code == 401
-    theirs = (await client.get("/v1/plates", headers=u2["headers"])).json()["items"][0]
-    eid = await read_with_picture(client, make, cam, plate="GJ01CK7710")
-    stray = {"camera_id": cam2, "seen_at": iso(now() - timedelta(minutes=2)), "plate_raw": "TN72AB1234", "confidence": 95, "direction": "in", "track_id": "x1", "snapshot_key": "s/2.jpg", "evidence_id": eid}
-    await client.post("/internal/v1/events/plates", json={"events": [stray]}, headers=make.service())
-    got = [i for i in (await client.get("/v1/plates", headers=u2["headers"])).json()["items"] if i["plate_text"] == "TN72AB1234"]
-    assert got and got[0]["has_snapshot"] is False
-    del theirs
 
 
-async def test_the_picture_goes_when_the_evidence_expires(client, make, su):
-    from app.services import retention
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    eid = await read_with_picture(client, make, cam)
-    await su.execute("UPDATE app.evidence SET expires_at = now() - interval '1 day' WHERE id=$1", uuid.UUID(eid))
-    await retention.run_all()
-    p = await first_plate(client, u)
-    assert p["has_snapshot"] is False
-    assert (await client.get(f"/v1/plates/{p['id']}/image", headers=u["headers"])).status_code == 404
 
 
 # ------------------------------------------------------------------------------------- storage settings

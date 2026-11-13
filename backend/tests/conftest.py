@@ -14,7 +14,6 @@ SUPER_DSN = f"postgresql://postgres@/{DB_NAME}?host={PG_HOST}&port={PG_PORT}"
 os.environ.update({
     "GI_ENV": "test",
     "GI_DATABASE_URL": f"postgresql://gi_api:gi@/{DB_NAME}?host={PG_HOST}&port={PG_PORT}",
-    "GI_JWT_SECRET_CUSTOMER": "c" * 40,
     "GI_JWT_SECRET_PLATFORM": "p" * 40,
     "GI_SERVICE_TOKEN": "s" * 40,
     "GI_KEY_ENCRYPTION_KEY": base64.b64encode(b"k" * 32).decode(),
@@ -22,6 +21,8 @@ os.environ.update({
     "GI_PUBLIC_BASE_URL": "https://gi.test",
     "GI_EVIDENCE_LOCAL_DIR": "/tmp/gi-test-evidence",
 })
+
+import re  # noqa: E402
 
 import asyncpg  # noqa: E402
 import httpx  # noqa: E402
@@ -52,11 +53,55 @@ async def su():
     await c.close()
 
 
+# A test "user" is a staff Owner working on one customer. Many tests are written in short, customer-centred paths (/v1/cameras, /v1/recipients ...); this client
+# sends them to the Control Center's own routes for that customer (/admin/v1/tenants/<id>/shop/...), so the tests exercise the real staff endpoints.
+USER_TENANT: dict[str, uuid.UUID] = {}
+
+
+def to_shop(method: str, path: str, tenant) -> str | None:
+    base, q = f"/admin/v1/tenants/{tenant}/shop", ""
+    if "?" in path:
+        path, q = path.split("?", 1)
+        q = "?" + q
+    for prefix, target in (("/v1/cameras", "cameras"), ("/v1/recipients", "people"), ("/v1/alert-types", "events"), ("/v1/vehicle-lists", "vehicle-lists")):
+        if path == prefix or path.startswith(prefix + "/"):
+            return f"{base}/{target}{path[len(prefix):]}{q}"
+    if path == "/v1/area-kinds":
+        return f"{base}/area-kinds{q}"
+    if path == "/v1/opening-hours":
+        return f"{base}/hours{q}"
+    if path == "/v1/recorders":
+        return f"/admin/v1/tenants/{tenant}/recorders" if method == "POST" else f"/admin/v1/recorders?tenant_id={tenant}"
+    m = re.fullmatch(r"/v1/recorders/([^/]+)/channels", path)
+    if m:
+        return f"{base}/recorders/{m.group(1)}/channels{q}"
+    m = re.fullmatch(r"/v1/recorders/([^/]+)/connection", path)
+    if m:
+        return f"/admin/v1/recorders/{m.group(1)}/connection{q}"
+    return None
+
+
+class ShopClient(httpx.AsyncClient):
+    async def request(self, method, url, **kw):
+        if isinstance(url, str) and url.startswith("/v1/"):
+            tok = ((kw.get("headers") or {}).get("Authorization") or "").removeprefix("Bearer ")
+            if tok in USER_TENANT:
+                new = to_shop(method, url, USER_TENANT[tok])
+                if new:
+                    url = new
+                    body = kw.get("json")
+                    if isinstance(body, dict) and "/shop/people" in new and method == "POST":
+                        kw["json"] = {k: v for k, v in body.items() if k in ("name", "phone")}
+                    if isinstance(body, dict) and new.endswith("/recorders") and method == "POST":
+                        kw["json"] = {"reason": "Added by a test", **body}
+        return await super().request(method, url, **kw)
+
+
 @pytest_asyncio.fixture(scope="session")
 async def client(su):
     await db.init(os.environ["GI_DATABASE_URL"], 1, 5)
     app = create_app(use_lifespan=False)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+    async with ShopClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         yield c
     await db.close()
 
@@ -78,13 +123,10 @@ class Factory:
         return tid
 
     async def user(self, tenant_id, role="admin", status="active"):
-        uid = await self.su.fetchval("INSERT INTO app.tenant_users (tenant_id,email,name,role,status) VALUES ($1,$2,$3,$4::app.tenant_role,$5) RETURNING id",
-                                     tenant_id, f"{uuid.uuid4().hex[:8]}@t.test", f"User {role}", role, status)
-        return {"id": uid, "tenant_id": tenant_id, "headers": self.headers(uid, tenant_id)}
-
-    @staticmethod
-    def headers(uid, tenant_id, **extra):
-        return {"Authorization": "Bearer " + issue_token("customer", {"sub": str(uid), "tenant_id": str(tenant_id), **extra}, 600)}
+        """Someone who works on this one customer: a staff Owner. (`role` and `status` are kept so older tests read the same.)"""
+        owner = await self.staff("owner")
+        USER_TENANT[owner["headers"]["Authorization"].removeprefix("Bearer ")] = tenant_id
+        return {"id": owner["id"], "tenant_id": tenant_id, "headers": owner["headers"]}
 
     @staticmethod
     def service():

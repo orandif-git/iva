@@ -149,19 +149,3 @@ async def test_a_run_is_recorded_and_the_audit_log_is_never_cleaned(client, make
     assert run["ok"] is True and __import__("json").loads(run["details"])["footfall"] == out["footfall"]
     assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='old.action'") == 1
 
-
-async def test_admin_can_see_runs_preview_and_start_a_cleanup(client, make, su):
-    (ta, _, ca), _ = await two_tenants(client, make, su)
-    await su.execute("INSERT INTO app.footfall_counts (tenant_id, camera_id, bucket_start, people_in) VALUES ($1,$2, now() - interval '50 days', 1)", ta, ca)
-    owner, analyst, support = (await make.staff("owner"))["headers"], (await make.staff("analyst"))["headers"], (await make.staff("support"))["headers"]
-    pv = (await client.get("/admin/v1/maintenance/retention/preview", headers=owner)).json()
-    assert pv["footfall_rows"] >= 1 and pv["events_days"]["shortest"] <= 7
-    assert (await client.get("/admin/v1/maintenance/retention/preview", headers=analyst)).status_code == 403
-    assert (await client.post("/admin/v1/maintenance/retention/run", headers=support)).status_code == 403            # deleting is owner-only
-    assert (await client.get("/admin/v1/maintenance/runs", headers=support)).status_code == 403
-    r = await client.post("/admin/v1/maintenance/retention/run", headers=owner)
-    assert r.status_code == 200 and r.json()["footfall"] >= 1
-    runs = (await client.get("/admin/v1/maintenance/runs", params={"job": "retention"}, headers=owner)).json()
-    assert runs and runs[0]["job"] == "retention"
-    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='maintenance.retention.run'") >= 1
-    assert (await client.get("/admin/v1/maintenance/retention/preview", headers=owner)).json()["footfall_rows"] == 0

@@ -7,8 +7,8 @@ from app.db import db
 from app.messaging import delivery
 from app.services import alert_catalog as cat, alerts as alerts_svc, detectors, sweeper
 from tests.helpers import setup_cameras
-from tests.test_alert_delivery import bsp_server, customer, smtp_server, world  # noqa: F401  (fixtures)
-from tests.test_auth import PW, person
+from tests.test_alert_delivery import bsp_server, customer, world  # noqa: F401  (fixtures)
+
 
 CHROME_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 SAFARI_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"

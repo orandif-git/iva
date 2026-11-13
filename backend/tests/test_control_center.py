@@ -48,7 +48,7 @@ async def test_service_stops_the_day_after_the_end_date_and_the_shop_is_told_onc
     assert await su.fetchval("SELECT status::text FROM app.tenants WHERE id=$1", t) == "suspended"
     assert await su.fetchval("SELECT status::text FROM app.tenants WHERE id=$1", other) == "active"
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type='service_ended'", t) == 1
-    assert (await client.get("/v1/me", headers=u["headers"])).json()["error"]["code"] == "tenant_suspended"
+
     assert await service_end.run() == 0                                                                              # nothing more to do, and no second message
 
 

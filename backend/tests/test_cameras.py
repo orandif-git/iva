@@ -19,12 +19,6 @@ async def test_camera_limit_is_enforced(client, make):
     assert r.status_code == 409 and r.json()["error"]["code"] == "camera_limit_reached"
 
 
-async def test_anpr_needs_a_plan_that_includes_it(client, make):
-    t, u, rid = await _online(client, make, plan="quick")
-    r = await client.post("/v1/cameras", json=body(rid, 1, use_anpr=True), headers=u["headers"])
-    assert r.status_code == 403 and r.json()["error"]["code"] == "plan_feature_missing"
-    t2, u2, rid2 = await _online(client, make, plan="full")
-    assert (await client.post("/v1/cameras", json=body(rid2, 1, use_anpr=True), headers=u2["headers"])).status_code == 201
 
 
 async def test_channel_must_exist_and_cannot_be_added_twice(client, make):

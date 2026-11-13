@@ -6,7 +6,6 @@ from typing import Literal
 from datetime import date
 from uuid import UUID
 
-import asyncpg
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
@@ -14,7 +13,7 @@ from ..config import get_settings
 from ..crypto import vault
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
-from ..messaging import delivery, netguard, smtp_provider
+from ..messaging import netguard, smtp_provider
 from ..schemas import Strict
 
 router = APIRouter(prefix="/admin/v1/messaging", tags=["admin: messaging"])
@@ -79,92 +78,9 @@ def _secrets_of(r) -> dict:
 
 
 # ----------------------------------------------------------------------------- providers
-@router.get("/providers")
-async def list_providers(ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    return [_public(r) for r in await ctx.conn.fetch("SELECT * FROM platform.messaging_providers ORDER BY channel, created_at")]
-
-
-@router.post("/providers", status_code=201)
-async def create_provider(body: ProviderIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    _check_secrets(body.secrets)
-    _validate(body.kind, body.channel, body.config, set(body.secrets))
-    pid = await ctx.conn.fetchval("SELECT gen_random_uuid()")
-    row = await ctx.conn.fetchrow(
-        """INSERT INTO platform.messaging_providers (id, channel, name, kind, config, secrets_ciphertext, rate_per_second)
-           VALUES ($1,$2::app.channel_kind,$3,$4,$5,$6,$7) RETURNING *""", pid, body.channel, body.name, body.kind, body.config, _seal(pid, body.secrets), body.rate_per_second)
-    await ctx.audit("messaging.provider.create", target_type="messaging_provider", target_id=pid, reason=body.reason,
-                    after={"name": body.name, "channel": body.channel, "kind": body.kind, "secret_names": sorted(body.secrets)})
-    return _public(row)
-
-
-@router.put("/providers/{pid}")
-async def update_provider(pid: UUID, body: ProviderPatch, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    cur = await _get(ctx, pid)
-    secrets = _secrets_of(cur)
-    if body.secrets is not None:
-        _check_secrets(body.secrets)
-        for k, v in body.secrets.items():
-            if v is None:
-                secrets.pop(k, None)
-            else:
-                secrets[k] = v
-    config = body.config if body.config is not None else cur["config"]
-    _validate(cur["kind"], cur["channel"], config, set(secrets))
-    row = await ctx.conn.fetchrow(
-        "UPDATE platform.messaging_providers SET name=$2, config=$3, secrets_ciphertext=$4, rate_per_second=$5, updated_at=now() WHERE id=$1 RETURNING *",
-        pid, body.name or cur["name"], config, _seal(pid, secrets), body.rate_per_second or cur["rate_per_second"])
-    await ctx.audit("messaging.provider.update", target_type="messaging_provider", target_id=pid, reason=body.reason,
-                    after={"name": row["name"], "config_changed": body.config is not None, "secret_names": sorted(secrets), "secrets_changed": sorted(body.secrets or {})})
-    return _public(row)
-
-
-@router.post("/providers/{pid}/activate")
-async def activate(pid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    cur = await _get(ctx, pid)
-    _validate(cur["kind"], cur["channel"], cur["config"], set(_secrets_of(cur)))
-    await ctx.conn.execute("UPDATE platform.messaging_providers SET active=false WHERE channel=$1 AND active", cur["channel"])
-    await ctx.conn.execute("UPDATE platform.messaging_providers SET active=true WHERE id=$1", pid)
-    await ctx.audit("messaging.provider.activate", target_type="messaging_provider", target_id=pid, reason=reason, after={"channel": cur["channel"], "name": cur["name"]})
-    return {"active": True}
-
-
-@router.post("/providers/{pid}/deactivate")
-async def deactivate(pid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    cur = await _get(ctx, pid)
-    await ctx.conn.execute("UPDATE platform.messaging_providers SET active=false WHERE id=$1", pid)
-    await ctx.audit("messaging.provider.deactivate", target_type="messaging_provider", target_id=pid, reason=reason)
-    return {"active": False}
-
-
-@router.delete("/providers/{pid}", status_code=204)
-async def delete_provider(pid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    cur = await _get(ctx, pid)
-    if cur["active"]:
-        raise ApiError(409, "provider_active", "Deactivate it first, or activate another provider.")
-    try:
-        await ctx.conn.execute("DELETE FROM platform.messaging_providers WHERE id=$1", pid)
-    except asyncpg.ForeignKeyViolationError:
-        raise ApiError(409, "provider_in_use", "It has message history.")
-    await ctx.audit("messaging.provider.delete", target_type="messaging_provider", target_id=pid, reason=reason, before={"name": cur["name"]})
-
-
 class TestIn(Strict):
     to: str = Field(min_length=3, max_length=120)             # the address to send a test to
     send: bool = False                                        # false = show what would be sent, send nothing
-
-
-@router.post("/providers/{pid}/test")
-async def test_provider(pid: UUID, body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Preview (default) or really send a test email, so the server can be tried before a report depends on it."""
-    p = await _get(ctx, pid)
-    if not body.send:
-        return {"preview": {"to": body.to, "subject": "[Jas iVision] Test message", "from": p["config"].get("from_email")}}
-    s = get_settings()
-    res = await smtp_provider.send(p["config"], _secrets_of(p), {"to": body.to, "name": "Test", "subject": "[Jas iVision] Test message",
-                                                                 "text": "This is a test message from Jas iVision.", "html": None},
-                                   allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
-    await ctx.audit("messaging.provider.test", target_type="messaging_provider", target_id=pid, after={"ok": res.ok, "to_hint": body.to[:3] + "…" + body.to[-2:]})
-    return {"ok": res.ok, "permanent": res.permanent, "status": res.status, "message_id": res.message_id, "error": res.error}
 
 
 # ----------------------------------------------------------------------------- per-account limits

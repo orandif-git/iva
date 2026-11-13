@@ -1,11 +1,9 @@
-import time
+"""Staff sign-in (email and password), refresh and logout, the links that set a password, and a person's own profile."""
 import uuid
 
 import pytest
 
-from app.config import get_settings
-from app.crypto import vault
-from app.services import passwords, totp
+from app.services import passwords
 from app.services.loginguard import guard
 
 PW = "correct horse battery"
@@ -18,339 +16,139 @@ def _fresh_guard():
     guard.reset()
 
 
-async def person(su, tenant, email=None, password=PW, role="admin", status="active"):
-    email = email or f"{uuid.uuid4().hex[:8]}@shop.test"
-    uid = await su.fetchval(
-        "INSERT INTO app.tenant_users (tenant_id,email,name,role,status,password_hash) VALUES ($1,$2,'Asha',$3::app.tenant_role,$4,$5) RETURNING id",
-        tenant, email, role, status, passwords.hash_password(password) if password else None)
-    return uid, email
-
-
-async def login(client, email, password=PW, **kw):
-    return await client.post("/v1/auth/login", json={"email": email, "password": password, **kw})
-
-
-async def staff_with_totp(su, password=PW, role="owner"):
+async def staff_with_password(su, password=PW, role="owner", status="active"):
     email = f"{uuid.uuid4().hex[:8]}@gi.test"
-    sid = await su.fetchval("INSERT INTO platform.staff_users (email,name,role,password_hash) VALUES ($1,'Ravi',$2::platform.staff_role,$3) RETURNING id",
-                            email, role, passwords.hash_password(password))
-    secret = totp.new_secret()
-    await su.execute("UPDATE platform.staff_users SET totp_secret_ciphertext=$2, mfa_enabled=true WHERE id=$1", sid, vault().encrypt(secret, f"totp:{sid}"))
-    return sid, email, secret
+    sid = await su.fetchval("INSERT INTO platform.staff_users (email,name,role,status,password_hash) VALUES ($1,'Ravi',$2::platform.staff_role,$3,$4) RETURNING id",
+                            email, role, status, passwords.hash_password(password) if password else None)
+    return sid, email
 
 
-def code_now(secret, offset=0):
-    return totp._code(secret, int(time.time() // 30) + offset)
+async def staff_login(client, email, password=PW):
+    return await client.post("/admin/v1/auth/login", json={"email": email, "password": password})
 
 
-# ------------------------------------------------------------------------------------------ customers
-async def test_a_customer_signs_in_and_the_token_works(client, make, su):
-    t = await make.tenant()
-    _, email = await person(su, t)
-    r = await login(client, email.upper())                                     # email is not case-sensitive
-    assert r.status_code == 200 and r.headers["cache-control"] == "no-store", r.text
-    j = r.json()
-    assert j["token_type"] == "bearer" and j["expires_in"] == 900 and j["user"]["name"] == "Asha"
-    me = await client.get("/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})
-    assert me.status_code == 200 and me.json()["tenant"]["id"] == str(t)
-
-
-async def test_every_kind_of_failed_sign_in_looks_the_same(client, make, su):
-    t = await make.tenant()
-    _, ok_email = await person(su, t)
-    _, invited = await person(su, t, password=None, status="invited")
-    _, disabled = await person(su, t, status="disabled")
-    seen = set()
-    for email, pw in ((ok_email, "wrong password!"), ("nobody@shop.test", PW), (invited, PW), (disabled, PW)):
-        r = await login(client, email, pw)
-        assert r.status_code == 401
-        seen.add((r.json()["error"]["code"], r.json()["error"]["message"]))
-    assert len(seen) == 1                                                       # nothing reveals which emails have accounts
-
-
-async def test_five_wrong_passwords_lock_the_account_even_for_the_right_password(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    for _ in range(5):
-        assert (await login(client, email, "nope nope nope")).status_code == 401
-    guard.reset()                                                               # the database lock must hold on its own
-    r = await login(client, email)
-    assert r.status_code == 429 and r.json()["error"]["code"] == "too_many_attempts"
-    await su.execute("UPDATE app.tenant_users SET locked_until = now() - interval '1 minute' WHERE id=$1", uid)
-    assert (await login(client, email)).status_code == 200                      # unlocked after the wait
-
-
-async def test_lockout_counts_emails_that_do_not_exist_too(client):
-    for _ in range(5):
-        assert (await login(client, "ghost@shop.test", "whatever password")).status_code == 401
-    assert (await login(client, "ghost@shop.test", "whatever password")).status_code == 429     # same behaviour as a real account
-
-
-async def test_too_many_attempts_from_one_address_are_refused(client):
-    codes = [(await login(client, f"x{i}@shop.test", "whatever password")).status_code for i in range(get_settings().login_ip_limit + 3)]
-    assert 429 in codes and codes[0] == 401
-
-
-async def test_a_suspended_organisation_cannot_sign_in(client, make, su):
-    t = await make.tenant(status="suspended")
-    _, email = await person(su, t)
-    r = await login(client, email)
-    assert r.status_code == 403 and r.json()["error"]["code"] == "tenant_suspended"
-
-
-async def test_one_email_in_two_organisations_must_say_which(client, make, su):
-    t1, t2 = await make.tenant(name="Alpha Works"), await make.tenant(name="Beta Works")
-    email = f"{uuid.uuid4().hex[:6]}@shared.test"
-    await person(su, t1, email), await person(su, t2, email)
-    r = await login(client, email)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "choose_account"
-    r = await login(client, email, tenant="beta-works")
-    assert r.status_code == 200
-    assert (await client.get("/v1/me", headers={"Authorization": "Bearer " + r.json()["access_token"]})).json()["tenant"]["id"] == str(t2)
-
-
-async def test_passwords_and_tokens_are_not_stored_in_the_clear(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    j = (await login(client, email)).json()
-    stored = await su.fetchval("SELECT password_hash FROM app.tenant_users WHERE id=$1", uid)
-    assert stored.startswith("scrypt$") and PW not in stored
-    assert await su.fetchval("SELECT count(*) FROM platform.auth_tokens WHERE token_hash=$1", j["refresh_token"]) == 0     # only the hash is kept
-    assert await su.fetchval("SELECT count(*) FROM platform.auth_tokens WHERE account_id=$1 AND kind='refresh'", uid) == 1
-
-
-# --------------------------------------------------------------------------------- refresh and logout
-async def test_refresh_gives_a_new_pair_and_each_refresh_token_works_once(client, make, su):
-    t = await make.tenant()
-    _, email = await person(su, t)
-    first = (await login(client, email)).json()
-    r = await client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
-    assert r.status_code == 200
-    second = r.json()
-    assert second["refresh_token"] != first["refresh_token"]
-    assert (await client.get("/v1/me", headers={"Authorization": "Bearer " + second["access_token"]})).status_code == 200
-    # the old one again: someone has a copy, so the whole sign-in ends, including the newest token
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})).status_code == 401
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": second["refresh_token"]})).status_code == 401
-
-
-async def test_logout_ends_the_sign_in(client, make, su):
-    t = await make.tenant()
-    _, email = await person(su, t)
-    j = (await login(client, email)).json()
-    assert (await client.post("/v1/auth/logout", json={"refresh_token": j["refresh_token"]})).status_code == 204
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-
-
-async def test_a_disabled_user_or_suspended_organisation_cannot_refresh(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    j = (await login(client, email)).json()
-    await su.execute("UPDATE app.tenant_users SET status='disabled' WHERE id=$1", uid)
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-    await su.execute("UPDATE app.tenant_users SET status='active' WHERE id=$1", uid)
-    j = (await login(client, email)).json()
-    await su.execute("UPDATE app.tenants SET status='suspended' WHERE id=$1", t)
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-    await su.execute("UPDATE app.tenants SET status='active' WHERE id=$1", t)
-
-
-async def test_the_other_audiences_refresh_token_is_not_accepted(client, make, su):
-    t = await make.tenant()
-    _, email = await person(su, t)
-    j = (await login(client, email)).json()
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 401
-
-
-# --------------------------------------------------------------------------------- invites and resets
-async def test_staff_invite_a_customer_who_sets_their_own_password(client, make, su):
-    staff = await make.staff("support")
-    t = await make.tenant()
-    email = f"{uuid.uuid4().hex[:6]}@newshop.test"
-    r = await client.post(f"/admin/v1/tenants/{t}/users", json={"email": email, "name": "Meena", "role": "admin"}, headers=staff["headers"])
-    assert r.status_code == 201, r.text
-    link = r.json()["link"]
-    assert link.startswith("https://gi.test/set-password?token=")
-    token = link.split("token=")[1]
-    assert (await login(client, email, "any password here")).status_code == 401           # no password yet
-    assert (await client.post("/v1/auth/set-password", json={"token": token, "password": "short"})).json()["error"]["code"] == "weak_password"
-    assert (await client.post("/v1/auth/set-password", json={"token": token, "password": "password123"})).json()["error"]["code"] == "weak_password"
-    assert (await client.post("/v1/auth/set-password", json={"token": token, "password": "a good long password"})).status_code == 204
-    assert (await login(client, email, "a good long password")).status_code == 200
-    assert await su.fetchval("SELECT status FROM app.tenant_users WHERE email=$1", email) == "active"
-    again = await client.post("/v1/auth/set-password", json={"token": token, "password": "another long password"})
-    assert again.status_code == 400 and again.json()["error"]["code"] == "link_invalid"      # the link works once
-    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='user.invite' AND tenant_id=$1", t) == 1
-
-
-async def test_an_invitation_cannot_be_made_twice_for_one_email_or_by_the_wrong_staff(client, make):
-    t = await make.tenant()
-    tech, finance = await make.staff("support"), await make.staff("analyst")
-    body = {"email": "dup@shop.test", "name": "Dup"}
-    assert (await client.post(f"/admin/v1/tenants/{t}/users", json=body, headers=finance["headers"])).status_code == 403
-    assert (await client.post(f"/admin/v1/tenants/{t}/users", json=body, headers=tech["headers"])).status_code == 201
-    assert (await client.post(f"/admin/v1/tenants/{t}/users", json=body, headers=tech["headers"])).json()["error"]["code"] == "email_in_use"
-    assert (await client.post(f"/admin/v1/tenants/{uuid.uuid4()}/users", json=body, headers=tech["headers"])).status_code == 404
-    bad = await client.post(f"/admin/v1/tenants/{t}/users", json={"email": "not-an-email", "name": "X"}, headers=tech["headers"])
-    assert bad.status_code == 422
-
-
-async def test_an_expired_or_unknown_link_is_refused(client, make, su):
-    staff = await make.staff("support")
-    t = await make.tenant()
-    r = await client.post(f"/admin/v1/tenants/{t}/users", json={"email": "late@shop.test", "name": "Late"}, headers=staff["headers"])
-    token = r.json()["link"].split("token=")[1]
-    await su.execute("UPDATE platform.auth_tokens SET expires_at = now() - interval '1 minute' WHERE kind='invite' AND account_id=$1", r.json()["user_id"])
-    assert (await client.post("/v1/auth/set-password", json={"token": token, "password": "a good long password"})).status_code == 400
-    assert (await client.post("/v1/auth/set-password", json={"token": "x" * 43, "password": "a good long password"})).status_code == 400
-
-
-async def test_a_reset_link_changes_the_password_signs_out_every_device_and_replaces_older_links(client, make, su):
-    staff = await make.staff("support")
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    old_session = (await login(client, email)).json()
-    one = (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/reset-link", headers=staff["headers"])).json()["link"].split("token=")[1]
-    two = (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/reset-link", headers=staff["headers"])).json()["link"].split("token=")[1]
-    assert (await client.post("/v1/auth/set-password", json={"token": one, "password": "a brand new password"})).status_code == 400      # replaced
-    assert (await client.post("/v1/auth/set-password", json={"token": two, "password": "a brand new password"})).status_code == 204
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": old_session["refresh_token"]})).status_code == 401              # signed out
-    assert (await login(client, email, PW)).status_code == 401
-    assert (await login(client, email, "a brand new password")).status_code == 200
-
-
-async def test_a_disabled_user_loses_access_at_once(client, make, su):
-    staff = await make.staff("support")
-    owner = await make.staff("owner")
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    j = (await login(client, email)).json()
-    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/disable", headers=staff["headers"])).status_code == 403         # only an owner disables people
-    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/disable", headers=owner["headers"])).status_code == 204
-    assert (await client.get("/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 401
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-    assert (await login(client, email)).status_code == 401
-    assert (await client.post(f"/admin/v1/tenants/{t}/users/{uid}/reset-link", headers=staff["headers"])).status_code == 409
-
-
-async def test_staff_can_list_a_customers_users_without_any_secret(client, make, su):
-    staff = await make.staff("support")
-    t = await make.tenant()
-    await person(su, t)
-    items = (await client.get(f"/admin/v1/tenants/{t}/users", headers=staff["headers"])).json()["items"]
-    assert len(items) == 1 and items[0]["has_password"] is True and "password_hash" not in items[0]
-
-
-async def test_a_customer_changes_their_own_password(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    a, b = (await login(client, email)).json(), (await login(client, email)).json()
-    h = {"Authorization": "Bearer " + a["access_token"]}
-    assert (await client.post("/v1/auth/change-password", json={"current_password": "not mine", "new_password": "a brand new password"}, headers=h)).status_code == 401
-    assert (await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "short"}, headers=h)).status_code == 422
-    assert (await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password"}, headers=h)).status_code == 204
-    assert (await login(client, email, PW)).status_code == 401
-    assert (await login(client, email, "a brand new password")).status_code == 200
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": b["refresh_token"]})).status_code == 401        # other devices sign in again
-
-
-async def test_changing_the_password_keeps_this_device_and_signs_out_the_others_by_default(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    here, other = (await login(client, email)).json(), (await login(client, email)).json()
-    h = {"Authorization": "Bearer " + here["access_token"]}
-    r = await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "refresh_token": here["refresh_token"]}, headers=h)
-    assert r.status_code == 204
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": here["refresh_token"]})).status_code == 200          # this device stays signed in
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": other["refresh_token"]})).status_code == 401         # the other one signs in again
-
-
-async def test_the_other_devices_can_be_left_signed_in_when_the_person_chooses(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    here, other = (await login(client, email)).json(), (await login(client, email)).json()
-    h = {"Authorization": "Bearer " + here["access_token"]}
-    r = await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "sign_out_others": False, "refresh_token": here["refresh_token"]}, headers=h)
-    assert r.status_code == 204
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": other["refresh_token"]})).status_code == 200
-    assert (await login(client, email, "a brand new password")).status_code == 200                                              # the new password is the only one that works now
-    assert (await login(client, email, PW)).status_code == 401
-
-
-async def test_a_session_that_is_not_theirs_cannot_be_used_to_keep_a_device(client, make, su):
-    t = await make.tenant()
-    uid, email = await person(su, t)
-    t2 = await make.tenant()
-    uid2, email2 = await person(su, t2)
-    mine, mine2 = (await login(client, email)).json(), (await login(client, email)).json()
-    theirs = (await login(client, email2)).json()
-    h = {"Authorization": "Bearer " + mine["access_token"]}
-    await client.post("/v1/auth/change-password", json={"current_password": PW, "new_password": "a brand new password", "refresh_token": theirs["refresh_token"]}, headers=h)
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": mine["refresh_token"]})).status_code == 401           # nothing was kept, so every one of their devices signs in again
-    assert (await client.post("/v1/auth/refresh", json={"refresh_token": theirs["refresh_token"]})).status_code == 200          # and the other person was not touched
-
-
-# ------------------------------------------------------------------------------------------------ staff
-async def staff_login(client, email, password=PW, code="000000"):
-    return await client.post("/admin/v1/auth/login", json={"email": email, "password": password, "code": code})
-
-
-async def test_staff_need_password_and_a_code_and_the_token_works_on_the_admin_api(client, su):
-    sid, email, secret = await staff_with_totp(su)
-    assert (await staff_login(client, email, PW, "123456")).status_code == 401                 # right password, wrong code
-    assert (await staff_login(client, email, "wrong password!", code_now(secret))).status_code == 401
-    r = await staff_login(client, email, PW, code_now(secret))
+# ------------------------------------------------------------------------------------------------ signing in
+async def test_staff_sign_in_with_email_and_password_and_the_token_works_on_the_admin_api(client, su):
+    sid, email = await staff_with_password(su)
+    r = await staff_login(client, email)
     assert r.status_code == 200, r.text
     j = r.json()
+    assert j["user"]["role"] == "owner" and j["refresh_token"] and r.headers["cache-control"] == "no-store"
     me = await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})
-    assert me.status_code == 200 and me.json()["role"] == "owner"
-    assert (await client.get("/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 401      # not a customer token
+    assert me.status_code == 200 and me.json()["email"] == email
+    assert await su.fetchval("SELECT last_login_at IS NOT NULL FROM platform.staff_users WHERE id=$1", sid)
+    assert (await client.get("/admin/v1/me")).status_code == 401, "no token, no access"
 
 
-async def test_a_code_cannot_be_used_twice(client, su):
-    _, email, secret = await staff_with_totp(su)
-    c = code_now(secret)
-    assert (await staff_login(client, email, PW, c)).status_code == 200
-    assert (await staff_login(client, email, PW, c)).status_code == 401                         # a code seen over a shoulder is useless
-    assert (await staff_login(client, email, PW, code_now(secret, +1))).status_code == 200      # the next one works
-
-
-async def test_staff_without_an_authenticator_or_password_cannot_sign_in(client, su):
-    email = f"{uuid.uuid4().hex[:8]}@gi.test"
-    await su.execute("INSERT INTO platform.staff_users (email,name,role,password_hash) VALUES ($1,'No Totp','owner',$2)", email, passwords.hash_password(PW))
-    assert (await staff_login(client, email, PW, "123456")).status_code == 401
-    email2 = f"{uuid.uuid4().hex[:8]}@gi.test"
-    await su.execute("INSERT INTO platform.staff_users (email,name,role) VALUES ($1,'No Pw','owner')", email2)
-    assert (await staff_login(client, email2, PW, "123456")).status_code == 401
-
-
-async def test_disabled_staff_cannot_sign_in_or_refresh(client, su):
-    sid, email, secret = await staff_with_totp(su)
-    j = (await staff_login(client, email, PW, code_now(secret))).json()
-    await su.execute("UPDATE platform.staff_users SET status='disabled' WHERE id=$1", sid)
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
-    assert (await staff_login(client, email, PW, code_now(secret, +1))).status_code == 401
+async def test_every_kind_of_failed_sign_in_looks_the_same(client, su):
+    _, email = await staff_with_password(su)
+    nopw, email_nopw = await staff_with_password(su, password=None)
+    _, email_off = await staff_with_password(su, status="disabled")
+    seen = set()
+    for who, pw in ((email, "wrong password!"), ("nobody@gi.test", PW), (email_nopw, PW), (email_off, PW)):
+        r = await staff_login(client, who, pw)
+        assert r.status_code == 401
+        seen.add((r.json()["error"]["code"], r.json()["error"]["message"]))
+    assert len(seen) == 1, "nothing tells a stranger which emails have accounts"
 
 
 async def test_staff_accounts_lock_after_wrong_attempts(client, su):
-    sid, email, secret = await staff_with_totp(su)
+    sid, email = await staff_with_password(su)
     for _ in range(5):
-        await staff_login(client, email, PW, "111111")
+        await staff_login(client, email, "wrong password!")
     guard.reset()
-    r = await staff_login(client, email, PW, code_now(secret))
-    assert r.status_code == 429
+    assert (await staff_login(client, email)).status_code == 429, "even the right password waits"
 
 
-async def test_staff_refresh_and_logout(client, su):
-    _, email, secret = await staff_with_totp(su)
-    j = (await staff_login(client, email, PW, code_now(secret))).json()
+async def test_too_many_attempts_from_one_address_are_refused(client):
+    codes = [(await staff_login(client, f"x{i}@gi.test", "wrong password!")).status_code for i in range(40)]
+    assert 429 in codes
+
+
+async def test_passwords_and_tokens_are_not_stored_in_the_clear(client, su):
+    sid, email = await staff_with_password(su)
+    j = (await staff_login(client, email)).json()
+    stored = await su.fetchval("SELECT password_hash FROM platform.staff_users WHERE id=$1", sid)
+    assert stored.startswith("scrypt$") and PW not in stored
+    assert await su.fetchval("SELECT count(*) FROM platform.auth_tokens WHERE token_hash=$1", j["refresh_token"]) == 0, "only the hash is kept"
+
+
+# ------------------------------------------------------------------------------------------------ refresh and logout
+async def test_refresh_gives_a_new_pair_and_each_refresh_token_works_once(client, su):
+    _, email = await staff_with_password(su)
+    j = (await staff_login(client, email)).json()
     r = await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.json()["refresh_token"] != j["refresh_token"]
     me = await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + r.json()["access_token"]})
-    assert me.status_code == 200                                                                   # the refreshed token is still a multi-factor one
-    assert (await client.post("/admin/v1/auth/logout", json={"refresh_token": r.json()["refresh_token"]})).status_code == 204
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": r.json()["refresh_token"]})).status_code == 401
+    assert me.status_code == 200
+    again = await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})
+    assert again.status_code == 401, "an old token used again means it was copied"
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": r.json()["refresh_token"]})).status_code == 401, "so the whole sign-in ends"
+
+
+async def test_logout_ends_the_sign_in(client, su):
+    _, email = await staff_with_password(su)
+    j = (await staff_login(client, email)).json()
+    assert (await client.post("/admin/v1/auth/logout", json={"refresh_token": j["refresh_token"]})).status_code == 204
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
+
+
+async def test_a_disabled_person_cannot_refresh_or_use_the_admin_api(client, su):
+    sid, email = await staff_with_password(su)
+    j = (await staff_login(client, email)).json()
+    await su.execute("UPDATE platform.staff_users SET status='disabled' WHERE id=$1", sid)
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})).status_code == 401
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 401
+    assert (await staff_login(client, email)).status_code == 401
+
+
+async def test_a_token_for_another_audience_is_not_accepted(client, su):
+    from app.security import issue_token
+    sid, _ = await staff_with_password(su)
+    with pytest.raises(KeyError):
+        issue_token("customer", {"sub": str(sid)}, 600)               # there is no customer sign-in any more
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + "x" * 40})).status_code == 401
+
+
+# ------------------------------------------------------------------------------------------------ invitation and reset links
+async def link_for(client, make, sid):
+    owner = await make.staff("owner")
+    r = await client.post(f"/admin/v1/staff/{sid}/reset-link", params={"reason": "A new link for the test"}, headers=owner["headers"])
+    assert r.status_code == 201, r.text
+    return r.json()["link"].split("token=")[1]
+
+
+async def test_a_link_sets_a_password_once_and_signs_out_every_device(client, make, su):
+    sid, email = await staff_with_password(su)
+    old = (await staff_login(client, email)).json()
+    token = await link_for(client, make, sid)
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": token, "password": "short"})).status_code == 422
+    new = "a brand new phrase 2026"
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": token, "password": new})).status_code == 204
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": token, "password": new + "!"})).status_code == 400, "a link works once"
+    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": old["refresh_token"]})).status_code == 401, "a reset signs out every device"
+    assert (await staff_login(client, email, PW)).status_code == 401
+    assert (await staff_login(client, email, new)).status_code == 200
+
+
+async def test_a_new_link_replaces_the_older_one_and_unknown_or_expired_links_are_refused(client, make, su):
+    sid, _ = await staff_with_password(su)
+    first = await link_for(client, make, sid)
+    second = await link_for(client, make, sid)
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": first, "password": "a brand new phrase 2026"})).status_code == 400
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": "x" * 43, "password": "a brand new phrase 2026"})).status_code == 400
+    await su.execute("UPDATE platform.auth_tokens SET expires_at = now() - interval '1 minute' WHERE account_id=$1 AND kind IN ('invite','reset')", sid)
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": second, "password": "a brand new phrase 2026"})).status_code == 400
+
+
+async def test_an_invited_person_can_sign_in_right_after_choosing_a_password(client, make, su):
+    owner = await make.staff("owner")
+    r = await client.post("/admin/v1/staff", json={"name": "Karthik", "email": f"{uuid.uuid4().hex[:6]}@gi.test", "role": "support"}, headers=owner["headers"])
+    assert r.status_code == 201, r.text
+    token = r.json()["link"].split("token=")[1]
+    assert "/set-password?token=" in r.json()["link"]
+    assert (await client.post("/admin/v1/auth/set-password", json={"token": token, "password": "a fine long password 1"})).status_code == 204
+    assert (await staff_login(client, r.json()["email"], "a fine long password 1")).status_code == 200
 
 
 # ------------------------------------------------------------------------------------------------ units
@@ -362,107 +160,17 @@ def test_the_password_rules():
     passwords.check_policy("a long and fine password", "me@shop.test")
 
 
-def test_totp_matches_the_standard_test_vector():
-    import base64
-    assert totp._code(base64.b32encode(b"12345678901234567890").decode(), 59 // 30) == "287082"      # RFC 6238 appendix B
-    s = totp.new_secret()
-    assert totp.verify(s, totp._code(s, 100), now=100 * 30) == 100
-    assert totp.verify(s, totp._code(s, 100), last_step=100, now=100 * 30) is None
-    assert totp.verify(s, totp._code(s, 90), now=100 * 30) is None                                      # too old
-    assert totp.verify(s, "12345", now=0) is None and totp.verify(s, "abcdef", now=0) is None
-
-
-# ------------------------------------------------------------------------- staff sign-in without an authenticator (GI_STAFF_REQUIRE_MFA=false)
-@pytest.fixture
-def mfa_off(monkeypatch):
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
-
-
-def claims_of(token):
-    from app.security import verify_token
-    return verify_token("platform", token)
-
-
-async def test_by_default_a_code_is_required_and_the_sign_in_page_is_told_so(client, su):
-    assert (await client.get("/admin/v1/auth/options")).json() == {"mfa_required": True}
-    _, email, _ = await staff_with_totp(su)
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 401            # no code: refused
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": "123456"})).status_code == 401
-
-
-async def test_with_two_step_off_staff_sign_in_with_a_password_alone(client, su, mfa_off):
-    assert (await client.get("/admin/v1/auth/options")).json() == {"mfa_required": False}
-    sid, email, secret = await staff_with_totp(su)
-    r = await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})            # no code at all
-    assert r.status_code == 200, r.text
-    j = r.json()
-    assert claims_of(j["access_token"])["mfa"] is False and j["refresh_token"].startswith("n_")      # marked as a password-only sign-in
-    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["access_token"]})).status_code == 200
-    ok = await client.post("/admin/v1/auth/refresh", json={"refresh_token": j["refresh_token"]})
-    assert ok.status_code == 200 and ok.json()["refresh_token"].startswith("n_")                     # stays password-only when refreshed
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": "wrong password!"})).status_code == 401
-    assert (await client.post("/admin/v1/auth/login", json={"email": "nobody@gi.test", "password": PW})).status_code == 401
-
-
-async def test_a_staff_member_with_no_authenticator_can_sign_in_when_it_is_off_and_not_when_it_is_on(client, su, monkeypatch):
-    email = f"{uuid.uuid4().hex[:8]}@gi.test"
-    await su.execute("INSERT INTO platform.staff_users (email,name,role,password_hash) VALUES ($1,'No App','owner',$2)", email, passwords.hash_password(PW))
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 401           # on: refused
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 200            # off: allowed
-
-
-async def test_a_valid_code_still_gives_a_full_token_when_two_step_is_off(client, su, mfa_off):
-    _, email, secret = await staff_with_totp(su)
-    j = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret)})).json()
-    assert claims_of(j["access_token"])["mfa"] is True and not j["refresh_token"].startswith("n_")
-
-
-async def test_turning_two_step_back_on_refuses_what_a_password_only_sign_in_made(client, su, monkeypatch):
-    _, email, secret = await staff_with_totp(su)
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
-    weak = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).json()
-    full = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret, +1)})).json()
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", True)
-    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + weak["access_token"]})).status_code == 401       # the access token no longer works
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": weak["refresh_token"]})).status_code == 401           # and cannot be upgraded
-    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + full["access_token"]})).status_code == 200         # one made with a code still works
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": full["refresh_token"]})).status_code == 200
-
-
-async def test_the_prefix_cannot_be_added_or_removed_to_change_what_a_token_is(client, su, monkeypatch):
-    _, email, secret = await staff_with_totp(su)
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", False)
-    weak = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).json()["refresh_token"]
-    monkeypatch.setattr(get_settings(), "staff_require_mfa", True)
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": weak[2:]})).status_code == 401              # prefix removed: a different (unknown) token
-    full = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "code": code_now(secret, +1)})).json()["refresh_token"]
-    assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": "n_" + full})).status_code == 401           # prefix added: also unknown
-
-
-async def test_passwords_still_lock_accounts_when_two_step_is_off(client, su, mfa_off):
-    sid, email, _ = await staff_with_totp(su)
-    for _ in range(5):
-        assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": "wrong password!"})).status_code == 401
-    guard.reset()
-    assert (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).status_code == 429             # locked, even with the right password
-
-
-async def test_the_old_mfa_flag_in_a_token_is_still_honoured_when_two_step_is_off(client, make, mfa_off):
-    weak = await make.staff("owner", mfa=False)                      # a token without the multi-factor flag
-    assert (await client.get("/admin/v1/me", headers=weak["headers"])).status_code == 200
-
-
+# ------------------------------------------------------------------------------------------------ a person's own profile
 async def device(sid):
     """One more place this person is signed in on (a full sign-in with its own family of tokens)."""
     from app.db import db
     from app.services import auth
     async with db.admin_tx() as c:
-        return await auth._tokens(c, "staff", sid, mfa=True)
+        return await auth._tokens(c, sid)
 
 
 async def test_staff_profile_name_password_and_other_devices(client, su):
-    sid, email, secret = await staff_with_totp(su)
+    sid, email = await staff_with_password(su)
     a, b = await device(sid), await device(sid)
     ha = {"Authorization": "Bearer " + a["access_token"]}
     me = (await client.get("/admin/v1/me", headers=ha)).json()
@@ -484,7 +192,7 @@ async def test_staff_profile_name_password_and_other_devices(client, su):
 
 
 async def test_signing_out_every_other_device_keeps_this_one(client, su):
-    sid, email, secret = await staff_with_totp(su)
+    sid, email = await staff_with_password(su)
     a, b, c = await device(sid), await device(sid), await device(sid)
     ha = {"Authorization": "Bearer " + a["access_token"]}
     assert (await client.post("/admin/v1/me/sign-out-others", json={}, headers=ha)).status_code == 409           # it must know which one to keep

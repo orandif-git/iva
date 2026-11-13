@@ -12,9 +12,9 @@ from ..errors import ApiError
 from pydantic import Field
 
 from ..schemas import FrameStatusIn, HeartbeatIn, Strict
-from datetime import datetime, timezone
+from datetime import datetime
 
-from ..services import alert_catalog, billing, link_history, platform_fault, recorder_health
+from ..services import alert_catalog, link_history, platform_fault, recorder_health
 from ..services.alerts import clips_wanted
 from ..services.framerate import PARTS, camera_override, resolve, tenant_policy
 
@@ -247,10 +247,6 @@ async def frame_status(camera_id: UUID, body: FrameStatusIn, ctx: ServiceCtx = D
         raise ApiError(404, "unknown_camera", "No such camera.")
     if prev and body.state == "streaming" and prev["stream_state"] == "offline":              # it was down: tell the customer if they were warned
         await link_history.recovered(ctx.conn, prev["tenant_id"], offline_rule="camera_offline", entity_id=camera_id, name=prev["name"], camera_id=camera_id)
-    if prev and body.state == "streaming" and body.analysis_fps and prev["stream_seen_at"]:
-        # frames analysed since the last report, for metering (a long gap counts as at most a minute: the worker was not running in between)
-        secs = min((datetime.now(timezone.utc) - prev["stream_seen_at"]).total_seconds(), 60.0)
-        await billing.add_frames(ctx.conn, prev["tenant_id"], prev["timezone"], int(body.analysis_fps * max(secs, 0)))
     return {"active": row["enabled"] and row["tenant_status"] not in ("suspended", "cancelled")}
 
 

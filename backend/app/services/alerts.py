@@ -8,7 +8,7 @@ from ..config import get_settings
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from . import alert_catalog, push, push_text
+from . import alert_catalog
 from .alert_catalog import ALERT_TYPES
 
 PER_RECIPIENT_PER_HOUR = 20           # a flood guard for ordinary alerts; a critical alert is never held back by it
@@ -42,7 +42,7 @@ def clips_wanted(tenant, rule) -> bool:
 async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", title: str | None = None, camera_id=None, camera_name: str = "",
                       details: dict | None = None, dedupe_key: str | None = None, cooldown_minutes: int = 10, evidence_id=None,
                       evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False, recipient_ids: list | None = None,
-                      direct_ready: bool = True, push_on: bool = True, push_tamil: bool | None = None) -> UUID | None:
+                      direct_ready: bool = True) -> UUID | None:
     """Returns the new alert id, or None when nothing was raised (rule off, or the same alert was raised recently).
     `recipient_ids` replaces the rule's recipients (the summaries use it for "the account owner"). `direct_ready` says whether a summary can be sent straight to WhatsApp now."""
     meta = ALERT_TYPES[rule_type]
@@ -83,10 +83,6 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     who = recipient_ids if recipient_ids is not None else (list(rule["recipients"]) if rule and rule["recipients"] else [])
     if who:
         await fan_out(conn, tenant_id, tenant, alert_id, rule_type, who, payload, quiet, hold_until=hold, critical=critical, direct_ready=direct_ready)
-    if push_on:
-        # the phone gets the alert's own name and one plain fact, not the longer message that goes by WhatsApp
-        ptitle, pbody = push_text.compose(rule_type, meta["title"], camera_name, details or {}, now.astimezone(tz).strftime("%I:%M %p").lstrip("0"), title, body or payload["location"], tamil=push_tamil)
-        await push.notify_alert(conn, tenant_id, alert_id, ptitle, pbody, level, quiet)
     return alert_id
 
 

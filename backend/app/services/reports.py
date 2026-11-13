@@ -8,7 +8,6 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from ..config import get_settings
 from ..db import db
 from ..messaging import evidence
 from . import report_builders as rb

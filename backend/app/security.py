@@ -10,7 +10,7 @@ _ISS = "gate-insight"
 
 def _secret(aud: str) -> str:
     s = get_settings()
-    return {"customer": s.jwt_secret_customer, "platform": s.jwt_secret_platform}[aud]
+    return {"platform": s.jwt_secret_platform}[aud]
 
 
 def issue_token(aud: str, claims: dict, ttl_seconds: int) -> str:

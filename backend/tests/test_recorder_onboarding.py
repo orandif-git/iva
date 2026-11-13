@@ -17,8 +17,8 @@ async def test_full_registration_flow(client, make, su):
     assert cred["server"] and cred["port"] == 7000 and KEY_RE.match(cred["key"])
     rid, dev = cred["recorder_id"], cred["device_id"]
 
-    st = (await client.get(f"/v1/recorders/{rid}/status", headers=u["headers"])).json()
-    assert st["status"] == "never" and not any(st["checks"].values())
+    row = await su.fetchrow("SELECT status::text AS status, channel_count, preview_ok_at FROM app.recorders WHERE id=$1", rid)
+    assert row["status"] == "never" and row["channel_count"] == 0 and row["preview_ok_at"] is None
 
     # The registrar fetches the key, then reports the recorder online with its channels.
     svc = make.service()
@@ -27,10 +27,10 @@ async def test_full_registration_flow(client, make, su):
                            json={"ip": "49.205.118.40", "firmware": "V5.7", "channels": [{"channel_no": n, "name": f"Cam {n}"} for n in range(1, 5)]})
     assert hb.json() == {"allowed": True}
 
-    st = (await client.get(f"/v1/recorders/{rid}/status", headers=u["headers"])).json()
-    assert st["status"] == "online" and st["checks"] == {"reached": True, "key_ok": True, "channels_found": True, "preview_ok": False}
+    row = await su.fetchrow("SELECT status::text AS status, channel_count, preview_ok_at FROM app.recorders WHERE id=$1", rid)
+    assert row["status"] == "online" and row["channel_count"] == 4 and row["preview_ok_at"] is None
     await client.post(f"/internal/v1/recorders/{dev}/preview-ok", headers=svc)
-    assert (await client.get(f"/v1/recorders/{rid}/status", headers=u["headers"])).json()["checks"]["preview_ok"] is True
+    assert await su.fetchval("SELECT preview_ok_at IS NOT NULL FROM app.recorders WHERE id=$1", rid) is True
 
     chans = (await client.get(f"/v1/recorders/{rid}/channels", headers=u["headers"])).json()
     assert [c["channel_no"] for c in chans] == [1, 2, 3, 4] and not any(c["enabled_as_camera"] for c in chans)
@@ -40,7 +40,8 @@ async def test_key_is_encrypted_at_rest_and_never_returned_again(client, make, s
     t, u, cred = await _onboard(client, make)
     raw = await su.fetchval("SELECT key_ciphertext FROM app.recorders WHERE id=$1", cred["recorder_id"])
     assert cred["key"].encode() not in bytes(raw) and cred["key"].replace("-", "").encode() not in bytes(raw)
-    assert "key" not in (await client.get(f"/v1/recorders/{cred['recorder_id']}", headers=u["headers"])).json()
+    listed = (await client.get("/v1/recorders", headers=u["headers"])).json()
+    assert listed and all("key" not in r and "key_ciphertext" not in r for r in listed)
     audit = await su.fetch("SELECT * FROM platform.audit_log WHERE target_id=$1", str(cred["recorder_id"]))
     assert audit and all(cred["key"] not in str(dict(a)) for a in audit)           # the key is never written to the audit log
 
@@ -56,7 +57,7 @@ async def test_ciphertext_is_bound_to_its_device(client, make, su):
 
 async def test_rotate_key_changes_the_key(client, make):
     t, u, cred = await _onboard(client, make)
-    new = (await client.post(f"/v1/recorders/{cred['recorder_id']}/rotate-key", headers=u["headers"])).json()
+    new = (await client.post(f"/admin/v1/recorders/{cred['recorder_id']}/new-password", headers=u["headers"])).json()
     assert new["key"] != cred["key"]
     got = (await client.get(f"/internal/v1/recorders/{cred['device_id']}/credentials", headers=make.service())).json()
     assert got["key"] == new["key"]
@@ -89,7 +90,7 @@ async def test_stale_recorders_are_marked_offline(client, make, su):
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.2.3.4", "channels": [{"channel_no": 1}]})
     await su.execute("UPDATE app.recorders SET last_heartbeat_at = now() - interval '5 minutes' WHERE id=$1", cred["recorder_id"])
     assert await mark_stale_recorders(90) >= 1
-    assert (await client.get(f"/v1/recorders/{cred['recorder_id']}/status", headers=u["headers"])).json()["status"] == "offline"
+    assert await su.fetchval("SELECT status::text FROM app.recorders WHERE id=$1", cred["recorder_id"]) == "offline"
 
 
 async def test_worker_can_fetch_a_cameras_config(client, make):

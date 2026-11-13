@@ -27,7 +27,9 @@ async def setup_cameras(client, make, plan="full", footfall=1, anpr=1, tenant=No
                VALUES ($1,$2,'other'::app.recorder_brand,'rtsp'::app.recorder_protocol,$3,'local',now()) RETURNING id""", t, device_id, b"x")
         cred = {"recorder_id": str(rid), "device_id": device_id}
     else:
-        cred = (await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])).json()
+        r = await client.post("/v1/recorders", json={"brand": "dahua"}, headers=u["headers"])
+        assert r.status_code == 201, r.text
+        cred = r.json()
     n = footfall + anpr
     await client.post(f"/internal/v1/recorders/{cred['device_id']}/heartbeat", headers=make.service(),
                       json={"ip": "1.2.3.4", "channels": [{"channel_no": i, "name": f"C{i}"} for i in range(1, n + 1)]})

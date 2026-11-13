@@ -12,7 +12,7 @@ import pytest
 from app.messaging import delivery, evidence
 from app.services import retention
 from tests.helpers import setup_cameras
-from tests.test_alert_delivery import JPEG, bsp_server, customer, smtp_server, world  # noqa: F401  (fixtures)
+from tests.test_alert_delivery import JPEG, bsp_server, customer, world  # noqa: F401  (fixtures)
 from worker.clips import ClipRecorder
 from worker.sink import BackendSink
 
@@ -106,7 +106,7 @@ async def test_the_whole_journey_the_event_waits_then_carries_the_video(client, 
     assert (await client.get(f"/e/{page_token}/clip.mp4")).content == full.content                  # same clip through the page's own token
     assert (await client.get(f"/e/{page_token}/image.jpg")).content == JPEG
     assert (await client.get(f"/e/{clip_token}/image.jpg")).status_code == 404                      # a clip token is not a picture
-    assert (await client.get("/v1/alerts", headers=u["headers"])).json()[0]["has_clip"] is True
+    assert await su.fetchval("SELECT clip_id IS NOT NULL FROM app.alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1", t) is True
 
 
 async def test_if_the_clip_never_comes_the_event_still_goes_out_after_the_wait(client, make, su, world):

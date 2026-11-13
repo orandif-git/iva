@@ -9,7 +9,7 @@ import pytest
 from app.messaging import delivery
 from app.services import alert_catalog as cat, detectors
 from tests.helpers import setup_cameras
-from tests.test_alert_delivery import JPEG, bsp_server, customer, smtp_server, world  # noqa: F401  (fixtures)
+from tests.test_alert_delivery import JPEG, bsp_server, customer, world  # noqa: F401  (fixtures)
 
 SQUARE = [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6], [0.1, 0.6]]
 
@@ -68,23 +68,6 @@ def test_a_new_database_starts_with_the_area_alerts_switched_off():
     assert "('people_in_area', false), ('queue_long', false), ('phone_use', false)" in mig
 
 
-async def test_a_customer_can_draw_only_the_kinds_of_area_they_have(client, make, su):
-    t, u, cam = await shop(client, make, su)
-    kinds = (await client.get("/v1/area-kinds", headers=u["headers"])).json()
-    assert {k["kind"] for k in kinds} == {"area_count", "queue_area", "staff_area"} and kinds[0]["settings"]
-    owner = await make.staff("owner")
-    await client.put("/admin/v1/alert-catalog/phone_use", json={"enabled": False, "reason": "not ready yet"}, headers=owner["headers"])
-    try:
-        assert {k["kind"] for k in (await client.get("/v1/area-kinds", headers=u["headers"])).json()} == {"area_count", "queue_area"}
-        r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area("staff_area")]}, headers=u["headers"])
-        assert r.status_code == 403 and r.json()["error"]["code"] == "not_available"
-    finally:
-        await client.put("/admin/v1/alert-catalog/phone_use", json={"enabled": True, "reason": "ready"}, headers=owner["headers"])
-    # a plan without the alert does not offer the area either
-    pid = "p" + uuid.uuid4().hex[:8]
-    await su.execute("INSERT INTO platform.plans (id, name, price_per_camera_paise, stream_mode, features, alert_types) VALUES ($1,$1,1000,'snapshots','{}',$2)", pid, ["camera_offline", "people_in_area"])
-    t2, u2, cam2 = await shop(client, make, su, plan=pid, anpr=0)
-    assert [k["kind"] for k in (await client.get("/v1/area-kinds", headers=u2["headers"])).json()] == ["area_count"]
 
 
 # ------------------------------------------------------------------------------------------ drawing and setting the limits
@@ -138,13 +121,6 @@ async def test_a_staff_area_needs_the_confirmation_that_staff_were_told(client, 
         assert r.status_code == 422 and r.json()["error"]["code"] == "notice_required"
 
 
-async def test_only_an_administrator_can_draw(client, make, su):
-    t, u, cam = await shop(client, make, su)
-    reg = await make.user(t, "regular")
-    assert (await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [area()]}, headers=reg["headers"])).status_code == 403
-    assert (await client.get(f"/v1/cameras/{cam}/areas", headers=reg["headers"])).status_code == 200
-    other, ou, ocam = await shop(client, make, su)
-    assert (await client.get(f"/v1/cameras/{cam}/areas", headers=ou["headers"])).status_code == 404          # another customer's camera does not exist
 
 
 async def test_the_older_counting_line_and_plate_zone_do_not_touch_the_areas(client, make, su):
@@ -335,14 +311,10 @@ def test_the_time_an_activity_area_is_watched_is_decided_by_the_shop_hours_or_th
     assert in_window(day, hours, datetime(2026, 11, 10, 14)) and not in_window(day, hours, tue_noon)
 
 
-async def test_only_the_control_center_can_draw_an_activity_area_and_its_choices_are_checked(client, make, su):
+async def test_an_activity_area_and_its_choices_are_checked(client, make, su):
     t, u, cam = await shop(client, make, su)
     (a,) = await staff_draw(client, make, t, cam, watch(target="vehicle", when="between", **{"from": "22:00", "to": "06:00"}))
     assert a["kind"] == "activity_area" and a["alert"] == "area_activity" and a["params"]["target"] == "vehicle" and a["params"]["minutes"] == 1
-    assert (await client.get(f"/v1/cameras/{cam}/areas", headers=u["headers"])).json() == []                       # the customer's own app does not know this kind
-    assert "activity_area" not in {k["kind"] for k in (await client.get("/v1/area-kinds", headers=u["headers"])).json()}
-    r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [watch()]}, headers=u["headers"])
-    assert r.status_code == 403
     owner = await make.staff("owner")
     base = f"/admin/v1/tenants/{t}/shop/cameras/{cam}/areas"
     for bad in ({"target": "dog"}, {"when": "sometimes"}, {"when": "between"}, {"when": "between", "from": "22:00", "to": "22:00"}, {"when": "between", "from": "25:00", "to": "06:00"}):

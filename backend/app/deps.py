@@ -1,10 +1,8 @@
 """Authentication and per-request database context.
 
 Rules enforced here for every route:
-  - Staff, customer and service credentials are different token audiences and never interchange.
-  - Roles are read from the database, not trusted from the token, so a disabled or demoted user loses access at once.
-  - The tenant id comes only from the verified token. Routes never read it from the URL or body in the customer API.
-  - View-as-customer sessions are read-only twice over: non-GET requests are refused, and the transaction is READ ONLY.
+  - Staff and service credentials are different token audiences and never interchange.
+  - Roles are read from the database, not trusted from the token, so a disabled or demoted person loses access at once.
 """
 import hmac
 import uuid
@@ -73,8 +71,6 @@ def admin_ctx(*roles: str):
 
     async def dep(request: Request):
         claims = verify_token("platform", _bearer(request))
-        if get_settings().staff_require_mfa and claims.get("mfa") is not True:
-            raise ApiError(401, "mfa_required", "Complete multi-factor sign-in.")
         staff_id = _uuid(claims["sub"])
         async with db.admin_tx() as conn:
             row = await conn.fetchrow("SELECT id, name, role::text AS role, status FROM platform.staff_users WHERE id=$1", staff_id)
@@ -87,7 +83,7 @@ def admin_ctx(*roles: str):
     return dep
 
 
-# ----------------------------------------------------------------------- customer
+# ----------------------------------------------------------------------- one customer's data, seen by staff (see routers/admin_shop.py)
 @dataclass
 class CustomerCtx:
     conn: object
@@ -96,45 +92,13 @@ class CustomerCtx:
     name: str
     role: str
     request_id: str
-    all_kinds: bool = False        # the Control Center sees every kind of marked area; a customer's own app sees the first three
+    all_kinds: bool = False        # the Control Center sees every kind of marked area
 
     async def audit(self, action, target_type=None, target_id=None, after=None, reason=None):
         await self.conn.execute(
             "SELECT platform.audit_from_app($1,$2,$3,$4,$5)",
             action, target_type, str(target_id) if target_id is not None else None, after, reason,
         )
-
-
-def customer_ctx(*roles: str):
-    allowed = set(roles) or {"admin", "regular"}
-
-    async def dep(request: Request):
-        claims = verify_token("customer", _bearer(request))
-        tenant_id = _uuid(claims.get("tenant_id"))
-        sub = _uuid(claims["sub"])
-
-        settings = {
-            "app.actor_id": str(sub),
-            "app.actor_name": "",
-            "app.actor_role": "",
-            "app.request_id": request.state.request_id,
-        }
-        async with db.tenant_tx(tenant_id, settings=settings) as conn:
-            tenant = await conn.fetchrow("SELECT status::text AS status FROM app.tenants WHERE id=$1", tenant_id)
-            if not tenant:
-                raise ApiError(401, "invalid_token", "Sign in again.")
-            u = await conn.fetchrow("SELECT name, role::text AS role, status FROM app.tenant_users WHERE id=$1", sub)
-            if not u or u["status"] != "active":
-                raise ApiError(401, "invalid_token", "Sign in again.")
-            name, role = u["name"], u["role"]
-            if tenant["status"] in ("suspended", "cancelled"):
-                raise ApiError(403, "tenant_suspended", "This account is suspended. Contact support.")
-            await conn.execute("SELECT set_config('app.actor_name', $1, true), set_config('app.actor_role', $2, true)", name, role)
-            if role not in allowed:
-                raise ApiError(403, "forbidden", "Only an administrator can do this.")
-            yield CustomerCtx(conn, tenant_id, sub, name, role, request.state.request_id)
-
-    return dep
 
 
 # ------------------------------------------------------------------------ service

@@ -68,8 +68,6 @@ async def test_footfall_reaches_the_backend_and_a_rerun_changes_nothing(client, 
         row = await su.fetchrow("SELECT sum(people_in)::int AS i, sum(people_out)::int AS o FROM app.footfall_counts WHERE camera_id=$1", uuid.UUID(cam))
         totals.append((row["i"], row["o"]))
     assert totals == [(2, 1), (2, 1)]
-    s = (await client.get("/v1/footfall/summary", params={"from": iso(start - timedelta(hours=1)), "to": iso(now())}, headers=u["headers"])).json()
-    assert (s["people_in"], s["people_out"], s["net"]) == (2, 1, 1)
 
 
 # ------------------------------------------------------------------------ plates
@@ -132,7 +130,7 @@ async def test_entry_and_exit_clips_are_paired_with_dwell_time_by_the_backend(cl
         run(video, gate_pipe(cam, sink, ["GJ14AW1013", "GJ14AW1O13", "GJ14AW1013"]), now() - timedelta(hours=hours_ago))
         left = await sink.close()
         assert left == 0 and sink.stats["plates_sent"] == 1, (name, dict(sink.stats), dict(sink.rejected), left)
-    items = (await client.get("/v1/plates", params={"from": iso(now() - timedelta(hours=5))}, headers=u["headers"])).json()["items"]
+    items = [dict(r) for r in await su.fetch("SELECT id, direction::text AS direction, plate_text, entry_event_id, dwell_seconds, review_status::text AS review_status FROM app.plate_events WHERE camera_id=$1", uuid.UUID(cam))]
     by_dir = {i["direction"]: i for i in items}
     assert by_dir["in"]["plate_text"] == by_dir["out"]["plate_text"] == "GJ14AW1013"
     assert by_dir["out"]["entry_event_id"] == by_dir["in"]["id"]

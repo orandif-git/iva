@@ -61,7 +61,8 @@ async def shop(client, make, su, *, phone="98765 43210", with_owner_phone=True, 
     """A customer with counting, an owner whose number is on their People list, and some counted people yesterday."""
     t, u, foot, _ = await setup_cameras(client, make, footfall=footfall, anpr=anpr)
     if with_owner_phone:
-        await su.execute("UPDATE app.tenant_users SET role='admin', phone=$2 WHERE tenant_id=$1", t, "+919876543210")
+        await su.execute("DELETE FROM platform.tenant_owner_phones WHERE phone=$1", "+919876543210")           # an owner number belongs to one customer only
+        await su.execute("INSERT INTO platform.tenant_owner_phones (tenant_id, phone, position) VALUES ($1,$2,1)", t, "+919876543210")
         rec = await client.post("/v1/recipients", json={"name": "Owner", "phone": "+919876543210", "consent_confirmed": True}, headers=u["headers"])
         assert rec.status_code == 201, rec.text
     return t, u, foot
@@ -280,47 +281,3 @@ async def test_the_key_is_kept_encrypted_and_never_read_back_and_only_the_owner_
     assert (await client.put("/admin/v1/summaries", json={"config": {"url": "http://insecure.example/x"}}, headers=world["admin"])).status_code == 422, "an address must be https"
     assert (await client.put("/admin/v1/summaries", json={"config": {"nonsense": 1}}, headers=world["admin"])).status_code == 422
 
-
-async def test_the_preview_follows_unsaved_settings_and_a_test_goes_to_the_number_given_only(client, make, su, world):
-    t, u, foot = await shop(client, make, su)
-    await count_yesterday(su, t, foot, people=12)
-    h = world["admin"]
-    p = (await client.post("/admin/v1/summaries/preview", json={"tenant_id": str(t), "kind": "daily", "config": {"closing": "See you tomorrow."}}, headers=h)).json()
-    assert p["text"].endswith("See you tomorrow.") and p["chars"] == len(p["text"]) and p["request"]["category"] == "utility" and "- 12 visitors yesterday" in p["text"]
-    saved = (await client.get("/admin/v1/summaries", headers=h)).json()["config"]
-    assert saved["closing"] != "See you tomorrow.", "a preview saves nothing"
-    r = await client.post("/admin/v1/summaries/test", json={"tenant_id": str(t), "kind": "weekly", "to": "+91 98415 42211"}, headers=h)
-    assert r.status_code == 200 and r.json()["ok"] is True and r.json()["message_id"], r.text
-    call = world["provider"].calls[-1]["body"]
-    assert call["to"] == "919841542211" and call["content"].startswith("TEST\n📊 Weekly summary")
-    assert await su.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1", t) == 0, "the customer is not told and nothing is saved for them"
-
-
-async def test_recent_sends_show_each_summary_with_its_status_and_a_hidden_number(client, make, su, world):
-    t, u, foot = await shop(client, make, su)
-    await client.put("/admin/v1/summaries", json={"config": {"daily_hour": f"{local_now().hour:02d}:00", "weekly_on": False}}, headers=world["admin"])
-    await detectors.daily_summary()
-    await send_all()
-    rows = (await client.get("/admin/v1/summaries/sends", headers=world["admin"])).json()["items"]
-    mine = [r for r in rows if r["tenant"] and r["kind"] == "Daily" and r["status"] == "sent"]
-    assert mine and mine[0]["recipient"].startswith("+91") and "•" in mine[0]["recipient"] and mine[0]["provider_message_id"].startswith("wamid.TEST")
-    assert direct.phone_digits("+91 98765-43210") == "919876543210"
-
-
-async def test_the_phone_gets_the_two_line_headline_with_tamil_and_this_can_be_switched_off(client, make, su, world):
-    t, u, foot = await shop(client, make, su)
-    await count_yesterday(su, t, foot, people=40)
-    s = await compose(su, t)
-    assert s["headline"].startswith("40 visitors yesterday.") and "வருகையாளர்கள்" in s["headline_ta"]
-    from app.services import push_text
-    title, body = push_text.compose("daily_summary", "Daily system summary", "All cameras", {"headline": s["headline"], "headline_ta": s["headline_ta"]}, "", "t", "b", tamil=True)
-    assert title == "Daily system summary" and body.split("\n")[0] == s["headline"] and len(body.split("\n")) == 2
-
-
-async def test_the_home_screen_gets_the_newest_summary_whole(client, make, su, world):
-    t, u, foot = await shop(client, make, su)
-    assert (await client.get("/v1/summary", headers=u["headers"])).json() == {"summary": None}
-    await client.put("/admin/v1/summaries", json={"config": {"daily_hour": f"{local_now().hour:02d}:00", "weekly_on": False}}, headers=world["admin"])
-    await detectors.daily_summary()
-    s = (await client.get("/v1/summary", headers=u["headers"])).json()["summary"]
-    assert s["kind"] == "daily" and s["text"].startswith("📊 Daily summary") and "SYSTEM" in s["text"] and s["created_at"]

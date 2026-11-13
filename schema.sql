@@ -889,6 +889,7 @@ CREATE TABLE IF NOT EXISTS platform.tenant_owner_phones (
   PRIMARY KEY (tenant_id, position)
 );
 GRANT SELECT, INSERT, UPDATE, DELETE ON platform.tenant_owner_phones TO platform_admin;
+GRANT SELECT ON platform.tenant_owner_phones TO service_worker;
 
 -- Grants
 GRANT EXECUTE ON FUNCTION app.ensure_plate_partition(date) TO platform_admin, service_worker;

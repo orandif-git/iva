@@ -3,7 +3,7 @@
 Every text cell is written as a string, never as a formula. A camera name or a note a customer typed could start with "=" and would
 otherwise run as a formula when someone opens the file (formula injection)."""
 import io
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

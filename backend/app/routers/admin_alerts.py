@@ -4,7 +4,7 @@ A plan decides which alerts its customers have (see admin_plans.py). Here the ow
 A customer sees an alert only when it is built, switched on here, and part of their plan or added for them (see services/alert_catalog.py)."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
@@ -114,45 +114,7 @@ async def _tenant(ctx: AdminCtx, tenant_id: UUID):
     return t
 
 
-@router.get("/tenants/{tenant_id}/alerts")
-async def tenant_alerts(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
-    await _tenant(ctx, tenant_id)
-    plan, plan_name = await cat.plan_types(ctx.conn, tenant_id)
-    added = await cat.added_types(ctx.conn, tenant_id)
-    off = await cat.platform_off(ctx.conn)
-    items = []
-    for k in cat.LISTED:
-        if k in plan or k in added:
-            items.append({**_entry(k), "source": "plan" if k in plan else "added", "also_added": k in plan and k in added, "visible": cat.CATALOG[k]["built"] and k not in off})
-    return {"plan": plan_name, "items": items, "available": [_entry(k) for k in cat.LISTED if k not in plan and k not in added and cat.CATALOG[k]["built"]]}
-
-
 class Reason(Strict):
     reason: str = Field(min_length=5, max_length=500)
 
 
-@router.put("/tenants/{tenant_id}/alerts/{alert_type}", status_code=201)
-async def add_alert(tenant_id: UUID, alert_type: str, body: Reason, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    t = await _tenant(ctx, tenant_id)
-    if alert_type not in cat.CATALOG:
-        raise ApiError(404, "alert_not_found", "There is no alert with that name.")
-    if not cat.CATALOG[alert_type]["built"]:
-        raise ApiError(409, "alert_not_built", "This alert is not built yet, so it cannot be added.")
-    plan, _ = await cat.plan_types(ctx.conn, tenant_id)
-    if alert_type in plan:
-        raise ApiError(409, "already_in_plan", "This customer already has this alert through their plan.")
-    if not await ctx.conn.fetchval("INSERT INTO app.tenant_alert_grants (tenant_id, alert_type, granted_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING 1", tenant_id, alert_type, ctx.staff.id):
-        raise ApiError(409, "already_added", "This alert was already added for this customer.")
-    await ctx.audit("tenant.alert_add", tenant_id=tenant_id, target_type="alert", target_id=alert_type, reason=body.reason, after={"tenant": t["name"], "alert": alert_type})
-    return {"type": alert_type, "source": "added"}
-
-
-@router.delete("/tenants/{tenant_id}/alerts/{alert_type}", status_code=204)
-async def remove_alert(tenant_id: UUID, alert_type: str, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    t = await _tenant(ctx, tenant_id)
-    plan, _ = await cat.plan_types(ctx.conn, tenant_id)
-    if alert_type in plan:
-        raise ApiError(409, "from_plan", "This alert comes from the customer's plan. Change the plan to remove it.")
-    if not await ctx.conn.fetchval("DELETE FROM app.tenant_alert_grants WHERE tenant_id=$1 AND alert_type=$2 RETURNING 1", tenant_id, alert_type):
-        raise ApiError(404, "alert_not_added", "This alert was not added for this customer.")
-    await ctx.audit("tenant.alert_remove", tenant_id=tenant_id, target_type="alert", target_id=alert_type, reason=reason, before={"tenant": t["name"], "alert": alert_type})

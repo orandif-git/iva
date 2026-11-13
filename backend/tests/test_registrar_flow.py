@@ -84,8 +84,8 @@ async def test_a_recorder_registers_end_to_end(env, client, su, transport):
     assert "INVITE" in dev.seen and "ACK" in dev.seen
     await env.until(lambda: _bye(dev))
     assert f"m=video" in dev.invite_sdp and "a=recvonly" in dev.invite_sdp and "y=0" in dev.invite_sdp
-    st = (await client.get(f"/v1/recorders/{cred['recorder_id']}/status", headers=u["headers"])).json()
-    assert st["checks"] == {"reached": True, "key_ok": True, "channels_found": True, "preview_ok": True}
+    row = await su.fetchrow("SELECT status::text AS status, channel_count, preview_ok_at FROM app.recorders WHERE id=$1", cred["recorder_id"])
+    assert row["status"] == "online" and row["channel_count"] == 2 and row["preview_ok_at"] is not None
 
     assert await dev.keepalive() == 200
 

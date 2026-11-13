@@ -68,7 +68,7 @@ async def change_my_password(body: MePassword, ctx: AdminCtx = Depends(admin_ctx
     passwords.check_policy(body.new_password, u["email"])
     keep = await _my_family(ctx.conn, u["id"], body.refresh_token)
     await ctx.conn.execute("UPDATE platform.staff_users SET password_hash=$2, failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], await passwords.hash_async(body.new_password))
-    await auth.revoke_all(ctx.conn, "staff", u["id"], except_family=keep)
+    await auth.revoke_all(ctx.conn, u["id"], except_family=keep)
     await ctx.audit("staff.password_change", target_type="staff", target_id=u["id"], after={"other_devices_signed_out": True})
 
 
@@ -77,7 +77,7 @@ async def sign_out_my_other_devices(body: MeDevices, ctx: AdminCtx = Depends(adm
     keep = await _my_family(ctx.conn, ctx.staff.id, body.refresh_token)
     if keep is None:
         raise ApiError(409, "no_session", "Sign in again first, so this device can be kept signed in.")
-    await auth.revoke_all(ctx.conn, "staff", ctx.staff.id, except_family=keep)
+    await auth.revoke_all(ctx.conn, ctx.staff.id, except_family=keep)
     await ctx.audit("staff.sign_out_others", target_type="staff", target_id=ctx.staff.id)
     return {"devices": await _devices(ctx.conn, ctx.staff.id)}
 
@@ -146,36 +146,3 @@ def _since(ts) -> str:
     return f"{secs // 86400} d"
 
 
-@router.get("/overview/attention")
-async def attention(ctx: AdminCtx = Depends(admin_ctx())):
-    """Things a person should look at, most urgent first. Money items are for the owner only."""
-    c, items = ctx.conn, []
-    for r in await c.fetch(
-            """SELECT r.id, r.device_id, r.name, t.name AS tenant, r.last_heartbeat_at FROM app.recorders r JOIN app.tenants t ON t.id=r.tenant_id
-               WHERE r.status='offline' AND t.status NOT IN ('suspended','cancelled') ORDER BY r.last_heartbeat_at NULLS LAST LIMIT 20"""):
-        items.append({"id": f"rec-off-{r['id']}", "severity": "critical", "kind": "recorder_offline", "title": f"{r['name'] or r['device_id']} offline for {_since(r['last_heartbeat_at'])}",
-                      "subtitle": f"{r['tenant']} · {r['device_id']}", "age": _since(r["last_heartbeat_at"]), "target": {"type": "recorder", "id": str(r["id"])}})
-    for r in await c.fetch(
-            """SELECT r.id, r.device_id, r.name, t.name AS tenant, r.created_at FROM app.recorders r JOIN app.tenants t ON t.id=r.tenant_id
-               WHERE r.status='never' AND r.created_at < now() - interval '24 hours' AND t.status NOT IN ('suspended','cancelled') ORDER BY r.created_at LIMIT 20"""):
-        items.append({"id": f"rec-never-{r['id']}", "severity": "warning", "kind": "recorder_never_connected", "title": f"{r['name'] or r['device_id']} has never connected",
-                      "subtitle": f"{r['tenant']} · created {_since(r['created_at'])} ago", "age": _since(r["created_at"]), "target": {"type": "recorder", "id": str(r["id"])}})
-    if ctx.staff.role == "owner":
-        for r in await c.fetch(
-                """SELECT i.id, i.number, i.total_paise, i.due_at, t.id AS tenant_id, t.name AS tenant FROM app.invoices i JOIN app.tenants t ON t.id=i.tenant_id
-                   WHERE i.status='issued' AND i.due_at < now() ORDER BY i.due_at LIMIT 20"""):
-            items.append({"id": f"inv-{r['id']}", "severity": "warning", "kind": "invoice_overdue", "title": f"Invoice {_since(r['due_at'])} overdue · ₹{r['total_paise'] / 100:,.0f}",
-                          "subtitle": f"{r['tenant']} · {r['number'] or 'draft'}", "age": _since(r["due_at"]), "target": {"type": "invoice", "id": str(r["id"]), "tenant_id": str(r["tenant_id"])}})
-    for r in await c.fetch(
-            """SELECT t.id, t.name, t.trial_ends_at, (SELECT count(*) FROM app.cameras c WHERE c.tenant_id=t.id) AS cams, t.camera_limit
-               FROM app.tenants t WHERE t.status='trial' AND t.trial_ends_at BETWEEN now() AND now() + interval '3 days' ORDER BY t.trial_ends_at LIMIT 20"""):
-        left = max(0, (r["trial_ends_at"] - datetime.now(timezone.utc)).days)
-        items.append({"id": f"trial-{r['id']}", "severity": "info", "kind": "trial_ending", "title": f"Trial ends in {left} {'day' if left == 1 else 'days'}",
-                      "subtitle": f"{r['name']} · {r['cams']} of {r['camera_limit']} cameras set up", "age": f"{left} d", "target": {"type": "customer", "id": str(r["id"])}})
-    failed = await c.fetchrow("SELECT count(*) AS n, count(DISTINCT tenant_id) AS tenants FROM app.notifications WHERE status='failed' AND created_at >= date_trunc('day', now())")
-    if failed["n"]:
-        items.append({"id": "msg-failed-today", "severity": "warning", "kind": "messages_failed", "title": f"{failed['n']} message{'s' if failed['n'] != 1 else ''} failed today",
-                      "subtitle": f"Across {failed['tenants']} customer{'s' if failed['tenants'] != 1 else ''}", "age": "today", "target": {"type": "messaging", "id": None}})
-    order = {"critical": 0, "warning": 1, "info": 2}
-    items.sort(key=lambda x: order[x["severity"]])
-    return {"items": items}

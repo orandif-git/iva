@@ -24,13 +24,6 @@ async def test_hikvision_and_isup_are_refused_for_customers(client, make, su, bo
     assert await _count(su, t) == 0
 
 
-@pytest.mark.parametrize("body", [{"brand": "other"}, {"brand": "other", "protocol": "gb28181"}, {"brand": "dahua", "protocol": "gb28181"}])
-async def test_customers_cannot_add_other_brands_or_gb28181(client, make, su, body):
-    t = await make.tenant()
-    u = await make.user(t)
-    r = await client.post("/v1/recorders", json=body, headers=u["headers"])
-    assert r.status_code == 403 and r.json()["error"]["code"] == "staff_only"
-    assert await _count(su, t) == 0
 
 
 async def test_staff_can_add_gb28181_and_other_brand_recorders_and_it_is_audited(client, make, su):

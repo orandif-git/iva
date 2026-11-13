@@ -1,10 +1,8 @@
-"""Push notifications to the customer app (phones and browsers), through Firebase Cloud Messaging.
+"""Sending a push notification through Firebase Cloud Messaging (phones and browsers).
 
-Push is an addition to WhatsApp, not a replacement: an alert is still sent by WhatsApp, and also pushed to every device signed in to the account
-that has agreed to notifications. It is best effort (no retries; a device that has gone is forgotten), and it is off until a Firebase project is set up:
+Kept ready for a future phone app. Nothing in the product sends alerts by push today: alerts go out by WhatsApp. Push is off until a Firebase project is set up:
 GI_FCM_PROJECT_ID and GI_FCM_SERVICE_ACCOUNT_FILE (the path to the service-account key file, which is never put in the database or in settings text).
-Nothing in a notification identifies a person's data beyond the alert's own title: the app opens and fetches the rest after sign-in."""
-import asyncio
+`deliver` sends one notification to a list of device tokens, best effort (no retries; a device that has gone is forgotten from app.push_devices)."""
 import json
 import logging
 import time
@@ -19,7 +17,6 @@ log = logging.getLogger("gateinsight.push")
 SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 transport: httpx.AsyncBaseTransport | None = None        # tests replace this with a stand-in for Google
 _token: tuple[float, str] | None = None
-_tasks: set = set()
 
 
 def enabled() -> bool:
@@ -90,15 +87,3 @@ async def deliver(tokens: list[str], title: str, body: str, data: dict[str, str]
         except Exception as e:
             log.warning("could not forget old devices: %s", type(e).__name__)
     return out
-
-
-async def notify_alert(conn, tenant_id, alert_id, title: str, body: str, severity: str, quiet: bool) -> None:
-    """Push a new alert to the account's devices. Called when an alert is raised; sends in the background so the alert itself is never held up."""
-    if not enabled() or quiet or severity == "info":
-        return
-    tokens = [r["token"] for r in await conn.fetch("SELECT token FROM app.push_devices WHERE tenant_id=$1", tenant_id)]
-    if not tokens:
-        return
-    t = asyncio.get_event_loop().create_task(deliver(tokens, title, body, {"kind": "alert", "alert_id": str(alert_id)}))
-    _tasks.add(t)
-    t.add_done_callback(_tasks.discard)

@@ -1,6 +1,6 @@
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from uuid import UUID
 
 import asyncpg
@@ -9,8 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
 from ..pagination import decode_cursor, encode_cursor
-from ..schemas import PlanIn, ReasonIn, TenantCreate, TenantOut, TenantPatch
-from ..security import issue_token
+from ..schemas import ReasonIn, TenantCreate, TenantOut, TenantPatch
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
 
@@ -71,21 +70,9 @@ async def list_tenants(
     return {"items": [TenantOut(**r) for r in rows], "next_cursor": nxt}
 
 
-@router.get("/tenants/{tenant_id}/health")
-async def tenant_health(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
-    """How a customer is doing right now, for the customer page."""
-    await _get(ctx, tenant_id)
-    c = ctx.conn
-    cams = await c.fetchrow("SELECT count(*) FILTER (WHERE enabled) AS enabled, count(*) FILTER (WHERE enabled AND stream_state='streaming') AS streaming, max(last_frame_at) AS last_frame FROM app.cameras WHERE tenant_id=$1", tenant_id)
-    login = await c.fetchval("SELECT max(last_login_at) FROM app.tenant_users WHERE tenant_id=$1", tenant_id)
-    return {"cameras_enabled": cams["enabled"], "cameras_streaming": cams["streaming"], "last_frame_at": cams["last_frame"], "last_sign_in_at": login,
-            "alerts_7d": await c.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND created_at > now() - interval '7 days'", tenant_id),
-            "messages_failed_7d": await c.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1 AND status='failed' AND created_at > now() - interval '7 days'", tenant_id)}
-
-
 def _owner_phones(raw: list[str]) -> list[str]:
     """The owner's numbers in one form (+91XXXXXXXXXX). The same number twice is refused."""
-    from .customer_alerts import normalize_phone
+    from .shop_alerts import normalize_phone
     out = [normalize_phone(p) for p in raw]
     if len(set(out)) != len(out):
         raise ApiError(422, "duplicate_owner_phone", "The same number is entered twice.")
@@ -208,21 +195,6 @@ async def delete_tenant(tenant_id: UUID, reason: str = Query(..., min_length=5, 
     before = await _get(ctx, tenant_id)
     await ctx.audit("tenant.delete", tenant_id=None, target_type="tenant", target_id=tenant_id, reason=reason, before={"name": before["name"], "status": before["status"]})
     await ctx.conn.execute("DELETE FROM app.tenants WHERE id=$1", tenant_id)
-
-
-@router.post("/tenants/{tenant_id}/plan", response_model=TenantOut)
-async def change_plan(tenant_id: UUID, body: PlanIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    plan = await ctx.conn.fetchrow("SELECT id, features FROM platform.plans WHERE id=$1 AND active", body.plan_id)
-    if not plan:
-        raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
-    before = await _get(ctx, tenant_id)
-    if before["plan_id"] == body.plan_id:
-        raise ApiError(409, "same_plan", "The tenant is already on this plan.")
-    if not plan["features"].get("anpr") and await ctx.conn.fetchval("SELECT count(*) FROM app.cameras WHERE tenant_id=$1 AND use_anpr AND enabled", tenant_id):
-        raise ApiError(409, "plan_feature_in_use", "Cameras are using number plate reading, which this plan does not include. Turn it off first.")
-    await ctx.conn.execute("UPDATE app.tenants SET plan_id=$2, price_override_paise=NULL WHERE id=$1", tenant_id, body.plan_id)
-    await ctx.audit("plan.change", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, before={"plan_id": before["plan_id"]}, after={"plan_id": body.plan_id})
-    return await _get(ctx, tenant_id)
 
 
 # ------------------------------------------------------------ view as customer

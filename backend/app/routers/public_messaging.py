@@ -2,12 +2,10 @@
 
 It is protected by an unguessable signed token that expires."""
 import html
-import json
 import re
-from uuid import UUID
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, Response
 
 from ..db import db
 from ..errors import ApiError

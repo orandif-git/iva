@@ -8,7 +8,7 @@ import pytest
 from app.messaging import evidence
 from app.services import detectors
 from tests.helpers import iso, now, setup_cameras
-from tests.test_alert_delivery import JPEG, bsp_server, customer, smtp_server, world  # noqa: F401  (fixtures)
+from tests.test_alert_delivery import JPEG, bsp_server, customer, world  # noqa: F401  (fixtures)
 from tests.test_area_alerts import alerts_of, area, draw, report, shop, steady, turn_on
 from tests.test_storage import read_with_picture
 
@@ -82,39 +82,10 @@ async def alert_with_picture(client, make, su):
     return t, u, cam, alert, eid
 
 
-async def test_a_signed_in_customer_gets_the_alerts_picture_and_nobody_else_does(client, make, su):
-    t, u, cam, alert, eid = await alert_with_picture(client, make, su)
-    assert alert["has_evidence"] is True
-    r = await client.get(f"/v1/alerts/{alert['id']}/image", headers=u["headers"])
-    assert r.status_code == 200 and r.content == JPEG and r.headers["content-type"] == "image/jpeg" and "private" in r.headers["cache-control"]
-    other = await make.user(await make.tenant())
-    assert (await client.get(f"/v1/alerts/{alert['id']}/image", headers=other["headers"])).status_code == 404
-    assert (await client.post(f"/v1/alerts/{alert['id']}/evidence-link", headers=other["headers"])).status_code == 404
-    assert (await client.get(f"/v1/alerts/{alert['id']}/image")).status_code == 401
-    assert (await client.get(f"/v1/alerts/{uuid.uuid4()}/image", headers=u["headers"])).json()["error"]["code"] == "alert_not_found"
 
 
-async def test_the_link_made_in_the_app_opens_the_evidence_page_for_an_hour_and_is_logged(client, make, su):
-    t, u, cam, alert, eid = await alert_with_picture(client, make, su)
-    r = await client.post(f"/v1/alerts/{alert['id']}/evidence-link", headers=u["headers"])
-    assert r.status_code == 200, r.text
-    j = r.json()
-    assert j["expires_in_minutes"] == 60 and j["has_image"] is True and j["url"].startswith("https://gi.test/e/")
-    page = await client.get(j["url"].replace("https://gi.test", ""))
-    assert page.status_code == 200 and "image.jpg" in page.text
-    token = j["url"].rsplit("/", 1)[1]
-    parsed, expired = evidence.read_token(token)
-    assert str(parsed) == eid and not expired
-    assert evidence.read_token(evidence.make_token(parsed, 60 * 60, now=0))[1] is True, "and it does lapse"
-    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE tenant_id=$1 AND action='alert.evidence_link'", t) == 1
 
 
-async def test_after_the_retention_period_the_picture_says_it_is_gone(client, make, su):
-    t, u, cam, alert, eid = await alert_with_picture(client, make, su)
-    await su.execute("UPDATE app.evidence SET expires_at = now() - interval '1 minute' WHERE id=$1", uuid.UUID(eid))
-    r = await client.get(f"/v1/alerts/{alert['id']}/image", headers=u["headers"])
-    assert r.status_code == 404 and r.json()["error"]["code"] == "picture_not_found"
-    assert (await client.post(f"/v1/alerts/{alert['id']}/evidence-link", headers=u["headers"])).status_code == 404
 
 
 async def test_the_picture_interval_is_a_setting_of_the_area_and_is_checked(client, make, su):

@@ -114,17 +114,6 @@ class RecorderCreateAdmin(Strict):
     reason: Reason
 
 
-class RecorderCreateCustomer(Strict):
-    brand: Brand
-    protocol: Protocol | None = None
-    site_id: UUID | None = None
-    name: Name | None = None
-
-
-class RecorderPatch(Strict):
-    name: Name | None = None                 # send null to clear the name and show the id again
-
-
 class RecorderCredentials(BaseModel):
     """Returned once. The key is not retrievable afterwards, only replaceable."""
     recorder_id: UUID
@@ -150,13 +139,6 @@ class RecorderConnection(BaseModel):
     server_id: str | None = None
     domain: str | None = None
     viewer_user: str | None = None
-
-
-class RecorderStatus(BaseModel):
-    status: str
-    checks: dict[str, bool]
-    channel_count: int
-    last_heartbeat_at: datetime | None
 
 
 class ChannelOut(BaseModel):
@@ -188,21 +170,6 @@ class CameraPatch(Strict):
     use_footfall: bool | None = None
     use_anpr: bool | None = None
     stream: Literal["sub", "main"] | None = None
-
-
-class CameraOut(BaseModel):
-    id: UUID
-    connection: str = "recorder"
-    recorder_id: UUID | None = None
-    channel_no: int | None = None
-    name: str
-    enabled: bool
-    use_footfall: bool
-    use_anpr: bool
-    use_areas: bool = False
-    stream: str
-    last_frame_at: datetime | None
-    stream_state: str
 
 
 class ZoneIn(Strict):
@@ -304,13 +271,6 @@ class ZonesPut(Strict):
     zones: list[ZoneIn] = Field(max_length=2)
 
 
-class ZoneOut(BaseModel):
-    id: UUID
-    kind: str
-    points: list
-    in_direction: list | None
-
-
 # ------------------------------------------------------------------- internal
 class ChannelIn(Strict):
     channel_no: int = Field(ge=1, le=256)
@@ -387,12 +347,6 @@ class IngestResult(BaseModel):
 
 
 # ----------------------------------------------------------------- events: queries
-class FootfallPoint(BaseModel):
-    bucket: datetime
-    people_in: int
-    people_out: int
-
-
 class PlateOut(BaseModel):
     id: int
     camera_id: UUID
@@ -408,21 +362,43 @@ class PlateOut(BaseModel):
     blocked: bool
 
 
-class PlateDetail(PlateOut):
-    plate_raw: str | None
-    entry: PlateOut | None = None           # for an "out" read: the matching "in"
-    exit: PlateOut | None = None            # for an "in" read: the matching "out"
+# --------------------------------------------------------- frame rate and stream source
+class FrameStatusIn(Strict):
+    state: Literal["streaming", "reconnecting", "offline"]
+    analysis_fps: float | None = Field(None, ge=0, le=60)
+    dropped: int | None = Field(None, ge=0, le=2_000_000_000)      # pictures dropped this run because analysis fell behind
+    error: str | None = Field(None, max_length=200)
 
 
-class PlateReview(Strict):
-    plate_text: str | None = Field(None, max_length=20)
-    confirm: bool = False
+# --------------------------------------------------------------------------------------------- sign-in
+Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+Secret = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 
-    @model_validator(mode="after")
-    def _one(self):
-        if bool(self.plate_text) == bool(self.confirm):
-            raise ValueError("send either plate_text (a correction) or confirm=true")
-        return self
+
+class StaffLoginIn(Strict):
+    email: Email
+    password: Secret
+
+
+class RefreshIn(Strict):
+    refresh_token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
+
+
+class SetPasswordIn(Strict):
+    token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
+    password: Secret
+
+
+class StaffCreateIn(Strict):
+    name: Name
+    email: Email
+    role: Literal["owner", "admin", "onboarding", "support"] = "support"
+
+
+class StaffPatchIn(Strict):
+    name: Name | None = None
+    email: Email | None = None
+    role: Literal["owner", "admin", "onboarding", "support"] | None = None
 
 
 class ListEntryIn(Strict):
@@ -431,16 +407,6 @@ class ListEntryIn(Strict):
     note: str | None = Field(None, max_length=200)
 
 
-class ListEntryOut(BaseModel):
-    id: UUID
-    plate_text: str
-    list_type: str
-    note: str | None
-    created_at: datetime
-
-
-
-# --------------------------------------------------------- frame rate and stream source
 class FrameRatePatch(Strict):
     """Set any of these. Parts you leave out keep their current value."""
     mode: Literal["adaptive", "fixed"] | None = None
@@ -459,76 +425,3 @@ class FrameRatePatch(Strict):
 class SourceIn(Strict):
     url: str = Field(min_length=8, max_length=500)
     reason: Reason
-
-
-class FrameStatusIn(Strict):
-    state: Literal["streaming", "reconnecting", "offline"]
-    analysis_fps: float | None = Field(None, ge=0, le=60)
-    dropped: int | None = Field(None, ge=0, le=2_000_000_000)      # pictures dropped this run because analysis fell behind
-    error: str | None = Field(None, max_length=200)
-
-
-# --------------------------------------------------------------------------------------------- sign-in
-Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-Secret = Annotated[str, StringConstraints(min_length=1, max_length=200)]
-
-
-class LoginIn(Strict):
-    email: Email
-    password: Secret
-    tenant: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None     # only needed if the email is in several organisations
-
-
-class SignInIn(Strict):
-    email: Email
-    password: Secret
-    tenant: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None
-    code: Annotated[str, StringConstraints(strip_whitespace=True, max_length=8)] | None = None
-
-
-class StaffLoginIn(Strict):
-    email: Email
-    password: Secret
-    code: Annotated[str, StringConstraints(strip_whitespace=True, max_length=8)] | None = None      # needed unless the server runs without two-step sign-in
-
-
-class RefreshIn(Strict):
-    refresh_token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
-
-
-class SetPasswordIn(Strict):
-    token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
-    password: Secret
-
-
-class ChangePasswordIn(Strict):
-    current_password: Secret
-    new_password: Secret
-    sign_out_others: bool = True                       # sign out every other device and browser (the default)
-    refresh_token: str | None = Field(None, max_length=600)         # this device's own session, so it stays signed in
-
-
-class UserPatchIn(Strict):
-    name: Name | None = None
-    email: Email | None = None
-    role: Literal["admin", "regular"] | None = None
-    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)] | None = None
-
-
-class StaffCreateIn(Strict):
-    name: Name
-    email: Email
-    role: Literal["owner", "admin", "onboarding", "support"] = "support"
-
-
-class StaffPatchIn(Strict):
-    name: Name | None = None
-    email: Email | None = None
-    role: Literal["owner", "admin", "onboarding", "support"] | None = None
-
-
-class UserInviteIn(Strict):
-    email: Email
-    name: Name
-    role: Literal["admin", "regular"] = "admin"
-    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)] | None = None

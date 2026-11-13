@@ -42,7 +42,7 @@ DEFAULTS = {
     # what
     "title": "📊 {kind} summary · {date} · {customer}", "date_style": "num", "heads": ["BUSINESS", "SYSTEM", "NEEDS A LOOK"], "bullet": "- ",
     "max_problems": 3, "all_fine": "Everything is fine.", "closing": "Open the Jas iVision app for details.", "show_limit": True,
-    "push_on": True, "push_ta": True, "lines": DEFAULT_LINES,
+    "lines": DEFAULT_LINES,
 }
 
 

@@ -20,9 +20,18 @@ async def post(client, make, events):
 
 
 async def plates(client, u, **params):
-    r = await client.get("/v1/plates", params={"from": iso(now() - timedelta(days=2)), **params}, headers=u["headers"])
-    assert r.status_code == 200, r.text
-    return r.json()
+    """The plate reads of the customer, newest first, as saved (what the Vehicles page is built from)."""
+    from app.db import db
+    where, args = ["tenant_id=$1", "seen_at >= now() - interval '2 days'"], [u["tenant_id"]]
+    if "direction" in params:
+        args.append(params["direction"]); where.append(f"direction = ${len(args)}::app.direction")
+    if "blocked" in params:
+        where.append(("" if params["blocked"] else "NOT ") + "EXISTS (SELECT 1 FROM app.vehicle_lists v WHERE v.tenant_id = p.tenant_id AND v.plate_text = p.plate_text AND v.list_type = 'blocked')")
+    async with db.admin_tx() as c:
+        rows = await c.fetch(f"""SELECT id, seen_at, plate_text, plate_raw, confidence::int AS confidence, direction::text AS direction, review_status::text AS review_status,
+                                        entry_event_id, dwell_seconds, (evidence_id IS NOT NULL) AS has_snapshot
+                                 FROM app.plate_events p WHERE {' AND '.join(where)} ORDER BY seen_at DESC, id DESC""", *args)
+    return {"items": [dict(r) for r in rows]}
 
 
 async def test_reads_are_cleaned_and_flagged_for_review_when_unsure(client, make):
@@ -53,11 +62,8 @@ async def test_exit_is_matched_to_entry_and_dwell_time_is_recorded(client, make)
     items = {i["plate_text"]: i for i in (await plates(client, u, direction="out"))["items"]}
     assert items["GJ14AW1013"]["dwell_seconds"] in range(7199, 7202) and items["GJ14AW1013"]["entry_event_id"]
     assert items["KA01A1234"]["entry_event_id"] is None                          # left without a recorded entry
-    detail = (await client.get(f"/v1/plates/{items['GJ14AW1013']['id']}", headers=u["headers"])).json()
-    assert detail["entry"]["direction"] == "in" and detail["plate_raw"] == "GJ14AW1013"
-    entry_id = detail["entry"]["id"]
-    back = (await client.get(f"/v1/plates/{entry_id}", headers=u["headers"])).json()
-    assert back["exit"]["id"] == detail["id"]
+    entry = [i for i in (await plates(client, u, direction="in"))["items"] if i["id"] == items["GJ14AW1013"]["entry_event_id"]]
+    assert len(entry) == 1 and entry[0]["direction"] == "in" and entry[0]["plate_text"] == "GJ14AW1013", "the exit points at its own entry"
 
 
 async def test_one_entry_can_be_used_by_only_one_exit(client, make):
@@ -114,93 +120,24 @@ async def test_rejections_name_the_reason(client, make, su):
     assert (await client.post("/internal/v1/events/plates", json={"events": [pe(cam)] * 201}, headers=make.service())).status_code == 422
 
 
-async def test_search_filters_and_pages(client, make):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    evs = [pe(cam, f"GJ14AW{1000 + i}", ago=timedelta(minutes=10 + 3 * i), direction="in" if i % 2 else "out") for i in range(7)] + [pe(cam, "MH12AB1234", ago=timedelta(minutes=2))]
-    await post(client, make, evs)
-    assert len((await plates(client, u))["items"]) == 8
-    assert {i["plate_text"] for i in (await plates(client, u, q="mh12"))["items"]} == {"MH12AB1234"}
-    assert len((await plates(client, u, q="GJ14"))["items"]) == 7
-    assert len((await plates(client, u, direction="out"))["items"]) == 4
-    seen, cursor = [], None
-    while True:
-        page = await plates(client, u, limit=3, **({"cursor": cursor} if cursor else {}))
-        seen += [i["id"] for i in page["items"]]
-        cursor = page["next_cursor"]
-        if not cursor:
-            break
-    assert len(seen) == 8 and len(set(seen)) == 8                                  # no gaps or repeats across pages
-    r = await client.get("/v1/plates", params={"from": iso(now() - timedelta(days=200)), "to": iso(now())}, headers=u["headers"])
-    assert r.json()["error"]["code"] == "bad_range"
-
-
-async def test_review_queue_confirm_and_correct_with_audit(client, make, su):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    await post(client, make, [pe(cam, "GJ14AW1013", ago=timedelta(hours=2), direction="in"), pe(cam, "GJ14AW1O13", ago=timedelta(minutes=50), conf=45, direction="out", track="X")])
-    q = (await client.get("/v1/plates/review-queue", headers=u["headers"])).json()["items"]
-    assert len(q) == 1 and q[0]["review_status"] == "needs_review" and q[0]["entry_event_id"] is None
-    pid = q[0]["id"]
-    for bad in ("GJ14AW1O13", "nonsense", ""):
-        assert (await client.patch(f"/v1/plates/{pid}", json={"plate_text": bad}, headers=u["headers"])).status_code in (422,)
-    assert (await client.patch(f"/v1/plates/{pid}", json={}, headers=u["headers"])).status_code == 422
-    assert (await client.patch(f"/v1/plates/{pid}", json={"plate_text": "GJ14AW1013", "confirm": True}, headers=u["headers"])).status_code == 422
-    fixed = (await client.patch(f"/v1/plates/{pid}", json={"plate_text": "gj14aw1013"}, headers=u["headers"])).json()
-    assert fixed["plate_text"] == "GJ14AW1013" and fixed["review_status"] == "corrected"
-    assert fixed["entry_event_id"] and fixed["dwell_seconds"] in range(4199, 4202)    # the corrected exit found its entry
-    assert (await client.get("/v1/plates/review-queue", headers=u["headers"])).json()["items"] == []
-    ok = (await client.patch(f"/v1/plates/{pid}", json={"confirm": True}, headers=u["headers"])).json()
-    assert ok["review_status"] == "confirmed"
-    log = await su.fetch("SELECT action, after FROM platform.audit_log WHERE tenant_id=$1 AND action='plate.review' ORDER BY id", t)
-    after = [json.loads(l["after"]) for l in log]
-    assert [a["status"] for a in after] == ["corrected", "confirmed"]
-    assert after[0]["from"] == "GJ14AW1013" and after[0]["to"] == "GJ14AW1013"      # the stored text was already cleaned; a person verified it
-    assert (await client.get(f"/v1/plates/{pid}", headers=u["headers"])).json()["plate_raw"] == "GJ14AW1O13"     # the raw OCR text is kept
-
-
-async def test_confirming_an_invalid_read_is_refused(client, make):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    await post(client, make, [pe(cam, "HR55AB??21")])
-    pid = (await client.get("/v1/plates/review-queue", headers=u["headers"])).json()["items"][0]["id"]
-    r = await client.patch(f"/v1/plates/{pid}", json={"confirm": True}, headers=u["headers"])
-    assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_plate"
-
-
-async def test_regular_users_and_staff_views_cannot_change_reads(client, make):
-    t, u, _, (cam,) = await setup_cameras(client, make)
-    await post(client, make, [pe(cam, conf=30)])
-    pid = (await plates(client, u))["items"][0]["id"]
-    regular = await make.user(t, role="regular")
-    assert (await client.get("/v1/plates", params={"from": iso(now() - timedelta(days=1))}, headers=regular["headers"])).status_code == 200
-    assert (await client.patch(f"/v1/plates/{pid}", json={"confirm": True}, headers=regular["headers"])).status_code == 403
-    assert (await client.get("/v1/plates/review-queue", headers=regular["headers"])).status_code == 403
-
-
-async def test_one_tenant_cannot_see_or_touch_anothers_plates(client, make):
-    t1, u1, _, (c1,) = await setup_cameras(client, make)
-    t2, u2, _, (c2,) = await setup_cameras(client, make)
-    await post(client, make, [pe(c1, "GJ14AW1013", conf=30)])
-    pid = (await plates(client, u1))["items"][0]["id"]
-    assert (await plates(client, u2))["items"] == []
-    assert (await client.get(f"/v1/plates/{pid}", headers=u2["headers"])).status_code == 404
-    assert (await client.patch(f"/v1/plates/{pid}", json={"plate_text": "MH12AB1234"}, headers=u2["headers"])).status_code == 404
-    assert (await plates(client, u2, camera_id=c1))["items"] == []
 
 
 async def test_vehicle_lists(client, make):
     t, u, _, _ = await setup_cameras(client, make)
-    regular = await make.user(t, role="regular")
+    support = await make.staff("support")
     add = lambda body, h=u: client.post("/v1/vehicle-lists", json=body, headers=h["headers"])
     r = await add({"plate_text": "gj14 aw 1013", "list_type": "blocked"})
     assert r.status_code == 201 and r.json()["plate_text"] == "GJ14AW1013"
     assert (await add({"plate_text": "GJ14AW1013", "list_type": "blocked"})).json()["error"]["code"] == "already_listed"
     assert (await add({"plate_text": "GJ14AW1013", "list_type": "allowed"})).status_code == 201           # a plate may be on both lists' own terms
     assert (await add({"plate_text": "GJ14AW1O13", "list_type": "blocked"})).json()["error"]["code"] == "invalid_plate"
-    assert (await add({"plate_text": "MH12AB1234", "list_type": "allowed"}, regular)).status_code == 403
-    assert len((await client.get("/v1/vehicle-lists", headers=regular["headers"])).json()) == 2
+    base = f"/admin/v1/tenants/{t}/shop/vehicle-lists"
+    assert (await client.post(base, json={"plate_text": "MH12AB1234", "list_type": "allowed"}, headers=support["headers"])).status_code == 403     # Support only looks
+    assert len((await client.get(base, headers=support["headers"])).json()) == 2
     assert len((await client.get("/v1/vehicle-lists", params={"list_type": "blocked"}, headers=u["headers"])).json()) == 1
-    assert (await client.delete(f"/v1/vehicle-lists/{r.json()['id']}", headers=regular["headers"])).status_code == 403
+    assert (await client.delete(f"{base}/{r.json()['id']}", headers=support["headers"])).status_code == 403
     assert (await client.delete(f"/v1/vehicle-lists/{r.json()['id']}", headers=u["headers"])).status_code == 204
-    assert (await client.delete(f"/v1/vehicle-lists/{r.json()['id']}", headers=u["headers"])).status_code == 404
+
 
 
 async def test_events_land_in_the_right_monthly_partition(client, make, su):

@@ -1,6 +1,6 @@
 // Jas iVision Control Center: the console Jas iVision's own staff use to set up and look after every customer.
 // One page of script, one registry of screens, every number comes from the admin API (/admin/v1). There are no inline styles: the page's security policy forbids them.
-import { Api } from "/js/lib.js";
+import { Api } from "/console/lib.js";
 
 const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => location.replace("/") });
 const $ = (s) => document.querySelector(s);

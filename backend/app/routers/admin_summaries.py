@@ -5,8 +5,7 @@ from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-import httpx
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import Field
 
 from ..config import get_settings
@@ -14,9 +13,9 @@ from ..crypto import vault
 from ..db import db
 from ..deps import AdminCtx, admin_ctx
 from ..errors import ApiError
-from ..messaging import delivery, direct, netguard, webhook
+from ..messaging import delivery, direct, webhook
 from ..schemas import Strict
-from ..services import alert_catalog as cat, summaries, summary_config as sc
+from ..services import summaries, summary_config as sc
 
 router = APIRouter(prefix="/admin/v1/summaries", tags=["admin: summaries"])
 
@@ -64,8 +63,6 @@ class ConfigIn(Strict):
     all_fine: str | None = Field(None, max_length=120)
     closing: str | None = Field(None, max_length=160)
     show_limit: bool | None = None
-    push_on: bool | None = None
-    push_ta: bool | None = None
     lines: Lines | None = None
 
 
@@ -138,26 +135,6 @@ async def set_key(body: KeyIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     return await _state(ctx)
 
 
-@router.post("/reach")
-async def reach(ctx: AdminCtx = Depends(admin_ctx("owner!"))):
-    """Checks that the provider's address answers. It cannot check the key: the provider has no way to test one without sending a message, so use "Send a test" for that."""
-    cfg = (await _state(ctx))["config"]
-    if not cfg["url"]:
-        raise ApiError(409, "no_url", "Enter the provider's address first.")
-    try:
-        target = await netguard.target_for(cfg["url"], allow_private=get_settings().messaging_allow_private_hosts)
-    except netguard.BlockedAddress as e:
-        raise ApiError(422, "blocked_address", str(e))
-    ip = f"[{target.ip}]" if ":" in target.ip else target.ip
-    started = datetime.now()
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(float(cfg["timeout"]), connect=5.0), follow_redirects=False, trust_env=False) as client:
-            r = await client.get(f"https://{ip}:{target.port}/", headers={"Host": target.host}, extensions={"sni_hostname": target.host})
-        return {"reached": True, "status": r.status_code, "ms": int((datetime.now() - started).total_seconds() * 1000)}
-    except (httpx.TimeoutException, httpx.TransportError) as e:
-        return {"reached": False, "error": f"Could not reach it ({type(e).__name__}).", "ms": int((datetime.now() - started).total_seconds() * 1000)}
-
-
 class PreviewIn(Strict):
     tenant_id: str
     kind: Literal["daily", "weekly"] = "daily"
@@ -176,13 +153,6 @@ async def _compose(ctx: AdminCtx, body: PreviewIn):
         return await summaries.compose(conn, t, body.kind, cfg, today), cfg, t
 
 
-@router.post("/preview")
-async def preview(body: PreviewIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
-    built, cfg, t = await _compose(ctx, body)
-    return {**built, "chars": len(built["text"]), "max": int(cfg["maxchars"]), "customer": t["name"],
-            "request": {"source": cfg["source"], "content": built["text"], "category": cfg["category"]}}
-
-
 class TestIn(PreviewIn):
     to: str = Field(pattern=r"^\+?[0-9 ]{10,16}$")
 
@@ -199,17 +169,3 @@ async def test_send(body: TestIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
     return {"ok": res.ok, "status": res.status, "message_id": res.message_id, "error": res.error}
 
 
-@router.get("/sends")
-async def sends(status: str | None = Query(None, pattern="^(queued|sent|failed|suppressed|cancelled)$"), limit: int = Query(40, ge=1, le=200), ctx: AdminCtx = Depends(admin_ctx("owner!"))):
-    rows = await ctx.conn.fetch(
-        """SELECT n.id, n.created_at, n.sent_at, n.status::text AS status, n.attempts, n.error, n.response_status, n.provider_message_id, n.recipient, t.name AS tenant, a.rule_type
-           FROM app.notifications n JOIN app.alerts a ON a.id = n.alert_id JOIN app.tenants t ON t.id = n.tenant_id
-           WHERE n.channel='whatsapp' AND a.rule_type = ANY($1) AND ($2::text IS NULL OR n.status::text=$2) ORDER BY n.created_at DESC LIMIT $3""", sorted(cat.DIRECT_SEND), status, limit)
-    out = []
-    for r in rows:
-        d = dict(r)
-        p = d["recipient"] or ""
-        d["recipient"] = p[:3] + "•" * max(len(p) - 7, 0) + p[-4:]
-        d["kind"] = "Weekly" if d.pop("rule_type") == "weekly_summary" else "Daily"
-        out.append(d)
-    return {"items": out}

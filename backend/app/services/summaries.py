@@ -4,11 +4,10 @@ BUSINESS         visitors, busiest hour, most inside at once, vehicles, longest 
 SYSTEM           cameras, recorders, days of video kept, disks, clocks, alerts, opening hours. Everyone gets this.
 NEEDS A LOOK     problems from the alerts the customer has switched on. When there are none the message says everything is fine.
 
-The text is written here and sent straight to WhatsApp (Direct Send, see messaging/direct.py and the delivery service); the phone gets a short two-line version
-(push_text.py) and the app's Home screen shows the whole thing. What the message says, and when it goes, is set in Platform Admin (summary_config.py)."""
+The text is written here and sent straight to WhatsApp (Direct Send, see messaging/direct.py and the delivery service). What the message says, and when it goes, is set in Platform Admin (summary_config.py)."""
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..db import db
@@ -167,7 +166,7 @@ async def gather(conn, t, kind: str, today: date) -> dict:
 
 async def problems(conn, t, on: set, kind: str) -> tuple[list[str], int]:
     """The problems to list under "Needs a look" (worst and newest first, one for each camera or recorder) and how many there were in all."""
-    from . import push_text
+    from . import alert_line
     zone = ZoneInfo(t["timezone"])
     since = timedelta(hours=24) if kind == "daily" else timedelta(days=7)
     rows = await conn.fetch(
@@ -186,8 +185,8 @@ async def problems(conn, t, on: set, kind: str) -> tuple[list[str], int]:
         if key in seen:
             continue
         seen.add(key)
-        out.append(push_text.compose(r["rule_type"], alert_catalog.CATALOG[r["rule_type"]]["title"], who if not d.get("recorder") else "", d, clock12(r["created_at"].astimezone(zone).time()),
-                                     r["title"], r["body"] or "", tamil=False)[1])
+        out.append(alert_line.compose(r["rule_type"], alert_catalog.CATALOG[r["rule_type"]]["title"], who if not d.get("recorder") else "", d, clock12(r["created_at"].astimezone(zone).time()),
+                                     r["title"], r["body"] or "")[1])
     return out, len(rows)
 
 
@@ -257,11 +256,12 @@ async def compose(conn, t, kind: str, cfg: dict, today: date) -> dict:
 
 # ------------------------------------------------------------------------------------------------ recipients and the clock
 async def default_recipients(conn, tid, mode: str) -> list:
-    """The customer's own choice wins (the alert's recipients). With none chosen: the account owner (the first admin), or every admin, as Platform Admin says."""
+    """The customer's own choice wins (the alert's recipients). With none chosen: the owner (the first owner number set on the customer), or all of the owner's numbers,
+    as Platform Admin says. The owner is found among the people who get messages by the last ten digits of the number."""
     if mode == "none":
         return []
-    admins = await conn.fetch("SELECT phone FROM app.tenant_users WHERE tenant_id=$1 AND role='admin' AND status='active' AND phone IS NOT NULL ORDER BY created_at", tid)
-    tails = [re.sub(r"\D", "", a["phone"])[-10:] for a in admins if len(re.sub(r"\D", "", a["phone"])) >= 10]
+    nums = await conn.fetch("SELECT phone FROM platform.tenant_owner_phones WHERE tenant_id=$1 ORDER BY position", tid)
+    tails = [re.sub(r"\D", "", n["phone"])[-10:] for n in nums if len(re.sub(r"\D", "", n["phone"])) >= 10]
     if mode == "owner":
         tails = tails[:1]
     if not tails:
@@ -283,7 +283,7 @@ async def send_one(conn, t, kind: str, cfg: dict, has_key: bool, today: date, *,
     return bool(await raise_alert(conn, t["id"], rtype, title=f"{'Daily' if kind == 'daily' else 'Weekly'} system summary", body=built["text"], camera_name="All cameras",
                                   details={"summary": built["text"], "headline": built["headline"], "headline_ta": built["headline_ta"], "kind": kind},
                                   dedupe_key=f"summary:{kind}:{today.isoformat()}", cooldown_minutes=0 if force else 20 * 60, recipient_ids=who,
-                                  direct_ready=summary_config.ready(cfg, has_key, kind), push_on=cfg["push_on"], push_tamil=cfg["push_ta"]))
+                                  direct_ready=summary_config.ready(cfg, has_key, kind)))
 
 
 async def run() -> int:

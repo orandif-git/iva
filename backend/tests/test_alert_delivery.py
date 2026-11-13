@@ -13,7 +13,6 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "s")
 
 import boto3
 import pytest
-from aiosmtpd.controller import Controller
 from moto import mock_aws
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -53,34 +52,11 @@ def bsp_server():
         yield rx, srv
 
 
-class Smtp:
-    def __init__(self):
-        self.messages = []
-
-    async def handle_DATA(self, server, session, envelope):
-        self.messages.append(envelope)
-        return "250 OK"
-
-
-@pytest.fixture(scope="module")
-def smtp_server():
-    import socket
-    with socket.socket() as sk:
-        sk.bind(("127.0.0.1", 0))
-        port = sk.getsockname()[1]
-    h = Smtp()
-    c = Controller(h, hostname="127.0.0.1", port=port)
-    c.start()
-    yield h, port
-    c.stop()
-
-
 @pytest.fixture
-async def world(client, make, su, bsp_server, smtp_server):
-    """A clean slate: every alert that is built has a webhook endpoint pointing at the receiver, with a signing secret, and an email server is set up for reports."""
+async def world(client, make, su, bsp_server):
+    """A clean slate: every alert that is built has a webhook endpoint pointing at the receiver, with a signing secret."""
     rx, srv = bsp_server
-    smtp, smtp_port = smtp_server
-    rx.calls.clear(); rx.script.clear(); smtp.messages.clear()
+    rx.calls.clear(); rx.script.clear()
     evidence.set_store(None)
     await su.execute("UPDATE app.notifications SET status='cancelled' WHERE status='queued'")
     await su.execute("DELETE FROM platform.webhook_endpoints; DELETE FROM platform.messaging_providers; DELETE FROM platform.alert_switches; DELETE FROM platform.webhook_settings")
@@ -90,11 +66,7 @@ async def world(client, make, su, bsp_server, smtp_server):
     secret = (await client.post("/admin/v1/webhooks/settings/secret", headers=h)).json()["secret"]
     std = await client.post("/admin/v1/webhooks/standard", json={"url": srv.url("/hook/wa"), "headers": {"Authorization": TOKEN}}, headers=h)
     assert std.status_code == 200, std.text
-    r = await client.post("/admin/v1/messaging/providers", json={"channel": "email", "name": "Mail", "kind": "smtp", "secrets": {}, "reason": "test setup",
-                          "config": {"host": "127.0.0.1", "port": smtp_port, "security": "none", "from_email": "alerts@gi.test", "from_name": "Jas iVision"}}, headers=h)
-    assert r.status_code == 201, r.text
-    assert (await client.post(f"/admin/v1/messaging/providers/{r.json()['id']}/activate", params={"reason": "test setup"}, headers=h)).status_code == 200
-    return {"admin": h, "hook": rx, "smtp": smtp, "srv": srv, "secret": secret, "url": srv.url("/hook/wa")}
+    return {"admin": h, "hook": rx, "srv": srv, "secret": secret, "url": srv.url("/hook/wa")}
 
 
 async def endpoint_of(client, world, alert_type):
@@ -226,67 +198,14 @@ async def test_the_delivery_log_lists_events_and_a_failed_one_can_be_sent_again(
 
 
 # ---------------------------------------------------------------------------------- customer: recipients and settings
-async def test_a_phone_number_needs_the_customers_consent_confirmation(client, make, world, su):
-    t, u, _, _ = await setup_cameras(client, make)
-    h = u["headers"]
-    r = await client.post("/v1/recipients", json={"name": "Guard", "phone": "9876543210"}, headers=h)
-    assert r.status_code == 422 and r.json()["error"]["code"] == "consent_required"
-    ok = await client.post("/v1/recipients", json={"name": "Guard", "phone": "098765 43210", "consent_confirmed": True}, headers=h)
-    assert ok.status_code == 201 and ok.json()["phone"] == "+919876543210" and ok.json()["phone_masked"].endswith("3210")
-    row = await su.fetchrow("SELECT consent_confirmed_by, consent_confirmed_at FROM app.recipients WHERE id=$1", ok.json()["id"])
-    assert row["consent_confirmed_by"] == u["id"] and row["consent_confirmed_at"] is not None          # who confirmed, and when
-    assert (await client.post("/v1/recipients", json={"name": "Dup", "phone": "+91 98765 43210", "consent_confirmed": True}, headers=h)).status_code == 409
-    assert (await client.post("/v1/recipients", json={"name": "Mail only", "email": "a@b.co"}, headers=h)).status_code == 201     # email needs no confirmation
-    for bad in ("12345", "abc", "+0123456789"):
-        assert (await client.post("/v1/recipients", json={"name": "X", "phone": bad, "consent_confirmed": True}, headers=h)).status_code == 422
-    assert (await client.post("/v1/recipients", json={"name": "Nobody"}, headers=h)).status_code == 422
 
 
-async def test_changing_a_number_asks_for_consent_again(client, make, world):
-    t, u, _, rid = await customer(client, make, world)
-    h = u["headers"]
-    r = await client.patch(f"/v1/recipients/{rid}", json={"phone": "9123456789"}, headers=h)
-    assert r.status_code == 422 and r.json()["error"]["code"] == "consent_required"
-    assert (await client.patch(f"/v1/recipients/{rid}", json={"phone": "9123456789", "consent_confirmed": True}, headers=h)).json()["phone"] == "+919123456789"
-    assert (await client.patch(f"/v1/recipients/{rid}", json={"name": "Ravi K"}, headers=h)).status_code == 200      # a name change does not
 
 
-async def test_the_alert_catalog_and_customer_choices(client, make, world):
-    t, u, cam, rid = await customer(client, make, world, rule="camera_offline")
-    h = u["headers"]
-    cat = {c["type"]: c for c in (await client.get("/v1/alert-types", headers=h)).json()}
-    assert set(cat) == set(cat_mod.BUILT)
-    assert cat["blocked_plate"]["enabled"] is True and cat["crowding"]["enabled"] is False and cat["camera_offline"]["recipient_ids"] == [rid]
-    assert cat["crowding"]["ai"] is True and cat["camera_offline"]["ai"] is False and cat["camera_offline"]["channels"] == ["whatsapp"]
-    r = await client.put("/v1/alert-types/crowding", json={"enabled": True, "params": {"people": 80}, "recipient_ids": [rid], "quiet_start": "22:00", "quiet_end": "06:00"}, headers=h)
-    assert r.status_code == 200 and r.json()["params"] == {"people": 80, "picture_minutes": 15} and r.json()["quiet_start"] == "22:00" and r.json()["channels"] == ["whatsapp"]
-    off = await client.put("/v1/alert-types/blocked_plate", json={"enabled": False}, headers=h)
-    assert off.json()["enabled"] is False and not any(c["type"] == "blocked_plate" and c["enabled"] for c in (await client.get("/v1/alert-types", headers=h)).json())
-    for body in ({"enabled": True, "params": {"people": 0}}, {"enabled": True, "params": {"people": "many"}}, {"enabled": True, "params": {"nope": 1}},
-                 {"enabled": True, "quiet_start": "22:00"}, {"enabled": True, "channels": ["sms"]}, {"enabled": True, "channels": ["email"]}, {"enabled": True, "recipient_ids": [str(uuid.uuid4())]}):
-        assert (await client.put("/v1/alert-types/crowding", json=body, headers=h)).status_code == 422, body                # alerts go by WhatsApp only
-    assert (await client.put("/v1/alert-types/unknown", json={"enabled": True}, headers=h)).status_code == 404
-    reg = await make.user(t, "regular")
-    assert (await client.put("/v1/alert-types/crowding", json={"enabled": True}, headers=reg["headers"])).status_code == 403          # only an administrator
-    assert (await client.get("/v1/alert-types", headers=reg["headers"])).status_code == 200
 
 
-async def test_a_person_with_only_an_email_is_warned_they_will_get_no_alerts(client, make, world):
-    t, u, cam, rid = await customer(client, make, world, phone=None)
-    r = await client.put("/v1/alert-types/camera_offline", json={"enabled": True, "recipient_ids": [rid]}, headers=u["headers"])
-    assert any("no mobile number" in w for w in r.json()["warnings"])
 
 
-async def test_tenants_cannot_see_or_use_each_others_people_and_alerts(client, make, world):
-    t1, u1, cam1, r1 = await customer(client, make, world)
-    t2, u2, cam2, r2 = await customer(client, make, world, phone="9000000001")
-    await block_and_see(client, make, u1, cam1)
-    assert [r["id"] for r in (await client.get("/v1/recipients", headers=u2["headers"])).json()] == [r2]
-    assert (await client.get("/v1/alerts", headers=u2["headers"])).json() == [] and (await client.get("/v1/notifications", headers=u2["headers"])).json() == []
-    stolen = await client.put("/v1/alert-types/crowding", json={"enabled": True, "recipient_ids": [r1]}, headers=u2["headers"])
-    assert stolen.status_code == 422
-    assert (await client.delete(f"/v1/recipients/{r1}", headers=u2["headers"])).status_code == 404
-    assert (await client.patch(f"/v1/recipients/{r1}", json={"name": "Hacked"}, headers=u2["headers"])).status_code == 404
 
 
 # ---------------------------------------------------------------------------------- the whole journey
@@ -330,10 +249,10 @@ async def test_blocked_vehicle_reaches_the_webhook_with_picture_links_and_a_sign
         assert img.status_code == 200 and img.content == JPEG and img.headers["content-type"] == "image/jpeg"
         assert (await client.head(f"/e/{token}/image.jpg")).status_code == 200
 
-        log = (await client.get("/v1/notifications", headers=u["headers"])).json()
-        assert log[0]["status"] == "sent" and log[0]["recipient"].endswith("3210") and "98765" not in log[0]["recipient"]
-        al = (await client.get("/v1/alerts", headers=u["headers"])).json()
-        assert al[0]["title"] == "Blocked vehicle detected: TN72AB1234" and al[0]["has_evidence"] and al[0]["messages_sent"] == 1
+        log = await su.fetch("SELECT status::text AS status, recipient FROM app.notifications WHERE tenant_id=$1 ORDER BY created_at", t)
+        assert log[0]["status"] == "sent" and log[0]["recipient"].endswith("3210")
+        al = await su.fetch("SELECT title, evidence_id FROM app.alerts WHERE tenant_id=$1 ORDER BY created_at", t)
+        assert al[0]["title"] == "Blocked vehicle detected: TN72AB1234" and al[0]["evidence_id"] is not None and len(log) == 1
     evidence.set_store(None)
 
 
@@ -418,7 +337,6 @@ async def test_retries_cover_up_to_about_two_hours_then_the_event_is_marked_fail
     n = await su.fetchrow("SELECT * FROM app.notifications WHERE tenant_id=$1", t)
     assert n["status"] == "failed" and n["attempts"] == 6
     assert await su.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1", t) == 1       # no email fallback: alerts go by WhatsApp only
-    assert world["smtp"].messages == []
 
 
 async def test_a_permanent_failure_is_not_retried_and_never_falls_back_to_email(client, make, su, world):
@@ -429,7 +347,7 @@ async def test_a_permanent_failure_is_not_retried_and_never_falls_back_to_email(
     n = await su.fetchrow("SELECT * FROM app.notifications WHERE tenant_id=$1", t)
     assert n["status"] == "failed" and "HTTP 400" in n["error"] and len(world["hook"].calls) == 1
     await delivery.run_once()
-    assert len(world["hook"].calls) == 1 and world["smtp"].messages == [] and await su.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1", t) == 1
+    assert len(world["hook"].calls) == 1 and await su.fetchval("SELECT count(*) FROM app.notifications WHERE tenant_id=$1", t) == 1
 
 
 async def test_an_alert_with_no_webhook_is_recorded_but_not_sent_and_says_why(client, make, su, world):
@@ -573,25 +491,8 @@ async def test_removing_a_person_stops_their_messages(client, make, su, world):
     assert next(a for a in (await client.get("/v1/alert-types", headers=u["headers"])).json() if a["type"] == "blocked_plate")["recipient_ids"] == []
 
 
-async def test_a_person_gets_one_event_each_and_an_email_only_person_gets_none(client, make, su, world):
-    t, u, cam, rid = await customer(client, make, world)
-    second = (await client.post("/v1/recipients", json={"name": "Meena", "phone": "9000000011", "consent_confirmed": True}, headers=u["headers"])).json()["id"]
-    mail_only = (await client.post("/v1/recipients", json={"name": "Asha", "email": "asha@x.test"}, headers=u["headers"])).json()["id"]
-    await client.put("/v1/alert-types/blocked_plate", json={"enabled": True, "recipient_ids": [rid, second, mail_only]}, headers=u["headers"])
-    await block_and_see(client, make, u, cam)
-    assert await delivery.run_once() == 2
-    assert sorted(c["body"]["phone_number"] for c in world["hook"].calls) == ["919000000011", "919876543210"]
-    assert len({c["headers"]["x-delivery-id"] for c in world["hook"].calls}) == 2
 
 
-async def test_acknowledging_an_alert(client, make, world):
-    t, u, cam, rid = await customer(client, make, world)
-    await block_and_see(client, make, u, cam)
-    a = (await client.get("/v1/alerts", params={"unacknowledged": True}, headers=u["headers"])).json()[0]
-    assert (await client.post(f"/v1/alerts/{a['id']}/acknowledge", headers=u["headers"])).status_code == 200
-    assert (await client.post(f"/v1/alerts/{a['id']}/acknowledge", headers=u["headers"])).status_code == 409
-    assert (await client.get("/v1/alerts", params={"unacknowledged": True}, headers=u["headers"])).json() == []
-    assert (await client.post(f"/v1/alerts/{uuid.uuid4()}/acknowledge", headers=u["headers"])).status_code == 404
 
 
 async def test_offline_camera_and_recorder_alerts(client, make, su, world):
@@ -690,4 +591,4 @@ async def test_the_old_whatsapp_provider_and_template_routes_are_gone(client, wo
     assert (await client.get("/admin/v1/messaging/templates", headers=h)).status_code in (404, 405)
     assert (await client.post("/hooks/messaging/" + str(uuid.uuid4()), content=b"{}")).status_code in (404, 405)
     r = await client.post("/admin/v1/messaging/providers", json={"channel": "whatsapp", "name": "x", "kind": "http", "config": {}, "reason": "should be refused"}, headers=h)
-    assert r.status_code == 422
+    assert r.status_code in (404, 405)

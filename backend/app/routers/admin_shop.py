@@ -5,20 +5,20 @@ with the customer's data in view and nothing else (row-level security is set to 
 Every change is recorded in the audit log with the staff member's name. Roles: Owner, Admin and Onboarding may change things; Support may change
 people and hours (to help a shop) but not events or areas."""
 from datetime import time
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
 
 from ..db import db
-from ..deps import CustomerCtx, _bearer, _uuid, client_ip
+from ..deps import CustomerCtx, _bearer, _uuid
 from ..errors import ApiError
-from ..schemas import AreasPut, CameraCreate, CameraPatch, ChannelOut, Strict, ZonesPut
+from ..schemas import ListEntryIn, AreasPut, CameraCreate, CameraPatch, ChannelOut, Strict, ZonesPut
 from ..security import verify_token
-from . import customer_alerts, customer_areas, customer_cameras, customer_recorders
+from . import shop_alerts, shop_areas, shop_cameras, shop_recorders, shop_vehicles
 from ..services import alert_catalog
 from ..services.alerts import DEFAULT_ENABLED
-from ..config import get_settings
 
 router = APIRouter(prefix="/admin/v1/tenants/{tenant_id}/shop", tags=["admin: shop setup"])
 EDITORS = ("owner", "admin", "onboarding")
@@ -30,8 +30,6 @@ def shop_ctx(*roles: str):
 
     async def dep(request: Request, tenant_id: UUID):
         claims = verify_token("platform", _bearer(request))
-        if get_settings().staff_require_mfa and claims.get("mfa") is not True:
-            raise ApiError(401, "mfa_required", "Complete multi-factor sign-in.")
         sid = _uuid(claims["sub"])
         async with db.admin_tx() as c:
             st = await c.fetchrow("SELECT id, name, role::text AS role, status FROM platform.staff_users WHERE id=$1", sid)
@@ -114,24 +112,24 @@ class PersonIn(Strict):
 
 @router.get("/people")
 async def people(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
-    return await customer_alerts.list_recipients(ctx)
+    return await shop_alerts.list_recipients(ctx)
 
 
 @router.post("/people", status_code=201)
 async def add_person(body: PersonIn, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     """Staff confirm for the shop that this person has agreed to receive WhatsApp messages (the Control Center says so next to the form)."""
-    return await customer_alerts.add_recipient(customer_alerts.RecipientIn(name=body.name, phone=body.phone, consent_confirmed=True), ctx)
+    return await shop_alerts.add_recipient(shop_alerts.RecipientIn(name=body.name, phone=body.phone, consent_confirmed=True), ctx)
 
 
 @router.patch("/people/{rid}")
 async def edit_person(rid: UUID, body: dict, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     allowed = {k: v for k, v in body.items() if k in ("name", "phone", "active")}
-    return await customer_alerts.patch_recipient(rid, customer_alerts.RecipientPatch(**allowed, consent_confirmed=True), ctx)
+    return await shop_alerts.patch_recipient(rid, shop_alerts.RecipientPatch(**allowed, consent_confirmed=True), ctx)
 
 
 @router.delete("/people/{rid}", status_code=204)
 async def remove_person(rid: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
-    await customer_alerts.delete_recipient(rid, ctx)
+    await shop_alerts.delete_recipient(rid, ctx)
 
 
 # ---------------------------------------------------------------------------------------------------------- events (the alerts a shop has)
@@ -147,7 +145,7 @@ class EventIn(Strict):
 @router.get("/events")
 async def events(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     """Every alert this shop can have, with its settings, the people chosen, whether it is on and the name given to it."""
-    out = await customer_alerts.alert_types(ctx)
+    out = await shop_alerts.alert_types(ctx)
     labels = {r["rule_type"]: r["label"] for r in await ctx.conn.fetch("SELECT rule_type, label FROM app.alert_rules")}
     saved = {r["rule_type"] for r in await ctx.conn.fetch("SELECT rule_type FROM app.alert_rules")}
     return [{**o, "label": labels.get(o["type"]), "saved": o["type"] in saved, "default": o["type"] in DEFAULT_ENABLED} for o in out]
@@ -155,7 +153,7 @@ async def events(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
 
 @router.put("/events/{rule_type}")
 async def set_event(rule_type: str, body: EventIn, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
-    out = await customer_alerts.set_alert_type(rule_type, customer_alerts.RuleIn(enabled=body.enabled, params=body.params, recipient_ids=body.recipient_ids,
+    out = await shop_alerts.set_alert_type(rule_type, shop_alerts.RuleIn(enabled=body.enabled, params=body.params, recipient_ids=body.recipient_ids,
                                                                                  quiet_start=body.quiet_start, quiet_end=body.quiet_end), ctx)
     await ctx.conn.execute("UPDATE app.alert_rules SET label=$3 WHERE tenant_id=$1 AND rule_type=$2", ctx.tenant_id, rule_type, body.label)
     return {**out, "label": body.label}
@@ -175,37 +173,37 @@ async def delete_event(rule_type: str, ctx: CustomerCtx = Depends(shop_ctx(*EDIT
 
 
 @router.post("/events/{rule_type}/test")
-async def test_event(rule_type: str, body: customer_alerts.TestIn, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+async def test_event(rule_type: str, body: shop_alerts.TestIn, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
     """Sends one test message of this event to one person of the shop, marked as a test."""
-    return await customer_alerts.send_test(rule_type, body, ctx)
+    return await shop_alerts.send_test(rule_type, body, ctx)
 
 
 # ---------------------------------------------------------------------------------------------------------- marked areas on a camera
 @router.get("/area-kinds")
 async def area_kinds(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
-    return await customer_areas.area_kinds(ctx)
+    return await shop_areas.area_kinds(ctx)
 
 
 @router.get("/cameras/{camera_id}/areas")
 async def get_areas(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
-    return await customer_areas.get_areas(camera_id, ctx)
+    return await shop_areas.get_areas(camera_id, ctx)
 
 
 @router.put("/cameras/{camera_id}/areas")
 async def put_areas(camera_id: UUID, body: AreasPut, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
-    return await customer_areas.put_areas(camera_id, body, ctx)
+    return await shop_areas.put_areas(camera_id, body, ctx)
 
 
 # ---------------------------------------------------------------------------------------------------------- recorders and cameras
 @router.get("/recorders/{recorder_id}/channels", response_model=list[ChannelOut])
 async def channels(recorder_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     """The channels a recorder has reported, so the cameras can be chosen. Empty until the recorder has connected."""
-    return await customer_recorders.channels(recorder_id, ctx)
+    return await shop_recorders.channels(recorder_id, ctx)
 
 
 @router.get("/cameras")
 async def cameras(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
-    return await customer_cameras.list_cameras(ctx)
+    return await shop_cameras.list_cameras(ctx)
 
 
 async def _everything(ctx: CustomerCtx) -> None:
@@ -225,14 +223,14 @@ async def _everything(ctx: CustomerCtx) -> None:
 async def add_camera(body: CameraCreate, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
     if body.use_anpr:
         await _everything(ctx)
-    return await customer_cameras.add_camera(body, ctx)
+    return await shop_cameras.add_camera(body, ctx)
 
 
 @router.patch("/cameras/{camera_id}")
 async def edit_camera(camera_id: UUID, body: CameraPatch, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
     if body.use_anpr:
         await _everything(ctx)
-    return await customer_cameras.patch_camera(camera_id, body, ctx)
+    return await shop_cameras.patch_camera(camera_id, body, ctx)
 
 
 @router.get("/recorders/{recorder_id}/channels/{channel_no}/snapshot")
@@ -250,16 +248,32 @@ async def channel_snapshot(recorder_id: UUID, channel_no: int, ctx: CustomerCtx 
 @router.get("/cameras/{camera_id}/zones")
 async def get_zones(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     """The counting line and the plate area marked on a camera (either may be missing)."""
-    return await customer_cameras.get_zones(camera_id, ctx)
+    return await shop_cameras.get_zones(camera_id, ctx)
 
 
 @router.put("/cameras/{camera_id}/zones")
 async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
     """Replaces the counting line and the plate area of a camera. Send both when both are wanted: what is left out is removed."""
-    return await customer_cameras.put_zones(camera_id, body, ctx)
+    return await shop_cameras.put_zones(camera_id, body, ctx)
 
 
 @router.get("/cameras/{camera_id}/snapshot")
 async def snapshot(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))) -> Response:
     """A current still picture of the camera, for drawing an area on."""
-    return await customer_cameras.camera_snapshot(camera_id, ctx)
+    return await shop_cameras.camera_snapshot(camera_id, ctx)
+
+
+# ---------------------------------------------------------------------------------------------------------- blocked and allowed vehicles
+@router.get("/vehicle-lists")
+async def vehicle_lists(list_type: Literal["blocked", "allowed"] | None = None, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
+    return await shop_vehicles.get_lists(list_type, ctx)
+
+
+@router.post("/vehicle-lists", status_code=201)
+async def add_vehicle_to_list(body: ListEntryIn, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    return await shop_vehicles.add_to_list(body, ctx)
+
+
+@router.delete("/vehicle-lists/{entry_id}", status_code=204)
+async def remove_vehicle_from_list(entry_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    await shop_vehicles.remove_from_list(entry_id, ctx)

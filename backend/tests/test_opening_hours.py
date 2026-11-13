@@ -27,21 +27,6 @@ def test_both_alerts_are_built_and_are_checked_on_a_clock():
     assert {"counting_stopped", "after_hours"} <= set(maintenance.TIMED)
 
 
-async def test_the_owner_sets_the_opening_hours(client, make, su):
-    t, u, _, _ = await setup_cameras(client, make)
-    assert (await client.get("/v1/opening-hours", headers=u["headers"])).json() == {"open": None, "close": None, "closed_days": [], "set": False}
-    r = await client.put("/v1/opening-hours", json={"open": "09:00", "close": "21:30", "closed_days": [6]}, headers=u["headers"])
-    assert r.status_code == 200 and r.json() == {"open": "09:00", "close": "21:30", "closed_days": [6], "set": True}
-    assert (await client.put("/v1/opening-hours", json={"open": "09:00"}, headers=u["headers"])).status_code == 422
-    assert (await client.put("/v1/opening-hours", json={"open": "09:00", "close": "09:00"}, headers=u["headers"])).status_code == 422
-    assert (await client.put("/v1/opening-hours", json={"open": "09:00", "close": "21:00", "closed_days": [7]}, headers=u["headers"])).status_code == 422
-    viewer = await make.user(t, role="regular")
-    assert (await client.put("/v1/opening-hours", json={"open": "10:00", "close": "20:00"}, headers=viewer["headers"])).status_code == 403
-    warn = (await client.put("/v1/alert-types/counting_stopped", json={"enabled": True}, headers=u["headers"])).json()["warnings"]
-    assert not any("opening hours" in w for w in warn)
-    assert (await client.put("/v1/opening-hours", json={}, headers=u["headers"])).json()["set"] is False
-    warn = (await client.put("/v1/alert-types/counting_stopped", json={"enabled": True}, headers=u["headers"])).json()["warnings"]
-    assert any("opening hours" in w for w in warn)
 
 
 async def hours_around_now(su, t, open_ago_h, close_in_h):
