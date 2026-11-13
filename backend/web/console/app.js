@@ -7,6 +7,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TZ = "Asia/Kolkata";
+const BUILD = "13 Nov · offline camera blocks marking";
 
 /* ------------------------------------------------------------------------------------------------ small helpers */
 const todayIST = () => new Date(new Date().toLocaleString("en-US", { timeZone: TZ }));
@@ -117,7 +118,7 @@ function side() {
   else if (S.route === "event") { const o = eorder(); h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = !!S.ev.key && !o.includes(s[0]); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join(""); }
   else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
   else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
-  if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
+  if (h) h += `<div class="foot"><span>Control Center 1.0 · build ${BUILD}</span></div>`;
   el.hidden = !h; el.innerHTML = h;
 }
 
