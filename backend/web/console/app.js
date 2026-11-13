@@ -319,12 +319,13 @@ function pageEvent() {
     body = list.length ? `<div class="cams big">${list.map((c) => { const rec = S.cur.recs.find((r) => r.id === c.recorder_id), down = rec && rec.status === "offline"; return `<div class="cam ${e.target?.id === c.id ? "sel" : ""} ${down ? "offl" : ""}" data-ecam="${c.id}" role="radio" aria-checked="${e.target?.id === c.id}" tabindex="0"><div class="pic" ${down ? "" : `data-campic-box="${c.id}"`}>${ico("cam", 24)}<span class="picmsg">${down ? esc((rec.name || rec.device_id) + " is offline") : "Loading picture…"}</span></div><div class="cb"><b class="dark">${esc(c.name)}</b><div>${usedFor(c)}</div>${down ? '<span class="tag crit">Offline</span>' : ""}${e.target?.id === c.id ? '<span class="tag brand">Selected</span>' : ""}</div></div>`; }).join("")}</div>` : `<div class="note warn">${e.rec && S.cur.recs.length > 1 ? "This recorder has no cameras added yet." : "This shop has no cameras added yet."} Add them under Recorder and cameras first.</div>`; }
   else if (S.estep === "area") { const m = markMode(e.key), help = { area: "Click on the picture to add the corners of the area. At least 3 corners.", line: "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN, the others OUT.", zone: "Click the corners of the area where vehicles and their plates should be read. Or use the whole picture." }[m];
     const had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
-    if (e.snapErr) body = `<div class="note warn">${blockedText(e.target?.name || "This camera", e.snapErr, m === "area" ? "The area cannot be marked." : m === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked on the picture.")}</div><div class="row"><button class="btn pri" type="button" data-snaptry>Try again</button>${m === "zone" ? '<button class="btn" type="button" data-whole>Use the whole picture</button>' : ""}</div>`;
+    if (e.loadingPic) body = `<div class="note">Getting the picture from ${esc(e.target?.name || "the camera")}… this can take up to 30 seconds.</div>`;
+    else if (e.snapErr) body = `<div class="note warn">${blockedText(e.target?.name || "This camera", e.snapErr, m === "area" ? "The area cannot be marked." : m === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked on the picture.")}</div><div class="row"><button class="btn pri" type="button" data-snaptry>Try again</button>${m === "zone" ? '<button class="btn" type="button" data-whole>Use the whole picture</button>' : ""}</div>`;
     else body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>`; }
   else body = settingsBody(e);
   const pos = o.indexOf(S.estep), last = pos === o.length - 1;
   const m = markMode(e.key), had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
-  const markOk = e.snapErr ? m === "zone" && !!e.whole : m === "line" ? (e.pts.length === 2 || (had && !e.touched)) : m === "zone" ? true : e.pts.length >= 3;
+  const markOk = e.loadingPic ? false : e.snapErr ? m === "zone" && !!e.whole : m === "line" ? (e.pts.length === 2 || (had && !e.touched)) : m === "zone" ? true : e.pts.length >= 3;
   const ok = { event: true, type: !!e.key, recorder: !!e.rec, camera: !!e.target, area: markOk, settings: true }[S.estep];
   const title = S.estep === "area" ? MARK_TITLE[m] : ESTEPS.find((s) => s[0] === S.estep)[1];
   return `<div class="rise"><div class="title"><h1>${title}</h1><span class="tag brand">Step ${pos + 1} of ${o.length}</span><span class="sub">${esc(cname())}</span></div><div class="form">${body}
@@ -356,6 +357,12 @@ function settingsBody(e) {
   return `<div class="stack"><div class="f f-narrow"><span class="lb">${esc(x.title)}<small>${esc(x.description)}</small></span><div class="stack">${rows.join("") || `<div class="sub">No setting needed for this event.</div>`}
     <div class="cfg"><span>Message carries</span><span class="tag ${m[1]}">${m[0]}</span><span></span></div><div class="cfg"><span>Switch on now</span><span>${sw("e-on", e.on !== false, false, "eon")}</span><span></span></div></div></div></div>`;
 }
+async function wizardPicture() {
+  const E = S.ev; E.loadingPic = true; render();                           // show the wait at once, then the picture (or why there is none)
+  await loadSnap(E);
+  E.loadingPic = false;
+  if (S.route === "event" && S.ev === E && S.estep === "area") render(true);
+}
 async function loadZones(e) {
   if (!e.target || e.zones) return;
   try {
@@ -370,8 +377,13 @@ async function loadSnap(e) {
   e.snapErr = null;
   const cam = S.cur.cams.find((c) => c.id === e.target.id), rec = cam && S.cur.recs.find((r) => r.id === cam.recorder_id);
   if (rec && rec.status === "offline") { e.snapErr = { kind: "offline", recorder: rec.name || rec.device_id }; return; }          // already known: no need to wait for a picture that will not come
-  try { const blob = await api.call("GET", `/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/snapshot`, undefined, { blob: true }); e.snap = URL.createObjectURL(blob); }
-  catch (err) { e.snapErr = { kind: err.status === 409 ? "offline" : err.status === 504 ? "slow" : "down" }; }
+  let timer;
+  try {
+    const wait = new Promise((_, no) => { timer = setTimeout(() => no({ status: 504 }), 40000); });         // after 40 seconds it is too slow: say so and let the person try again
+    const blob = await Promise.race([api.call("GET", `/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/snapshot`, undefined, { blob: true }), wait]);
+    e.snap = URL.createObjectURL(blob);
+  } catch (err) { e.snapErr = { kind: err.status === 409 ? "offline" : err.status === 504 ? "slow" : "down" }; }
+  finally { clearTimeout(timer); }
 }
 /* Marking needs the camera's real picture. When it cannot be taken, say why and do not let anyone draw on a made-up view. */
 function blockedText(name, err, what) {
@@ -404,7 +416,9 @@ async function saveGeometry(camId, mode, pts, flip, touched) {
 async function openMark(i) {
   const r = S.cur.rows[i], mode = r.flag === "use_footfall" ? "line" : "zone";
   S.mark = { i, mode, pts: [], flip: false, touched: false, snap: null, key: mode === "line" ? "__count" : "__plates", target: { kind: "cam", id: r.cam.id, name: r.cam.name }, zones: null };
+  modal(`${mh(MARK_TITLE[mode])}<div class="note" data-loading>Getting the picture from ${esc(r.cam.name)}… this can take up to 30 seconds.</div><div class="row"><button class="btn" type="button" data-close>Cancel</button></div>`);
   await loadSnap(S.mark);
+  if (!$("#layer [data-loading]")) return;                                  // closed while waiting
   if (S.mark.snapErr) return blockedModal(r.cam.name, S.mark.snapErr, mode === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked.", () => openMark(i));
   drawMark();
 }
@@ -524,7 +538,10 @@ async function saveEdit() {
 async function toggleRowSilent(r, checked) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${r.cam.id}`, { [r.flag]: checked, ...(r.flag === "use_anpr" && checked ? { stream: "main" } : {}) }); }
 /* Redraw an area on the camera picture */
 async function openRedraw() {
-  const r = S.cur.rows[S.edit.i]; S.redraw = { pts: [], snap: null }; const tmp = { target: r.cam, snap: null }; await loadSnap(tmp);
+  const r = S.cur.rows[S.edit.i]; S.redraw = { pts: [], snap: null }; const tmp = { target: r.cam, snap: null };
+  modal(`${mh("Redraw the area")}<div class="note" data-loading>Getting the picture from ${esc(r.cam.name)}… this can take up to 30 seconds.</div><div class="row"><button class="btn" type="button" data-close>Cancel</button></div>`);
+  await loadSnap(tmp);
+  if (!$("#layer [data-loading]")) return;                                  // closed while waiting
   if (tmp.snapErr) return blockedModal(r.cam.name, tmp.snapErr, "The area cannot be redrawn.", openRedraw);
   S.redraw.snap = tmp.snap; drawRedraw();
 }
@@ -683,7 +700,7 @@ document.addEventListener("click", async (ev) => {
     if (d.addcams) { const rid = d.addcams; let n = 0; for (const ch of S.cur.channels[rid]) { if (ch.enabled_as_camera || !ch.on) continue; await api.post(`/admin/v1/tenants/${S.cid}/shop/cameras`, { recorder_id: rid, channel_no: ch.channel_no, name: ch.name.trim() || "Camera " + ch.channel_no, use_footfall: true }); n++; } delete S.cur.channels[rid]; const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; await loadCustomers(); toast(n ? `${n} camera${n === 1 ? "" : "s"} added` : "Nothing was ticked"); return render(true); }
     /* event wizard */
     if ("addev" in d) { S.ev = newEv(); S.estep = "event"; return go("event"); }
-    if (d.estep) { S.estep = d.estep; if (d.estep === "area") await loadSnap(S.ev); return render(); }
+    if (d.estep) { S.estep = d.estep; if (d.estep === "area" && S.ev.target) return wizardPicture(); return render(); }
     if (d.erec) { S.ev.rec = { id: d.erec }; S.ev.target = null; S.ev.snap = null; return render(true); }
     if (d.ecam && t.classList.contains("offl")) return toast("This camera cannot send a picture right now, so it cannot be marked. Choose it when it is back online.", true);
     if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; S.ev.snapErr = null; S.ev.zones = null; S.ev.pts = []; S.ev.touched = false; S.ev.whole = false; S.ev.flip = false; return render(true); }
@@ -705,11 +722,11 @@ document.addEventListener("click", async (ev) => {
     if ("redrawcancel" in d) { drawEdit(); return; }
     if ("redrawsave" in d) { S.edit.pts = S.redraw.pts; drawEdit(); return; }
     if ("clearpts" in d) { S.ev.pts = []; S.ev.touched = true; S.ev.whole = false; return render(true); }
-    if ("snaptry" in d) { S.ev.snap = null; S.ev.snapErr = null; await loadSnap(S.ev); return render(true); }
+    if ("snaptry" in d) { S.ev.snap = null; S.ev.snapErr = null; return wizardPicture(); }
     if ("retry2" in d) { const f = S.retry; closeModal(); return f && f(); }
     if ("flip" in d) { S.ev.flip = !S.ev.flip; S.ev.touched = true; return render(true); }
     if ("whole" in d) { S.ev.pts = []; S.ev.whole = true; S.ev.touched = true; return render(true); }
-    if ("evnext" in d) { S.ev.done[S.estep] = true; const o = eorder(); S.estep = o[o.indexOf(S.estep) + 1]; if (S.estep === "area") await loadSnap(S.ev); return render(); }
+    if ("evnext" in d) { S.ev.done[S.estep] = true; const o = eorder(); S.estep = o[o.indexOf(S.estep) + 1]; if (S.estep === "area") return wizardPicture(); return render(); }
     if ("evprev" in d) { const o = eorder(); S.estep = o[o.indexOf(S.estep) - 1]; return render(); }
     if ("evcreate" in d) return createEvent();
     if ("evdone" in d) return go("customer", { section: "events" });

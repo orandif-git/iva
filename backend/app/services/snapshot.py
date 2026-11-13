@@ -85,8 +85,14 @@ async def get(camera_id, row, decrypt_source, now=time.monotonic, max_age: float
         hit = _cache.get(camera_id)
         if hit and now() - hit[0] < keep:
             return hit[1]
-        url, fmt = await source_for(row, decrypt_source)
-        jpeg = await grab(url, fmt)
+        started = time.monotonic()
+        try:
+            url, fmt = await source_for(row, decrypt_source)
+            jpeg = await grab(url, fmt)
+        except Exception as e:                                           # how long a failure took is as useful as how long a picture took
+            log.info("snapshot %s failed after %.1f s (%s)", camera_id, time.monotonic() - started, getattr(e, "code", type(e).__name__))
+            raise
+        log.info("snapshot %s took %.1f s", camera_id, time.monotonic() - started)
         if len(_cache) > 500:
             _cache.clear()
         _cache[camera_id] = (now(), jpeg)

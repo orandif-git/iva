@@ -163,3 +163,28 @@ async def test_the_counting_line_and_the_plate_area_are_marked_from_the_control_
     assert (await client.put(base, json={"zones": [line]}, headers=support["headers"])).status_code == 403
     cfg = (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()
     assert {z["kind"] for z in cfg["zones"]} == {"count_line", "anpr_zone"}                                           # the worker is told about the line and the plate area
+
+
+async def test_every_picture_taken_from_a_camera_is_logged_with_how_long_it_took(caplog, monkeypatch):
+    import logging, uuid
+    from app.errors import ApiError
+    from app.services import snapshot
+    async def source(row, decrypt):
+        return "x", None
+    async def ok(url, fmt):
+        return b"\xff\xd8jpeg"
+    async def bad(url, fmt):
+        raise ApiError(504, "snapshot_timeout", "too slow")
+    monkeypatch.setattr(snapshot, "source_for", source)
+    cam = uuid.uuid4()
+    with caplog.at_level(logging.INFO, logger="gateinsight.snapshot"):
+        monkeypatch.setattr(snapshot, "grab", ok)
+        await snapshot.get(cam, {}, lambda: "")
+        monkeypatch.setattr(snapshot, "grab", bad)
+        try:
+            await snapshot.get(uuid.uuid4(), {}, lambda: "")
+        except ApiError:
+            pass
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith(f"snapshot {cam} took ") and m.endswith(" s") for m in msgs)
+    assert any("failed after" in m and "snapshot_timeout" in m for m in msgs)
