@@ -5,10 +5,10 @@ and the internal routes the recorder registrar calls. See `../API.md` for the fu
 
 ## Web pages and sign-in
 
-`web/` holds the customer app (`/`), the staff console (`/staff/`) and the set-password page. They are plain HTML, CSS and JavaScript served by the API itself
-(no build step), built from text nodes only (no `innerHTML`, no inline scripts or styles; a test enforces it) and sent with a strict content policy.
-Sign-in is in `app/services/auth.py` (passwords with scrypt; staff also need an authenticator code; refresh tokens work once; lockout and rate limits).
-Create the first staff account with `python -m scripts.create_staff`. Deployment steps: `DEPLOY.md` sections 6b and 6c.
+`web/` holds the Control Center (`/console`) and its sign-in and set-password pages (`/`, `/set-password`). They are plain HTML, CSS and JavaScript served by the API itself
+(no build step, no inline scripts or styles) and sent with a strict content policy.
+Sign-in is in `app/services/auth.py`: email and password only (scrypt); refresh tokens work once; lockout and rate limits. There is no customer sign-in.
+Create the first staff account with `python -m scripts.create_staff`. Deployment steps: `DEPLOY.md` sections 6 and 6c.
 
 ## Run it
 

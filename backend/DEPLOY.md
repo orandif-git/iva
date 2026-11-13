@@ -122,65 +122,19 @@ WantedBy=multi-user.target
 - [ ] Check the registrar is listening: `sudo ss -lunp | grep 5060` and `sudo ss -ltnp | grep 5060`.
 - [ ] Logs: `journalctl -u gi-api -f`, `journalctl -u gi-registrar -f`.
 
-## 6. Create the test customer and tokens
+## 6. Database changes (migrations) and the first staff account
 
-Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pages for it come next. Until then you can still use tokens printed by the seed script. See section 6b to create a real super admin.
-
-- [ ] ```bash
-      cd /opt/gateinsight/backend && source .venv/bin/activate
-      GI_SEED_DSN=postgresql://postgres@/gateinsight python -m scripts.seed_dev      # run as the postgres user: sudo -u postgres -E ...
-      ```
-- [ ] It prints staff tokens and a customer admin token (valid 8 hours). Save the **customer admin token** and the **technician token**.
-- [ ] The seed creates a customer "Sharma Auto Components" on the `full` plan with room for 10 cameras.
-
-## 6b. Real sign-in: the first super admin
-
-1. [ ] Apply the database change once (not needed for a database created from the current `schema.sql`):
+1. [ ] On a database made from the current `schema.sql` nothing more is needed. On an older one, apply the numbered files in `backend/migrations/` that you have not applied yet, in order (each is safe to repeat):
    ```bash
-   cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/002_auth.sql"
-   su postgres -c "psql -d gateinsight -f migrations/003_recorder_name.sql"
-   su postgres -c "psql -d gateinsight -f migrations/004_platform_console.sql"
-   su postgres -c "psql -d gateinsight -f migrations/005_storage_and_plate_pictures.sql"
-   su postgres -c "psql -d gateinsight -f migrations/006_ai_view.sql"
-   su postgres -c "psql -d gateinsight -f migrations/007_alert_catalogue.sql"
-   su postgres -c "psql -d gateinsight -f migrations/008_alert_webhooks.sql"      # removes the old WhatsApp provider and templates: set up webhooks in the staff console afterwards
-   su postgres -c "psql -d gateinsight -f migrations/009_system_alert_data.sql"   # connection history and known sign-in devices
-   su postgres -c "psql -d gateinsight -f migrations/010_area_alerts.sql"         # marked areas; the area alerts start switched off
-   su postgres -c "psql -d gateinsight -f migrations/019_summaries.sql"           # the daily and weekly summary: settings for sending it straight to WhatsApp
-   su postgres -c "psql -d gateinsight -f migrations/020_control_center.sql"        # the Control Center: Admin and Onboarding roles, service end date, hours per day, shop language, event names
-   su postgres -c "psql -d gateinsight -f migrations/021_activity_area.sql"          # a new kind of marked area: activity in an area (people or vehicles, when the shop is closed or between set times)
-   su postgres -c "psql -d gateinsight -f migrations/022_data_retention.sql"        # one setting for how long data is kept (Setup, Data kept)
-   su postgres -c "psql -d gateinsight -f migrations/023_owner_details.sql"          # the customer's owner: name, email and up to three owner mobile numbers (one number, one customer)
-   su postgres -c "psql -d gateinsight -f migrations/024_staff_delete.sql"           # console users can be deleted
-   su postgres -c "psql -d gateinsight -f migrations/025_keep_view_history.sql"       # deleting a console user keeps the record of what they looked at
-   su postgres -c "psql -d gateinsight -f migrations/026_owner_numbers_for_summaries.sql"  # the summary reads the owner numbers set on the customer
+   cd /www/wwwroot/iva/backend && su postgres -c "psql -d gateinsight -f migrations/026_owner_numbers_for_summaries.sql"
    ```
    Then restart the API: `systemctl restart gi-api`.
-2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:
+2. [ ] Create your own staff account. It asks for a password (hidden, typed twice):
    ```bash
    cd /www/wwwroot/iva/backend && .venv/bin/python -m scripts.create_staff --email you@yourcompany.in --name "Your Name" --role owner
    ```
-   Add the key to Google Authenticator, Microsoft Authenticator or Authy. Running it again for the same email resets the password and the authenticator and signs that person out everywhere.
-3. [ ] Check it (use a hidden prompt, do not paste the password into chat):
-   ```bash
-   read -rs P; curl -s -X POST http://127.0.0.1:8000/admin/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"you@yourcompany.in\",\"password\":\"$P\",\"code\":\"123456\"}"
-   ```
-   Replace `123456` with the code your app shows. You get an `access_token`.
-### Signing in without an authenticator app (optional, weaker)
-
-By default staff need their password **and** a 6-digit code. To use the password alone, add `GI_STAFF_REQUIRE_MFA=false` to `.env` and restart `gi-api`:
-
-```bash
-grep -q '^GI_STAFF_REQUIRE_MFA=' /www/wwwroot/iva/backend/.env && sed -i 's|^GI_STAFF_REQUIRE_MFA=.*|GI_STAFF_REQUIRE_MFA=false|' /www/wwwroot/iva/backend/.env || echo 'GI_STAFF_REQUIRE_MFA=false' >> /www/wwwroot/iva/backend/.env; systemctl restart gi-api
-```
-
-The sign-in page then hides the code box by itself. Things to know:
-- **It is weaker.** The staff console can see every customer, invite users and view as a customer. With the code, a stolen or guessed password is not enough; without it, it is. Use a long, unique password (a few words together), and do not reuse it anywhere.
-- Limits stay: five wrong passwords lock the account for 15 minutes, and attempts per address are limited.
-- Tokens made while it is off are marked "password only". If you turn it back on (`GI_STAFF_REQUIRE_MFA=true`, or remove the line), those sessions stop working at once and must sign in again with a code, so an old password-only session can never be upgraded.
-- `scripts.create_staff --no-authenticator` creates an account without an authenticator key. An account that already has one keeps working with or without it.
-
-4. [ ] Invite a customer's first user: `POST /admin/v1/tenants/<tenant id>/users` with `{"email","name","role":"admin"}` returns a `link`. Send it to the person; they choose their own password there.
+   Running it again for the same email resets the password and signs that person out everywhere. Everyone signs in with email and password only; there is no code or authenticator app.
+3. [ ] Other people are added in the console (**Console users**): it gives a one-time link to send them; they choose their own password.
 
 ## 6c. The web pages
 
@@ -188,22 +142,19 @@ The API serves the pages itself, so there is nothing else to install: no Node, n
 
 | Address | Who | What |
 |---|---|---|
-| `/` | customers | the customer app: sign in, home, cameras (live view, counting line, plate area), AI Watch, alerts, reports, activity, settings, recorders |
-| `/staff/` | your team | sign in (password + authenticator code), overview, customers, invite users, add recorders, camera health |
-| `/set-password?token=...` | invited customers | the one-time link staff send; they choose their own password |
+| `/` | your team | sign in |
+| `/console/` | your team | the Control Center: customers, recorders, cameras, events, messages, people count, vehicles, setup |
+| `/set-password?token=...` | invited staff | the one-time link; they choose their own password |
 
-- [ ] Set the public address in `.env` so invitation links point to the right place: `GI_PUBLIC_BASE_URL=https://app.yourcompany.in` (until you have the domain, use the tunnel address below). Restart `gi-api`.
-- [ ] Until the domain and HTTPS are ready, reach the pages through an SSH tunnel from your laptop: `ssh -L 8000:127.0.0.1:8000 you@<VPS IP>`, then open `http://localhost:8000/staff/` (and `http://localhost:8000/` for the customer side). Set `GI_PUBLIC_BASE_URL=http://localhost:8000` meanwhile. **Do not put the pages on the open internet over plain HTTP: passwords would travel unprotected.**
-- [ ] With the domain: in aaPanel add a website for the domain, turn on its free Let's Encrypt certificate, and set it up as a **reverse proxy** to `http://127.0.0.1:8000`. Keep the default `X-Forwarded-*` headers. The API then adds `Strict-Transport-Security` by itself.
+Old addresses (`/platform`, `/staff`, `/next`) redirect to `/`. Customers have no sign-in: they receive alerts and summaries on WhatsApp only.
+
+- [ ] Set the public address in `.env` so links point to the right place: `GI_PUBLIC_BASE_URL=https://ivision.jasinfo.in`. Restart `gi-api`.
+- [ ] With the domain: in aaPanel add a website, turn on its free Let's Encrypt certificate, and set it up as a **reverse proxy** to `http://127.0.0.1:8000`. Keep the default `X-Forwarded-*` headers.
 - [ ] Set `GI_ENV=prod` once real customers use it: the interactive API pages (`/docs`) are then switched off.
-- [ ] Staff pages: sign in with the account from section 6b. In the console: **Customers → New customer → Invite a user**, copy the link, send it to the customer (for example on WhatsApp).
-- [ ] Taking a camera picture (the "draw your counting line" screen) needs FFmpeg on the server (`ffmpeg -version`) and the Dahua gateway or registrar running. Settings if they are elsewhere: `GI_DAHUA_RELAY_URL` (default `http://127.0.0.1:8082`), `GI_GB_RELAY_URL` (default `http://127.0.0.1:8081`), `GI_FFMPEG_PATH`.
+- [ ] Picture taking (marking areas) needs FFmpeg (`ffmpeg -version`) and the Dahua gateway or registrar running. Settings if they are elsewhere: `GI_DAHUA_RELAY_URL` (default `http://127.0.0.1:8082`), `GI_GB_RELAY_URL` (default `http://127.0.0.1:8081`), `GI_FFMPEG_PATH`.
+- Push (Firebase) settings are kept for later; see `docs/PUSH.md`.
 
-**The customer app** (Flutter, built from `app/` by `scripts/build_app.sh` into `backend/web_next`) is served at the plain address. The old customer pages are gone. Platform Admin (the panel our own staff use) is at `/platform/`; the old `/staff/` address redirects to it. There is one sign-in page for everyone, at `/`. Old addresses keep working: `/next/...` redirects to `/`, and the old app's cached helper (`/sw.js`) is answered with one that empties its caches and removes itself, so phones that still hold the old app move over by themselves. A staff member who signs in on the customer page is handed on to the staff console, and "open the customer's app" from the console opens the customer view-only in the same app.
-
-Live view (moving pictures) uses FFmpeg on the server and keeps a connection open while someone watches. If you put a proxy in front, turn response buffering off for `/v1/live/` (the API already sends `X-Accel-Buffering: no`, which nginx honours). `GI_LIVE_STREAM_MAX` (default 8) is how many cameras can be watched at once on one server; `GI_LIVE_STREAM_FPS` (default 6) is the pictures a second. Push notifications are in `docs/PUSH.md`.
-
-Security of the pages: they load only their own scripts and styles (a strict content policy is sent with every page), they never put server or customer text into the page as HTML, and the sign-in token lives in the browser only: customers keep a long-lived refresh token (so they stay signed in on their own phone), staff keep theirs until the tab is closed.
+Security of the pages: they load only their own scripts and styles (a strict content policy is sent with every page) and the sign-in token lives in the browser only until the tab is closed. Because sign-in is a password alone, use a long unique password; five wrong tries lock the account for 15 minutes.
 
 ## 7. Reach the API safely
 

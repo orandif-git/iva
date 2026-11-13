@@ -1,5 +1,7 @@
 # Alerts: System Alerts, Smart Alerts and webhooks
 
+> Note: the customer app is gone. Routes below written as `/v1/...` (customer) now exist only as staff routes under `/admin/v1/tenants/{id}/shop/...` (see `routers/admin_shop.py`). Customers receive alerts on WhatsApp only.
+
 ## The two families
 
 | Family | What it is | Shown with |
