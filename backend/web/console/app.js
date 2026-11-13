@@ -884,7 +884,22 @@ document.addEventListener("click", async (ev) => {
     if (d.confirm === "invite") { const r = await api.post("/admin/v1/staff", { name: $("#in1").value.trim(), email: $("#in2").value.trim(), role: $("#in3").value }); modal(`${mh("Sign-in link")}<p class="sub nm">Send this link to ${esc(r.email)}. It works once and lets them choose a password.</p><input class="in full" readonly value="${esc(r.link)}" id="lk"><button class="btn pri wide" type="button" data-close>Done</button>`); $("#lk").select(); return; }
     if (d.disable || d.enable) { await api.post(`/admin/v1/staff/${d.disable || d.enable}/${d.disable ? "disable" : "enable"}?reason=${encodeURIComponent("Changed from the Control Center")}`); toast("Done"); return render(true); }
     if (d.resetlink) { const r = await api.post(`/admin/v1/staff/${d.resetlink}/reset-link?reason=${encodeURIComponent("New link from the Control Center")}`); modal(`${mh("Sign-in link")}<p class="sub nm">This link works once.</p><input class="in full" readonly value="${esc(r.link)}" id="lk"><button class="btn pri wide" type="button" data-close>Done</button>`); $("#lk").select(); return; }
-    if ("testwa" in d) { await api.post("/admin/v1/summaries/test", {}); return toast("Test sent to your number"); }
+    if ("testwa" in d) {
+      const r = await api.get("/admin/v1/tenants?limit=200"); let last = ""; try { last = localStorage.getItem("gi_test_to") || ""; } catch (e) { /* no storage */ }
+      return modal(`${mh("Send a test message")}<p class="sub nm">Sends one real summary, starting with the word TEST, to the number below. The customer is not told.</p>
+      <label class="bold" for="tw-c">Which customer's summary?</label><select class="in" id="tw-c">${(r.items || []).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}</select>
+      <label class="bold" for="tw-n">Send to (mobile number)</label><input class="in" id="tw-n" inputmode="tel" placeholder="+91 98765 43210" value="${esc(last)}">
+      <div class="actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn pri" type="button" data-confirm="dotestwa">Send test</button></div>`);
+    }
+    if (d.confirm === "dotestwa") {
+      const to = $("#tw-n").value.trim(), tenant_id = $("#tw-c").value;
+      if (!tenant_id) return toast("Choose a customer first.", true);
+      if (!/^\+?[0-9 ]{10,16}$/.test(to)) return toast("Enter a mobile number with 10 to 16 digits, for example +91 98765 43210.", true);
+      try { localStorage.setItem("gi_test_to", to); } catch (e) { /* no storage */ }
+      const r = await api.post("/admin/v1/summaries/test", { tenant_id, kind: "daily", to });
+      closeModal();
+      return r.ok ? toast("Sent. The provider accepted it" + (r.message_id ? " (id " + r.message_id + ")" : "") + ".") : toast("The provider did not accept it: " + (r.error || "status " + r.status), true);
+    }
     if ("keepsave" in d) { await api.put("/admin/v1/maintenance/keep", { days: +S.keepDays }); S.keepDays = null; toast("Saved. Everything older is removed at the next clean-up."); return render(true); }
     if ("keepclear" in d) { const k = await api.get("/admin/v1/maintenance/keep"), p = await api.get(`/admin/v1/maintenance/keep/preview?days=${k.days}`); return modal(`${mh("Clear now?")}<p class="nm">Everything older than ${k.days} days is removed for every customer. This cannot be undone.</p><div class="creds">${[["Alerts", p.alerts], ["Messages", p.messages], ["People counts", p.people_counts], ["Plate reads", p.plate_reads], ["Pictures and clips", p.pictures_and_clips]].map(([l, v]) => `<div class="kv"><span>${l}</span><span class="num">${(v ?? 0).toLocaleString("en-IN")}</span></div>`).join("")}</div><div class="row"><button class="btn danger" type="button" data-confirm="keepclear">Clear now</button><button class="btn" type="button" data-close>Cancel</button></div>`); }
     if (d.confirm === "keepclear") { const r = await api.post("/admin/v1/maintenance/retention/run"); closeModal(); toast("Done"); return render(true); }
