@@ -290,6 +290,7 @@ CREATE TABLE app.tenants (
   msg_whatsapp             boolean NOT NULL DEFAULT true,
   msg_email                boolean NOT NULL DEFAULT true,
   msg_clips                boolean NOT NULL DEFAULT true,            -- short video clips with alerts (they cost storage)
+  smooth_video             boolean NOT NULL DEFAULT false,           -- smooth live video (WebRTC through go2rtc) for this customer; staff switch it on for the ones who ask
   -- Opening hours, in the customer's own time zone. NULL: not set, so "Counting stopped" and "After-hours activity" cannot fire. closed_days: 0 = Monday ... 6 = Sunday.
   open_time                time,
   close_time               time,
@@ -603,7 +604,8 @@ CREATE TABLE app.live_sessions (
   max_end_at timestamptz NOT NULL,                      -- the hard limit, however many times it is extended
   extensions integer NOT NULL DEFAULT 0,
   ended_at   timestamptz,
-  ended_why  text
+  ended_why  text,
+  smooth     boolean NOT NULL DEFAULT false              -- this view is really using smooth video (counted against GI_SMOOTH_VIDEO_MAX)
 );
 CREATE INDEX live_sessions_tenant_idx ON app.live_sessions (tenant_id, started_at DESC);
 CREATE INDEX live_sessions_active_idx ON app.live_sessions (tenant_id) WHERE ended_at IS NULL;

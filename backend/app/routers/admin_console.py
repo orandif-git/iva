@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..db import db
+from ..config import get_settings
 from ..deps import AdminCtx, admin_ctx
+from ..errors import ApiError
+from ..schemas import Strict
+from ..services import go2rtc
+from pydantic import Field
+from uuid import UUID
 
 router = APIRouter(prefix="/admin/v1", tags=["admin: console"])
 EVERY_SECONDS = 5.0
@@ -81,3 +87,29 @@ async def events(request: Request, ctx: AdminCtx = Depends(admin_ctx(), scope="f
     fetch (the sign-in travels in a header), so no token ever appears in a URL."""
     return StreamingResponse(_feed(request), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------------------------------------------ smooth live video, for one customer
+class SmoothIn(Strict):
+    enabled: bool
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.get("/tenants/{tenant_id}/smooth-video")
+async def get_smooth(tenant_id: UUID, ctx: AdminCtx = Depends(admin_ctx())):
+    """Whether this customer has smooth live video, whether the server can give it (go2rtc is set up), and how many smooth views are open on the server now."""
+    on = await ctx.conn.fetchval("SELECT smooth_video FROM app.tenants WHERE id=$1", tenant_id)
+    if on is None:
+        raise ApiError(404, "tenant_not_found", "Customer not found.")
+    viewers = await ctx.conn.fetchval("SELECT count(*) FROM app.live_sessions WHERE smooth AND ended_at IS NULL AND expires_at > now()")
+    return {"enabled": on, "available": go2rtc.configured(), "viewers_now": int(viewers or 0), "max": get_settings().smooth_video_max}
+
+
+@router.put("/tenants/{tenant_id}/smooth-video")
+async def set_smooth(tenant_id: UUID, body: SmoothIn, ctx: AdminCtx = Depends(admin_ctx("owner"))):
+    cur = await ctx.conn.fetchval("SELECT smooth_video FROM app.tenants WHERE id=$1", tenant_id)
+    if cur is None:
+        raise ApiError(404, "tenant_not_found", "Customer not found.")
+    await ctx.conn.execute("UPDATE app.tenants SET smooth_video=$2 WHERE id=$1", tenant_id, body.enabled)
+    await ctx.audit("tenant.smooth_video", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, before={"enabled": cur}, after={"enabled": body.enabled})
+    return {"enabled": body.enabled, "available": go2rtc.configured()}

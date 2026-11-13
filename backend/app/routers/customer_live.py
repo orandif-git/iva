@@ -14,6 +14,7 @@ from cryptography.exceptions import InvalidTag
 from ..deps import CustomerCtx, customer_ctx
 from ..errors import ApiError
 from ..schemas import Strict
+from ..config import get_settings
 from ..crypto import vault
 from ..services import go2rtc, live, live_stream, snapshot
 
@@ -25,10 +26,21 @@ class StartIn(Strict):
     mode: Literal["live", "ai"] = "live"
 
 
-def _smooth(mode: str) -> dict:
-    """Whether the app should try smooth video first. It is offered only for a live view on a server that has go2rtc, so a server without it costs the app no wait at all."""
+async def _smooth_viewers(exclude: UUID | None = None) -> int:
+    """How many smooth live views are open right now, across every customer. The cap is for the whole server, so this reads past one customer's rows."""
+    from ..db import db
+    async with db.service_tx() as conn:
+        return int(await conn.fetchval("SELECT count(*) FROM app.live_sessions WHERE smooth AND ended_at IS NULL AND expires_at > now() AND ($1::uuid IS NULL OR id <> $1)", exclude))
+
+
+async def _smooth(ctx, mode: str) -> dict:
+    """Whether the app should try smooth video first: only for a live view, for a customer staff have switched it on for, on a server that has go2rtc and has room.
+    Anything else costs the app no wait at all, because it is told not to try."""
     from ..config import get_settings
-    return {"smooth": mode == "live" and go2rtc.configured(), "ice": [a.strip() for a in get_settings().live_ice_servers.split(",") if a.strip()]}
+    s = get_settings()
+    on = (mode == "live" and go2rtc.configured() and bool(await ctx.conn.fetchval("SELECT smooth_video FROM app.tenants WHERE id=$1", ctx.tenant_id))
+          and await _smooth_viewers() < s.smooth_video_max)
+    return {"smooth": on, "ice": [a.strip() for a in s.live_ice_servers.split(",") if a.strip()] if on else []}
 
 
 @router.post("/cameras/{camera_id}/live", status_code=201)
@@ -36,7 +48,7 @@ async def start_view(camera_id: UUID, body: StartIn | None = None, ctx: Customer
     mode = (body or StartIn()).mode
     s = await live.start(ctx.conn, ctx.tenant_id, ctx.user_id, camera_id, mode)
     await ctx.audit("camera.live_view", "camera", camera_id, {"mode": mode, "session": str(s["id"])})
-    return {**s, **_smooth(mode)}
+    return {**s, **(await _smooth(ctx, mode))}
 
 
 @router.get("/live/{session_id}")
@@ -90,6 +102,10 @@ async def whep(session_id: UUID, request: Request, ctx: CustomerCtx = Depends(cu
     await _mine(ctx, session_id)
     if s["mode"] != "live":
         raise ApiError(409, "use_frames", "AI view is drawn picture by picture. Use the frame address.")
+    if not await ctx.conn.fetchval("SELECT smooth_video FROM app.tenants WHERE id=$1", ctx.tenant_id):
+        raise ApiError(403, "smooth_video_off", "Smooth video is not switched on for your account. The picture view still works.")
+    if await _smooth_viewers(exclude=session_id) >= get_settings().smooth_video_max:
+        raise ApiError(503, "smooth_video_busy", "Smooth video is busy right now. The picture view still works.")
     cam_id = s["camera_id"]
     row = await ctx.conn.fetchrow(
         """SELECT c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol
@@ -104,6 +120,7 @@ async def whep(session_id: UUID, request: Request, ctx: CustomerCtx = Depends(cu
     if not offer.lstrip().startswith("v="):
         raise ApiError(400, "bad_offer", "The video player sent an empty offer. Try again.")
     answer = await go2rtc.whep(cam_id, row, decrypt, offer)
+    await ctx.conn.execute("UPDATE app.live_sessions SET smooth=true WHERE id=$1", session_id)        # counted against the cap until the view ends
     return Response(answer, media_type="application/sdp", headers={"Cache-Control": "no-store"})
 
 

@@ -238,8 +238,21 @@ async function messagingTab(X, c, after) {
   };
   const sw = (key, label, sub) => { const t = toggle(cur[key], () => {}, label); const input = t.querySelector("input"); input.disabled = !X.isOwner; input.onchange = () => { const want = input.checked; reasonSheet({ title: `${want ? "Turn on" : "Turn off"} ${label.toLowerCase()}?`, text: `This changes what ${c.name} can send.`, label: "Save", run: async (reason) => { await X.api.put(`/admin/v1/messaging/tenants/${c.id}`, { ...cur, [key]: want, reason }); cur[key] = want; closeSheet(); toast("Saved"); after(); } }); input.checked = cur[key]; }; return h("div", { class: "gi static" }, h("div", {}, h("b", {}, label), h("small", {}, sub)), t); };
   void save;
+  const live = await X.api.get(`/admin/v1/tenants/${c.id}/smooth-video`);
+  const smooth = (() => {
+    const t = toggle(live.enabled, () => {}, "Smooth live video on or off"), input = t.querySelector("input");
+    input.disabled = !X.isOwner;
+    input.onchange = () => {
+      const want = input.checked;
+      reasonSheet({ title: `${want ? "Turn on" : "Turn off"} smooth live video for ${c.name}?`, text: want ? "Their live view becomes real video. Each viewer makes the server work harder, and only a few can watch at once." : "Their live view goes back to refreshed pictures.", label: want ? "Turn on" : "Turn off",
+        run: async (reason) => { await X.api.put(`/admin/v1/tenants/${c.id}/smooth-video`, { enabled: want, reason }); live.enabled = want; closeSheet(); toast(want ? "Smooth live video is on" : "Smooth live video is off"); after(); } });
+      input.checked = live.enabled;      // if the sheet is dismissed the switch goes back
+    };
+    return h("div", { class: "gi static" }, h("div", {}, h("b", {}, "Smooth live video"), h("small", {}, live.available ? `Real video instead of refreshed pictures. ${live.viewers_now} of ${live.max} smooth views are open on the server now.` : "Not set up on the server yet (go2rtc), so everyone sees refreshed pictures.")), t);
+  })();
   return h("div", {}, group(sw("whatsapp", "WhatsApp alerts", "Alerts are sent as webhook events, by WhatsApp only"), sw("email", "Email for reports", "Scheduled reports by email"), sw("clips", "Video clips on alerts", "A short clip with blocked-vehicle alerts"),
     kv("WhatsApp messages this month", String(m.whatsapp_this_month), "There is no monthly limit")),
+    gh("Live view"), group(smooth),
     X.isOwner ? null : h("p", { class: "sub" }, "Only an owner can change these."),
     group(row({ icon: "chat", title: "Delivery log", sub: "What was sent and what failed, for every customer", onclick: () => { closeSheet(); X.go("#/webhooks"); } })),
     h("p", { class: "sub" }, "Who receives each alert is managed by the customer in their own app."));

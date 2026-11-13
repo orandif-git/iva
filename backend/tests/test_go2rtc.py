@@ -97,6 +97,7 @@ async def test_an_unreachable_go2rtc_is_a_plain_error_not_a_crash(monkeypatch):
 # ------------------------------------------------------------------------------------------ through the customer's API
 async def test_the_player_gets_an_answer_from_the_smooth_video_route(client, make, monkeypatch):
     t, u, cams = await shop(client, make)
+    await make.su.execute("UPDATE app.tenants SET smooth_video=true WHERE id=$1", t)          # staff have switched smooth video on for this customer
     s = await open_view(client, u, cams[0])
     seen = {}
 
@@ -115,6 +116,7 @@ async def test_the_player_gets_an_answer_from_the_smooth_video_route(client, mak
 async def test_without_a_smooth_video_service_the_app_is_told_to_keep_the_pictures(client, make, monkeypatch):
     monkeypatch.setattr(get_settings(), "go2rtc_url", "")
     t, u, cams = await shop(client, make)
+    await make.su.execute("UPDATE app.tenants SET smooth_video=true WHERE id=$1", t)          # staff have switched smooth video on for this customer
     s = await open_view(client, u, cams[0])
     r = await client.post(f"/v1/live/{s['id']}/whep", content=OFFER.encode(),
                           headers={**u["headers"], "Content-Type": "application/sdp"})
@@ -123,6 +125,7 @@ async def test_without_a_smooth_video_service_the_app_is_told_to_keep_the_pictur
 
 async def test_an_empty_offer_is_refused_before_anything_is_started(client, make, monkeypatch):
     t, u, cams = await shop(client, make)
+    await make.su.execute("UPDATE app.tenants SET smooth_video=true WHERE id=$1", t)          # staff have switched smooth video on for this customer
     s = await open_view(client, u, cams[0])
     r = await client.post(f"/v1/live/{s['id']}/whep", content=b"", headers={**u["headers"], "Content-Type": "application/sdp"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "bad_offer"

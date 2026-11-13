@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     live_stream_max: int = 8                             # moving live views running at once on this server; more are told to try again
     live_stream_fps: int = 6                             # pictures a second in a live view
     live_ice_servers: str = "stun:stun.l.google.com:19302"   # comma-separated STUN/TURN addresses the app gives WebRTC (empty: none)
+    smooth_video_max: int = 3                            # smooth live views running at once on this server (each is a video encode); more are given the picture view
     go2rtc_url: str = ""                                 # go2rtc's API, for smooth WebRTC video (empty: picture stream only). See docs/API.md
     ffmpeg_path: str = "ffmpeg"                          # used to take one picture from a camera for the "draw your counting line" screen
     dahua_relay_url: str = "http://127.0.0.1:8082"       # the Dahua gateway's video relay
