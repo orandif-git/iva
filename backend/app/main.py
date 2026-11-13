@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import errors
 from .config import get_settings
 from .db import db
-from .routers import (auth as auth_routes, admin_console, admin_users, admin_alerts, admin_webhooks, admin_summaries, admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_aiview, admin_misc, admin_plans, admin_staff, admin_storage, admin_recorders, admin_rtsp, admin_shop, admin_tenants, customer_alerts, customer_areas, customer_health, customer_hours, customer_live, customer_devices, customer_billing, customer_cameras, customer_events,
+from .routers import (auth as auth_routes, admin_console, admin_users, admin_alerts, admin_webhooks, admin_summaries, admin_billing, admin_framerate, admin_maintenance, admin_messaging, admin_aiview, admin_misc, admin_plans, admin_staff, admin_storage, admin_recorders, admin_rtsp, admin_shop, admin_views, admin_tenants, customer_alerts, customer_areas, customer_health, customer_hours, customer_live, customer_devices, customer_billing, customer_cameras, customer_events,
                       customer_recorders, customer_reports, internal, internal_evidence, internal_events, public_messaging)
 from .messaging import delivery, evidence as delivery_evidence
 from .services import billing, maintenance, reports, sweeper
@@ -93,7 +93,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.include_router(auth_routes.customer)
     app.include_router(auth_routes.staff)
-    for r in (admin_console, admin_users, admin_alerts, admin_webhooks, admin_summaries, admin_aiview, admin_plans, admin_staff, admin_storage, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, admin_shop, customer_recorders, customer_cameras, customer_events, customer_hours, customer_alerts, customer_areas, customer_health, customer_live, customer_devices, customer_reports, customer_billing,
+    for r in (admin_console, admin_users, admin_alerts, admin_webhooks, admin_summaries, admin_aiview, admin_plans, admin_staff, admin_storage, admin_misc, admin_tenants, admin_framerate, admin_recorders, admin_messaging, admin_maintenance, admin_billing, admin_rtsp, admin_shop, admin_views, customer_recorders, customer_cameras, customer_events, customer_hours, customer_alerts, customer_areas, customer_health, customer_live, customer_devices, customer_reports, customer_billing,
               internal, internal_events, internal_evidence, public_messaging):
         app.include_router(r.router)
 

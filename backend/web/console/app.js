@@ -36,7 +36,7 @@ const IC = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>', back: '<path d="M15 5l-7 7 7 7"/>', chev: '<path d="M9 6l6 6-6 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>', play: '<path d="M8 5.5v13l11-6.5z"/>', lock: '<rect x="5" y="10.5" width="14" height="9" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
-  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', car: '<path d="M4 15.5V12l2-5h12l2 5v3.5M4 15.5h16M4 15.5v2.5h3v-2.5M17 15.5V18h3v-2.5"/><circle cx="7.5" cy="12.5" r=".6"/><circle cx="16.5" cy="12.5" r=".6"/>', head: '<circle cx="12" cy="7" r="3"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M3.5 9.5v-4h4M20.5 9.5v-4h-4"/>', dl: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>', trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   wa: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8c-1-.4-2-1.4-2.4-2.4l.8-1-1-2z"/>',
   photo: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4 16l4.5-4 4 3.5 3-2.5L20 16"/>', area: '<path d="M5 8l5-3.5 9 4-2 9-8 2.5z"/>',
   camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>'
@@ -72,7 +72,7 @@ const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate
 
 /* ------------------------------------------------------------------------------------------------ state */
 const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", logRange: "7", logFrom: "", logTo: "", logData: null, evQ: "", keepDays: null, evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
-  customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
+  customers: [], form: null, ev: null, cur: null, data: {}, plans: [], cnt: { range: "today", cam: "all", data: null }, veh: { range: "7", dir: "all", st: "all", q: "", items: [], total: 0, tz: "" } };
 const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], keep: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"], recs: ["owner", "admin", "onboarding"], editc: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
 const PERMS = [["See all customers and the message log", "oaos"], ["Add a new customer and set it up", "oao-"], ["Edit people, hours and cameras", "oaos"], ["Add and change events", "oao-"], ["Pause or resume a customer", "oa-s"], ["Change the end date", "oa--"], ["Delete a customer", "o---"],
@@ -124,7 +124,7 @@ function side() {
   const el = $("#side"); let h = "";
   if (S.route === "new") h = `<h3>New customer</h3>` + NSTEPS.map((s, i) => `<button class="si" type="button" data-step="${s[0]}" aria-current="${S.step === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.form.done[s[0]] ? "done" : ""}">${S.form.done[s[0]] ? "✓" : i + 1}</span></button>`).join("");
   else if (S.route === "event") { const o = eorder(); h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = !!S.ev.key && !o.includes(s[0]); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join(""); }
-  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
+  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ...(S.cur?.id === S.cid && S.cur.views?.people.show ? [["count", "head", "People count"]] : []), ...(S.cur?.id === S.cid && S.cur.views?.vehicles.show ? [["vehicles", "car", "Vehicles"]] : []), ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
   else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["keep", "log", "Data kept", can("keep")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
   if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
   el.hidden = !h; el.innerHTML = h;
@@ -263,7 +263,7 @@ const credRows = (c) => Object.entries(c).filter(([k, v]) => v && typeof v !== "
 /* ------------------------------------------------------------------------------------------------ one customer */
 async function loadCurrent(id) {
   const base = `/admin/v1/tenants/${id}`, shop = base + "/shop";
-  const [people, hours, events, cams, recs] = await Promise.all([api.get(shop + "/people"), api.get(shop + "/hours"), api.get(shop + "/events"), api.get(shop + "/cameras"), api.get(`/admin/v1/recorders?tenant_id=${id}`)]);
+  const [people, hours, events, cams, recs, views] = await Promise.all([api.get(shop + "/people"), api.get(shop + "/hours"), api.get(shop + "/events"), api.get(shop + "/cameras"), api.get(`/admin/v1/recorders?tenant_id=${id}`), api.get(shop + "/views").catch(() => null)]);
   const c = cust(id);
   const rules = events.filter((e) => e.saved);
   const alertRules = rules.filter((e) => e.enabled && !["daily_summary", "weekly_summary"].includes(e.type)), sumRules = rules.filter((e) => ["daily_summary", "weekly_summary"].includes(e.type));
@@ -273,28 +273,91 @@ async function loadCurrent(id) {
     hmode: hours.set ? "set" : "always", hours: hours.days.map((d) => ({ open: d.open, from: d.from, to: d.to })), daily: daily ? daily.enabled : true, dailyAt: String(daily?.params?.hour ?? 8).padStart(2, "0") + ":00", weekly: weekly ? weekly.enabled : true, expiry: c.endsOn || "", done: {} };
   const areas = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/areas`).catch(() => [])])));
   const zones = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/zones`).catch(() => [])])));
-  S.cur = { id, f, people, events, cams, recs, areas, zones, channels: {} };
+  S.cur = { id, f, people, events, cams, recs, areas, zones, views, channels: {} };
 }
 async function pageCustomer() {
   if (!S.cur || S.cur.id !== S.cid) await loadCurrent(S.cid);
   const c = cust(S.cid), st = statusOf(c), f = S.cur.f;
-  const titles = { people: "Who gets messages", hours: "Business hours", cams: "Recorder and cameras", events: "Events", log: "Messages sent" };
+  const titles = { people: "Who gets messages", hours: "Business hours", cams: "Recorder and cameras", events: "Events", log: "Messages sent", count: "People count", vehicles: "Vehicles" };
+  if (S.section === "count" && !S.cur.views?.people.show || S.section === "vehicles" && !S.cur.views?.vehicles.show) S.section = "events";          // nothing counts people (or reads plates) and nothing is left to show
   let body;
   if (S.section === "events") body = secEvents();
   else if (S.section === "cams") body = secCams();
   else if (S.section === "log") { await loadLog(S.cid, false, true); body = logTable(false); }
+  else if (S.section === "count") { await loadCount(); body = secCount(); }
+  else if (S.section === "vehicles") { await loadVehicles(false, S.veh.hold); S.veh.hold = false; body = secVehicles(); }
   else body = (S.section === "hours" ? secHours(f) + secSummaries(f) : secPeople(f)) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
   return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span><span class="hb">
    <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-editc ${can("editc") ? "" : "disabled title='Not for your role'"}>${ico("edit", 15)}Edit</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></span></div>
    ${c.ownerPhones.length ? "" : `<div class="whyline t-warn">The owner's mobile number is missing. Add it with Edit.</div>`}
    ${whyOf(c) ? `<div class="whyline ${st[1] === "warn" ? "t-warn" : st[1] === "crit" ? "t-crit" : "sub"}">${esc(whyOf(c))}</div>` : ""}
-   <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log"].includes(S.section) ? "full" : ""}">${body}</div></div>`;
+   <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log", "count", "vehicles"].includes(S.section) ? "full" : ""}">${body}</div></div>`;
 }
 function secCams() {
   const { recs, cams, channels } = S.cur;
   return `<div class="stack"><div class="bar flush"><span class="sub">The recorder sends its cameras once it has connected to our server.</span><span class="sp"></span><button class="btn pri" type="button" data-addrec ${can("events") ? "" : "disabled title='Not for your role'"}>${ico("plus")}Add recorder</button></div>
   ${recs.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Recorder</th><th>Brand</th><th>Status</th><th>Last seen</th><th></th></tr></thead><tbody>${recs.map((r) => `<tr><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : r.status === "offline" ? "t-crit" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td><td class="num">${fmtTime(r.last_heartbeat_at)}</td><td><button class="btn sm" type="button" data-findcams="${r.id}">Find cameras</button> <button class="btn sm" type="button" data-showconn="${r.id}">Details</button> <button class="btn sm" type="button" data-editrec="${r.id}" ${can("recs") ? "" : "disabled title='Not for your role'"}>Edit</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No recorder yet. Add one, then type its details into the recorder.</div>`}
   ${Object.entries(channels).map(([rid, list]) => `<div class="sec-h">Cameras found on ${esc(recs.find((r) => r.id === rid)?.name || recs.find((r) => r.id === rid)?.device_id || "the recorder")}</div>${list.length ? `${list.some((x) => !x.enabled_as_camera) ? `<div class="row"><button class="btn sm" type="button" data-chall="${rid}|1">Select all</button><button class="btn sm" type="button" data-chall="${rid}|0">Deselect all</button><span class="sub">${list.filter((x) => !x.enabled_as_camera && x.on).length} of ${list.filter((x) => !x.enabled_as_camera).length} selected</span></div>` : ""}<div class="cams">${list.map((ch, i) => `<div class="cam"><div class="pic" data-pic="${rid}|${ch.channel_no}">${ico("cam", 24)}<span class="picmsg">Loading picture…</span></div><div class="cb">${ch.enabled_as_camera ? `<span class="tag ok">Already added</span>` : `<label class="chk"><input type="checkbox" data-ch="${rid}.${i}" ${ch.on ? "checked" : ""}>Watch this camera</label><input class="in" aria-label="Camera name" data-chn="${rid}.${i}" value="${esc(ch.name)}">`}</div></div>`).join("")}</div>${list.some((x) => !x.enabled_as_camera) ? `<div><button class="btn pri" type="button" data-addcams="${rid}">Add the ticked cameras</button></div>` : ""}` : `<div class="note">The recorder has not sent its cameras yet. Check its details, then try again in a minute.</div>`}`).join("")}</div>`;
+}
+/* ------------------------------------------------------------------------------------------------ People count and Vehicles (read only) */
+const nf = (x) => (x ?? 0).toLocaleString("en-IN");
+const PV_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["30", "Last 30 days"]];
+function pvDates(r) {
+  const t = todayIST(), back = (k) => { const d = new Date(t); d.setDate(d.getDate() - k); return isoDay(d); };
+  return r === "today" ? [isoDay(t), isoDay(t)] : r === "yesterday" ? [back(1), back(1)] : r === "30" ? [back(29), isoDay(t)] : [back(6), isoDay(t)];
+}
+const pvSel = (id, label, v, opts) => `<label class="sr" for="${id}">${label}</label><select class="in sel" id="${id}">${opts.map((o) => `<option value="${o[0]}" ${v === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>`;
+const hr12 = (h) => `${h % 12 || 12}${h < 12 ? " am" : " pm"}`;
+async function loadCount() {
+  const [from, to] = pvDates(S.cnt.range), p = new URLSearchParams({ from, to }); if (S.cnt.cam !== "all") p.set("camera_id", S.cnt.cam);
+  S.cnt.data = await api.get(`/admin/v1/tenants/${S.cid}/shop/people-count?${p}`);
+}
+function secCount() {
+  const D = S.cnt.data, v = S.cur.views.people, daily = !D.hourly, ser = D.series;
+  let lo = 0, hi = ser.length - 1;
+  if (!daily) { const used = ser.map((x, i) => x.in + x.out > 0 ? i : -1).filter((i) => i >= 0); lo = Math.min(9, ...(used.length ? used : [9])); hi = Math.max(20, ...(used.length ? used : [20])); }
+  const shown = ser.slice(lo, hi + 1), mx = Math.max(1, ...shown.map((x) => x.in + x.out)), peak = D.busiest;
+  const dayName = (x) => { const d = new Date(x.label + "T00:00:00"); return S.cnt.range === "7" ? d.toLocaleDateString("en-GB", { weekday: "short" }) : String(d.getDate()); };
+  const lab = (x, i) => daily ? (S.cnt.range === "30" && i % 2 ? "" : dayName(x)) : (i === 0 || x.label === 12 ? hr12(x.label) : String(x.label % 12 || 12));
+  const cams = S.cur.cams.filter((c) => c.use_footfall || D.cameras.some((q) => q.id === c.id));
+  return `<div class="stack">${v.on ? "" : `<div class="note">No event counts people any more, so nothing new is being counted. Showing what was saved earlier.</div>`}
+  <div class="bar flush">${pvSel("cnt-range", "Range", S.cnt.range, PV_RANGES)}${pvSel("cnt-cam", "Door", S.cnt.cam, [["all", "All doors"], ...cams.map((c) => [c.id, c.name])])}<span class="sp"></span><button class="btn" type="button" data-export="count">${ico("dl", 16)}Export to Excel</button></div>
+  <div class="kpis"><div class="kpi"><div class="k">People in</div><div class="v">${nf(D.people_in)}</div></div><div class="kpi"><div class="k">People out</div><div class="v">${nf(D.people_out)}</div></div>
+  <div class="kpi"><div class="k">${daily ? "Busiest day" : "Busiest hour"}</div><div class="v">${peak ? (daily ? dayName(peak) + (S.cnt.range === "30" ? " " + new Date(peak.label + "T00:00:00").toLocaleDateString("en-GB", { month: "short" }) : "") : hr12(peak.label)) : "—"}</div><div class="nt">${peak ? `${nf(peak.in)} in, ${nf(peak.out)} out` : "Nobody counted"}</div></div>
+  <div class="kpi"><div class="k">About inside now</div><div class="v">${D.inside_now === null ? "—" : "~" + nf(D.inside_now)}</div><div class="nt">${D.inside_now === null ? "Shown when today is in the range" : "An estimate. A missed person at the door makes it drift."}</div></div></div>
+  <div class="h2">${daily ? "People per day" : "People per hour"}<span class="legend"><span><i class="lg-in"></i>In</span><span><i class="lg-out"></i>Out</span></span></div>
+  ${D.people_in + D.people_out ? `<div class="chart"><div class="plot">${shown.map((x) => `<div class="col ${peak && x.label === peak.label ? "peak" : ""}" title="${daily ? dayName(x) : hr12(x.label)}: ${x.in} in, ${x.out} out"><span class="i" data-hp="${x.in / mx * 100}"></span><span class="o" data-hp="${x.out / mx * 100}"></span></div>`).join("")}</div><div class="axis">${shown.map((x, i) => `<span>${lab(x, i)}</span>`).join("")}</div></div>` : `<div class="empty">Nobody was counted in this range.</div>`}
+  <div class="h2">By camera</div><div class="scroll"><table class="tbl"><thead><tr><th>Camera</th><th class="num">In</th><th class="num">Out</th><th>Last counted</th></tr></thead><tbody>${D.cameras.length ? D.cameras.map((c) => `<tr><td class="main-c">${esc(c.name)}</td><td class="num">${nf(c.in)}</td><td class="num">${nf(c.out)}</td><td>${c.last_at ? fmtTime(c.last_at) : "—"}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">No camera counts people.</td></tr>`}</tbody></table></div>
+  <div class="sub small">Days are India time. Counts are kept for the days set under Setup, Data kept.</div></div>`;
+}
+async function loadVehicles(more, reuse) {
+  if (reuse) return;                                                          // "Load more" asked for the next page: keep what is on screen
+  const V = S.veh, [from, to] = pvDates(V.range), p = new URLSearchParams({ from, to, limit: "50" });
+  if (V.q.trim()) p.set("q", V.q.trim()); if (V.dir !== "all") p.set("direction", V.dir); if (V.st !== "all") p.set("status", V.st); if (more) p.set("offset", String(V.items.length));
+  const r = await api.get(`/admin/v1/tenants/${S.cid}/shop/vehicles?${p}`);
+  V.items = more ? V.items.concat(r.items) : r.items; V.total = r.total; V.tz = r.tz;
+}
+const stayText = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+const vWhen = (iso) => new Date(iso).toLocaleString("en-IN", { timeZone: TZ, day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+const vThumb = (x, big) => x.picture ? `<img class="${big ? "vbig" : "vthumb"} vimg" src="${esc(x.picture)}" alt="Vehicle ${esc(x.plate)}" loading="lazy">` : `<div class="${big ? "vbig" : "vthumb"} vnone">${ico("car", big ? 40 : 22)}</div>`;
+function secVehicles() {
+  const V = S.veh, v = S.cur.views.vehicles, rows = V.items;
+  return `<div class="stack">${v.on ? "" : `<div class="note">No event reads number plates any more, so nothing new is being read. Showing what was saved earlier.</div>`}
+  <div class="bar flush"><label class="search">${ico("search")}<span class="sr">Search a plate</span><input id="vq" placeholder="Search a plate" value="${esc(V.q)}" autocomplete="off"></label><span class="sp"></span>
+  ${pvSel("veh-range", "Range", V.range, PV_RANGES)}${pvSel("veh-dir", "Direction", V.dir, [["all", "In and out"], ["in", "Coming in"], ["out", "Going out"]])}${pvSel("veh-st", "Which vehicles", V.st, [["all", "All vehicles"], ["blocked", "Blocked list"], ["review", "Needs review"]])}
+  <button class="btn" type="button" data-export="vehicles">${ico("dl", 16)}Export to Excel</button></div>
+  ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Picture</th><th>Time</th><th>Plate</th><th>Where</th><th>Direction</th><th>Stay</th><th>Read</th></tr></thead><tbody>
+  ${rows.map((x, i) => `<tr class="vrow" data-veh="${i}" tabindex="0"><td>${vThumb(x)}</td><td>${vWhen(x.seen_at)}</td><td><span class="plate">${esc(x.plate || "—")}</span>${x.blocked ? ' <span class="tag crit">Blocked</span>' : ""}</td><td>${esc(x.camera)}</td><td>${x.direction ? `<span class="tag ${x.direction === "in" ? "ok" : ""}">${x.direction === "in" ? "In" : "Out"}</span>` : '<span class="sub">—</span>'}</td><td>${x.inside ? '<span class="tag brand" title="No exit has been read yet. It may have left unseen.">Inside now?</span>' : x.stay_minutes !== null ? stayText(x.stay_minutes) : "—"}</td><td>${x.needs_review ? '<span class="tag warn">Needs review</span>' : x.confidence !== null ? x.confidence + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>
+  <div class="more"><span></span>${rows.length < V.total ? `<button class="btn" type="button" data-vmore>Load more</button>` : "<span></span>"}<span class="sub end">Showing ${rows.length} of ${V.total}</span></div>` : `<div class="empty">No vehicles ${V.q || V.dir !== "all" || V.st !== "all" ? "match" : "were read in this range"}.</div>`}
+  <div class="sub small">Click a row to see the picture. Pictures and reads are kept for the days set under Setup, Data kept. An exit is matched to the latest entry of the same plate at any of the shop's plate cameras.</div></div>`;
+}
+function openVehicle(i) {
+  const x = S.veh.items[i]; if (!x) return;
+  modal(`${mh(esc(x.plate || "Unclear plate"))}${vThumb(x, true)}<div class="creds"><div class="kv"><span>Time</span><span>${vWhen(x.seen_at)}</span></div><div class="kv"><span>Where</span><span>${esc(x.camera)}</span></div><div class="kv"><span>Direction</span><span>${x.direction === "in" ? "Coming in" : x.direction === "out" ? "Going out" : "Not known"}</span></div><div class="kv"><span>Stay</span><span>${x.inside ? "Inside now? No exit read yet." : x.stay_minutes !== null ? stayText(x.stay_minutes) : "—"}</span></div><div class="kv"><span>How sure</span><span>${x.needs_review ? "Not sure, needs review" : x.confidence !== null ? x.confidence + "%" : "—"}</span></div><div class="kv"><span>Blocked list</span><span>${x.blocked ? "Yes, this plate is on the list" : "No"}</span></div></div><p class="sub nm">Green box: the vehicle. Red box: the plate. View only.</p>`);
+}
+async function downloadFile(url, name) {
+  const blob = await api.call("GET", url, undefined, { blob: true });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 const RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["custom", "Custom"]];
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -719,7 +782,9 @@ async function render(keepScroll) {
   try { html = await PAGES[S.route](); } catch (e) { html = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`; }
   if (mine !== token) return;
   p.innerHTML = html; p.scrollTop = keepScroll ? y : 0;
+  if (S.route === "customer") side();                                        // the menu depends on what this customer has (loaded just now)
   p.querySelectorAll(".bars i[data-h]").forEach((b) => { b.style.height = b.dataset.h + "px"; });
+  p.querySelectorAll(".plot span[data-hp]").forEach((b) => { b.style.height = b.dataset.hp + "%"; });
   loadPics();
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const r = d.getBoundingClientRect(), E = S.ev; if (markMode(E.key) === "line" && E.pts.length >= 2) E.pts = []; E.pts.push([Math.round((ev.clientX - r.left) / r.width * 640), Math.round((ev.clientY - r.top) / r.height * 360)]); E.touched = true; E.whole = false; render(true); });
 }
@@ -727,7 +792,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -793,6 +858,13 @@ document.addEventListener("click", async (ev) => {
     if ("addrec" in d) return modal(`${mh("Add a recorder")}<label class="bold" for="rn">Recorder name</label><input class="in" id="rn" placeholder="For example, Main shop" autocomplete="off"><p class="sub nm">Dahua recorders connect to our server by themselves. You get the details to type into the recorder next.</p><button class="btn pri wide" type="button" data-confirm="addrec">Add recorder</button>`);
     if (d.confirm === "addrec") { const r = await api.post(`/admin/v1/tenants/${S.cid}/recorders`, { brand: "dahua", name: $("#rn").value.trim() || null, reason: "Added from the Control Center" }); S.cur = null; modal(`${mh("Type these into the recorder")}<div class="creds">${credRows(r)}</div><p class="sub nm">This is the only time the key is shown.</p><button class="btn pri wide" type="button" data-close>Done</button>`); return render(true); }
     if (d.campic) { const c = S.cur.cams.find((x) => x.id === d.campic); modal(`${mh(esc(c.name))}<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(c.name)} · ${esc(cname())}</span></div><div class="vpic big" data-campic-box="${c.id}"><span class="picmsg">Loading picture…</span></div></div><button class="btn wide" type="button" data-close>Close</button>`); return loadPics(); }
+    if (d.veh !== undefined) return openVehicle(+d.veh);
+    if ("vmore" in d) { await loadVehicles(true); S.veh.hold = true; return render(true); }
+    if (d.export) {
+      const c = d.export === "count", V = S.veh, [from, to] = pvDates(c ? S.cnt.range : V.range), p = new URLSearchParams({ from, to });
+      if (!c) { if (V.q.trim()) p.set("q", V.q.trim()); if (V.dir !== "all") p.set("direction", V.dir); if (V.st !== "all") p.set("status", V.st); }
+      await downloadFile(`/admin/v1/tenants/${S.cid}/shop/${c ? "people-count" : "vehicles"}/export?${p}`, `${c ? "people_count" : "vehicles"}_${from}${from !== to ? "_to_" + to : ""}.xlsx`); return toast("Excel file ready");
+    }
     if (d.showconn) { const r = await api.get(`/admin/v1/recorders/${d.showconn}/connection`); return modal(`${mh("Recorder details")}<div class="creds">${credRows(r)}</div><button class="btn pri wide" type="button" data-close>Done</button>`); }
     if (d.editrec) { const r = S.cur.recs.find((x) => x.id === d.editrec); return modal(`${mh("Edit recorder")}<label class="bold" for="rn">Name</label><input class="in" id="rn" value="${esc(r.name || "")}" placeholder="${esc(r.device_id)}" autocomplete="off"><label class="bold" for="rid">Recorder ID</label><input class="in" id="rid" value="${esc(r.device_id)}" autocomplete="off"><p class="sub nm">The ID is what the recorder calls itself when it connects. If you change it, type the new ID into the recorder as well. Until then it shows as not connected.</p><div class="row"><button class="btn pri" type="button" data-confirm="saverec" data-id="${r.id}">Save</button><button class="btn" type="button" data-newpw="${r.id}">New password</button><span class="sp"></span><button class="btn danger" type="button" data-delrec="${r.id}">Delete</button></div>`); }
     if (d.confirm === "saverec") { const r = S.cur.recs.find((x) => x.id === d.id), name = $("#rn").value.trim(), rid = $("#rid").value.trim(); if (!rid) return toast("The recorder needs an ID.", true); const body = {}; if (name !== (r.name || "")) body.name = name; if (rid !== r.device_id) body.device_id = rid; if (!Object.keys(body).length) return closeModal(); const out = await api.patch(`/admin/v1/recorders/${d.id}`, body); await loadCurrent(S.cid); closeModal(); if (out.id_changed) modal(`${mh("Type the new ID into the recorder")}<div class="creds"><div class="kv"><span>Recorder ID</span><span class="sc">${esc(out.device_id)}</span></div></div><p class="sub nm">The password stays the same. The recorder connects again once it has the new ID.</p><button class="btn pri wide" type="button" data-close>Done</button>`); else toast("Saved"); return render(true); }
@@ -855,6 +927,7 @@ document.addEventListener("click", async (ev) => {
 document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
+  if (t.id === "vq") { S.veh.q = t.value; const p = t.selectionStart; clearTimeout(S.veh.t); S.veh.t = setTimeout(() => render(true).then(() => { const nn = $("#vq"); if (nn) { nn.focus(); nn.setSelectionRange(p, p); } }), 350); return; }
   if (t.id === "evq") { S.evQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#evq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "lq") { S.logQ = t.value; clearTimeout(S.lqTimer); S.lqTimer = setTimeout(() => { const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }, 350); return; }
   if (t.id === "tq") { S.tq = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#tq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
@@ -884,6 +957,11 @@ document.addEventListener("change", async (ev) => {
       const body = plate ? { use_anpr: t.checked, ...(t.checked ? { stream: "main" } : {}) } : { use_footfall: t.checked };
       await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
     if (d.act?.startsWith("camon:")) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.act.slice(6)}`, { enabled: t.checked }); toast("Saved"); return loadCurrent(S.cid).then(() => render(true)); }
+    if (t.id === "cnt-range") { S.cnt.range = t.value; return render(true); }
+    if (t.id === "cnt-cam") { S.cnt.cam = t.value; return render(true); }
+    if (t.id === "veh-range") { S.veh.range = t.value; return render(true); }
+    if (t.id === "veh-dir") { S.veh.dir = t.value; return render(true); }
+    if (t.id === "veh-st") { S.veh.st = t.value; return render(true); }
     if ("lrangesel" in d) { S.logRange = t.value; return render(true); }
     if ("lchipsel" in d) { S.logChip = t.value; return render(true); }
     if ("keepdays" in d) { S.keepDays = +t.value; return render(true); }
@@ -903,3 +981,6 @@ async function boot() {
   render();
 }
 boot();
+
+/* A vehicle picture that was removed (or never kept) becomes the plain car mark instead of a broken picture */
+document.addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.classList.contains("vimg")) { const d = document.createElement("div"); d.className = (t.classList.contains("vbig") ? "vbig" : "vthumb") + " vnone"; d.innerHTML = ico("car", t.classList.contains("vbig") ? 40 : 22); t.replaceWith(d); } }, true);

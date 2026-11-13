@@ -110,3 +110,11 @@ There is no customer app any more, so staff can no longer open a customer's acco
 - Overstay needs the direction (it only looks at vehicles that came in); a plate camera without one shows "No direction" in the Events list, and the Overstay row shows "No direction on N cameras". Nothing is changed or deleted behind anyone's back: open the Read number plates row, press "Mark the plate area and direction".
 - An exit is matched to the latest unmatched entry of the same plate at any of the shop's plate cameras, up to 7 days back.
 - The Vehicle overstay message has a new shortcode, `{entered_at}` (when the vehicle came in, on the shop's clock), next to `{plate}`, `{minutes}`, `{hours}` and `{stay}`. Add it to the overstay webhook payload if the WhatsApp template should show it.
+
+## People count and Vehicles
+
+Two read-only pages under each customer, in the menu after Events. A page shows when the matching event is switched on (a camera counts people / reads plates) **or** the customer still has saved history of it. With the event off and no history left, it hides by itself (history is removed after the "Data kept" days). With the event off but history kept, the page shows a note saying nothing new is being counted.
+- **People count**: Today / Yesterday / 7 / 30 days, all doors or one. People in, out, the busiest hour (or day), "about inside now" (an estimate from today's counts, shown only when today is in the range), a chart of people per hour or per day, and a per-camera table. Days are the shop's own days.
+- **Vehicles**: plate reads newest first with the picture (vehicle and plate boxed), plate search, range, in or out, "Blocked list" and "Needs review". An entry shows how long the vehicle stayed once an exit of the same plate was read at any of the shop's plate cameras; with no exit it shows "Inside now?" (it may have left unseen). Click a row for a larger picture. "Load more" pages through the list.
+- **Export to Excel** on both pages, with the same builders as the scheduled reports (vehicles: the gate register; people: the footfall summary).
+- Endpoints (staff, all roles can view): `GET /admin/v1/tenants/{id}/shop/views`, `/people-count`, `/people-count/export`, `/vehicles`, `/vehicles/export`. Pictures are short signed links (1 hour) and are offered only while the picture is kept.
