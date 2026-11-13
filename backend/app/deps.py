@@ -97,6 +97,7 @@ class CustomerCtx:
     role: str
     viewing_as_staff: bool
     request_id: str
+    all_kinds: bool = False        # the Control Center sees every kind of marked area; a customer's own app sees the first three
 
     async def audit(self, action, target_type=None, target_id=None, after=None, reason=None):
         await self.conn.execute(

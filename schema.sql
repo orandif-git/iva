@@ -29,7 +29,7 @@ CREATE TYPE app.tenant_role       AS ENUM ('admin','regular');
 CREATE TYPE app.recorder_brand    AS ENUM ('hikvision','dahua','other');
 CREATE TYPE app.recorder_protocol AS ENUM ('isup','auto_register','gb28181','rtsp','cloud_api');
 CREATE TYPE app.link_status       AS ENUM ('never','online','offline');
-CREATE TYPE app.zone_kind         AS ENUM ('count_line','anpr_zone','area_count','queue_area','staff_area');
+CREATE TYPE app.zone_kind         AS ENUM ('count_line','anpr_zone','area_count','queue_area','staff_area','activity_area');
 CREATE TYPE app.review_status     AS ENUM ('auto','needs_review','confirmed','corrected');
 CREATE TYPE app.direction         AS ENUM ('in','out');
 CREATE TYPE app.list_type         AS ENUM ('blocked','allowed');

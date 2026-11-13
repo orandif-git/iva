@@ -21,6 +21,7 @@ _TEXT = {
     "people_in_area": lambda d, c: f"{_plural(d['people'], 'person', 'people')} in the area right now.",
     "queue_long": lambda d, c: f"{_plural(d['length'], 'person', 'people')} waiting.",
     "phone_use": lambda d, c: f"a phone was seen in use for {int(d['seconds'])} seconds.",
+    "area_activity": lambda d, c: f"{'a vehicle' if d.get('what') == 'vehicle' else ('someone' if int(d.get('count', 1)) == 1 else str(int(d.get('count', 1))) + ' people')} seen" + (f" {d['when']}" if d.get("when") not in (None, "at any time") else "") + ".",
     "blocked_plate": lambda d, c: f"{d['plate']} arrived at {c}.",
     "vehicle_overstay": lambda d, c: f"{d['plate']} parked for {_duration(d['minutes'])}.",
     "low_confidence_plate": lambda d, c: "a number plate could not be read clearly.",
@@ -53,6 +54,7 @@ _TAMIL = {
     "people_in_area": lambda d, c: f"இப்போ {int(d['people'])} பேர் இருக்காங்க.",
     "queue_long": lambda d, c: f"{int(d['length'])} பேர் காத்திருக்காங்க.",
     "phone_use": lambda d, c: f"{int(d['seconds'])} செகண்ட் போன் யூஸ் பண்றமாதிரி தெரியுது.",
+    "area_activity": lambda d, c: "ஒரு வண்டி தெரியுது." if d.get("what") == "vehicle" else "யாரோ தெரியுறாங்க.",
     "blocked_plate": lambda d, c: f"{d['plate']} {c}-க்கு வந்துச்சு.",
     "vehicle_overstay": lambda d, c: f"{d['plate']} {_tamil_for(d['minutes'])} நிக்குது.",
     "low_confidence_plate": lambda d, c: "ஒரு நம்பர் பிளேட்ட கிளியரா படிக்க முடியல.",
@@ -91,7 +93,7 @@ def compose(rule_type: str, name: str, camera_name: str, details: dict, clock: s
         fact = make(details, clock)
     except (KeyError, ValueError, TypeError):
         return name, body
-    place = "" if rule_type in _NO_PLACE else ((details.get("area") if rule_type in ("people_in_area", "queue_long", "phone_use") else None) or details.get("what_recovered") or camera_name or details.get("recorder") or "")
+    place = "" if rule_type in _NO_PLACE else ((details.get("area") if rule_type in ("people_in_area", "queue_long", "phone_use", "area_activity") else None) or details.get("what_recovered") or camera_name or details.get("recorder") or "")
     line = lambda f: f"{place}: {f}" if place else f[:1].upper() + f[1:]
     text = line(fact)
     if tamil:

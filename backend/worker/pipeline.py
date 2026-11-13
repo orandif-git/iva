@@ -102,7 +102,8 @@ class CameraPipeline:
             return Observation()
         dets = self.detector.detect(frame)
         self.stats["detect_ms"] += getattr(self.detector, "last_ms", 0.0)
-        relevant = any((d.label == "person" and (self.counter or self.areas)) or (d.label in VEHICLE_LABELS and self.cfg.use_anpr and self.reader) for d in dets)
+        areas_vehicles = bool(self.areas and self.areas.wants_vehicles)
+        relevant = any((d.label == "person" and (self.counter or self.areas)) or (d.label in VEHICLE_LABELS and ((self.cfg.use_anpr and self.reader) or areas_vehicles)) for d in dets)
 
         if self.counter or self.areas:
             for tr in self.people.update([d for d in dets if d.label == "person"], ts.timestamp()):
@@ -114,14 +115,15 @@ class CameraPipeline:
             for tr in self.people.drain_finished():
                 if self.counter:
                     self.counter.forget(tr.id)
+        if areas_vehicles or (self.cfg.use_anpr and self.reader):
+            for tr in self.vehicles.update([d for d in dets if d.label in VEHICLE_LABELS], ts.timestamp()):
+                if self.cfg.use_anpr and self.reader:
+                    self._vehicle(tr, frame, ts)
+            for tr in self.vehicles.drain_finished():
+                if self.cfg.use_anpr and self.reader:
+                    self._emit(tr.id)
         if self.areas:
             self._areas(frame, ts, dets, w, h)
-
-        if self.cfg.use_anpr and self.reader:
-            for tr in self.vehicles.update([d for d in dets if d.label in VEHICLE_LABELS], ts.timestamp()):
-                self._vehicle(tr, frame, ts)
-            for tr in self.vehicles.drain_finished():
-                self._emit(tr.id)
         return Observation(relevant, len(self.people.tracks) + len(self.vehicles.tracks), len(self.visits))
 
     def _measure_picture(self, frame, ts: datetime) -> None:
@@ -139,7 +141,8 @@ class CameraPipeline:
     def _areas(self, frame, ts: datetime, dets: list, w: int, h: int) -> None:
         people = [t for t in self.people.tracks if t.confirmed]
         phones = [d for d in dets if d.label == "cell phone"]
-        for r in self.areas.update(ts.timestamp(), w, h, people, phones):
+        vehicles = [t for t in self.vehicles.tracks if t.confirmed] if self.areas.wants_vehicles else []
+        for r in self.areas.update(ts.timestamp(), w, h, people, phones, vehicles):
             a = r["area"]
             sample = {"zone_id": a.id, "at": iso(ts), "people": r["people"], "wait_seconds": r["wait_seconds"], "phone_seconds": r["phone_seconds"]}
             self.sink.add_zone(self.cfg.camera_id, sample, picture(frame, a, r["inside"], phones) if r["take_picture"] else None)

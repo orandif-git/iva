@@ -17,6 +17,7 @@ from ..schemas import AreasPut, CameraCreate, CameraPatch, ChannelOut, Strict
 from ..security import verify_token
 from . import customer_alerts, customer_areas, customer_cameras, customer_recorders
 from ..services import alert_catalog
+from ..services.alerts import DEFAULT_ENABLED
 from ..config import get_settings
 
 router = APIRouter(prefix="/admin/v1/tenants/{tenant_id}/shop", tags=["admin: shop setup"])
@@ -42,7 +43,7 @@ def shop_ctx(*roles: str):
                 raise ApiError(404, "tenant_not_found", "Customer not found.")
         settings = {"app.actor_id": str(sid), "app.actor_name": st["name"], "app.actor_role": f"staff:{st['role']}", "app.request_id": request.state.request_id}
         async with db.tenant_tx(tenant_id, settings=settings) as conn:
-            yield CustomerCtx(conn, tenant_id, sid, st["name"], "admin", False, request.state.request_id)
+            yield CustomerCtx(conn, tenant_id, sid, st["name"], "admin", False, request.state.request_id, all_kinds=True)
 
     return dep
 
@@ -149,7 +150,7 @@ async def events(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     out = await customer_alerts.alert_types(ctx)
     labels = {r["rule_type"]: r["label"] for r in await ctx.conn.fetch("SELECT rule_type, label FROM app.alert_rules")}
     saved = {r["rule_type"] for r in await ctx.conn.fetch("SELECT rule_type FROM app.alert_rules")}
-    return [{**o, "label": labels.get(o["type"]), "saved": o["type"] in saved} for o in out]
+    return [{**o, "label": labels.get(o["type"]), "saved": o["type"] in saved, "default": o["type"] in DEFAULT_ENABLED} for o in out]
 
 
 @router.put("/events/{rule_type}")
@@ -158,6 +159,19 @@ async def set_event(rule_type: str, body: EventIn, ctx: CustomerCtx = Depends(sh
                                                                                  quiet_start=body.quiet_start, quiet_end=body.quiet_end), ctx)
     await ctx.conn.execute("UPDATE app.alert_rules SET label=$3 WHERE tenant_id=$1 AND rule_type=$2", ctx.tenant_id, rule_type, body.label)
     return {**out, "label": body.label}
+
+
+@router.delete("/events/{rule_type}", status_code=204)
+async def delete_event(rule_type: str, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    """The shop stops getting this event. An alert that is on by default is kept as switched off (otherwise the default would bring it back); any other is removed.
+    This changes this one customer only, never the alert itself."""
+    if rule_type not in await alert_catalog.visible(ctx.conn, ctx.tenant_id):
+        raise ApiError(404, "alert_type_not_found", "That alert type does not exist.")
+    if rule_type in DEFAULT_ENABLED:
+        await ctx.conn.execute("""INSERT INTO app.alert_rules (tenant_id, rule_type, enabled) VALUES ($1,$2,false) ON CONFLICT (tenant_id, rule_type) DO UPDATE SET enabled=false""", ctx.tenant_id, rule_type)
+    else:
+        await ctx.conn.execute("DELETE FROM app.alert_rules WHERE rule_type=$1", rule_type)
+    await ctx.audit("alert_rule.delete", "alert_rule", None, {"type": rule_type})
 
 
 @router.post("/events/{rule_type}/test")

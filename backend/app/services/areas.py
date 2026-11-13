@@ -22,13 +22,27 @@ SPEC = {
     "queue_area": {"length": (5, 1, 1000), "minutes": (3, 1, 60), "wait_minutes": (0, 0, 240), "staff": (0, 0, 20), "picture_minutes": (15, 0, 240), "repeat_minutes": (15, 5, 1440)},
     "staff_area": {"seconds": (20, 5, 600), "repeat_minutes": (15, 5, 1440)},
 }
-LABEL = {"area_count": "people in an area", "queue_area": "queue", "staff_area": "staff area"}
+# Activity in an area: what to look for, and when. `target`: "person" or "vehicle" (the camera's detector tells them apart; more kinds of thing can be added here later).
+# `when`: "closed" = while the shop is closed (needs opening hours), "between" = every day between `from` and `to` (a night that crosses midnight is fine), "always".
+SPEC["activity_area"] = {"minutes": (1, 1, 60), "picture_minutes": (10, 0, 240), "repeat_minutes": (30, 5, 1440)}
+CHOICES = {"activity_area": {"target": ("person", ("person", "vehicle")), "when": ("closed", ("closed", "between", "always"))}}
+TIMES = {"activity_area": ("from", "to")}                         # needed only when `when` is "between"
+LABEL = {"area_count": "people in an area", "queue_area": "queue", "staff_area": "staff area", "activity_area": "activity in an area"}
+WHAT = {"person": ("A person", "people"), "vehicle": ("A vehicle", "vehicles")}
+
+
+def _hhmm(v, what: str) -> str:
+    import re
+    if not isinstance(v, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+        raise ApiError(422, "invalid_params", f"{what} must be a time like 21:30.")
+    return v
 
 
 def clean_params(kind: str, params: dict, *, previous: dict | None = None, user_id=None) -> dict:
     """The settings of one area, checked and with the defaults filled in. A staff area also needs the customer's confirmation that staff have been told."""
     spec = SPEC[kind]
-    extra = set(params) - set(spec) - {"notice_confirmed"}
+    choices, times = CHOICES.get(kind, {}), TIMES.get(kind, ())
+    extra = set(params) - set(spec) - set(choices) - set(times) - {"notice_confirmed"}
     if extra:
         raise ApiError(422, "invalid_params", f"Unknown setting: {', '.join(sorted(extra))}.")
     out = {}
@@ -41,6 +55,15 @@ def clean_params(kind: str, params: dict, *, previous: dict | None = None, user_
         if not lo <= v <= hi:
             raise ApiError(422, "invalid_params", f"{k.replace('_', ' ')} must be between {lo} and {hi}.")
         out[k] = int(v)
+    for k, (default, options) in choices.items():
+        v = params.get(k, default)
+        if v not in options:
+            raise ApiError(422, "invalid_params", f"{k.replace('_', ' ')} must be one of: {', '.join(options)}.")
+        out[k] = v
+    if kind == "activity_area" and out["when"] == "between":
+        out["from"], out["to"] = _hhmm(params.get("from"), "The start time"), _hhmm(params.get("to"), "The end time")
+        if out["from"] == out["to"]:
+            raise ApiError(422, "invalid_params", "The start and the end time cannot be the same.")
     if kind == "staff_area":
         had = (previous or {}).get("notice_confirmed_at")
         if params.get("notice_confirmed") is not True:
@@ -107,6 +130,8 @@ async def evaluate(conn, zone_id: UUID) -> int:
         why = f"{now['people']} people are waiting in {area}" + (f", {length} or more for {minutes} minutes" if long_queue else "") + (f". Someone has waited {wait} minutes or more" if waited else "") + "."
         return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Long queue at {area}", body=why,
                                      details={"area": area, "length": now["people"], "limit": length, "minutes": minutes, "wait_minutes": wait}, evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 15))), **common) is not None)
+    if z["kind"] == "activity_area":
+        return await _activity(conn, z, p, area, alert, common)
     seconds = int(p.get("seconds", 20))
     r = await conn.fetchrow("SELECT max(phone_seconds) AS held, (array_agg(evidence_id ORDER BY at DESC) FILTER (WHERE evidence_id IS NOT NULL))[1] AS evidence "
                             "FROM app.zone_samples WHERE zone_id=$1 AND at > now() - interval '30 seconds'", z["id"])
@@ -114,3 +139,36 @@ async def evaluate(conn, zone_id: UUID) -> int:
         return 0
     return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Possible phone use in {area}", body=f"A phone seems to have been in use in {area} for {int(r['held'])} seconds. This is a possible case, please check the picture.",
                                  details={"area": area, "seconds": int(r["held"])}, evidence_id=r["evidence"], **common) is not None)
+
+
+def in_window(p: dict, hours, local: datetime) -> bool:
+    """Is `local` (the shop's own clock) inside the time the area is watched? `hours` is the shop's opening hours."""
+    when = p.get("when", "closed")
+    if when == "always":
+        return True
+    if when == "between":
+        a, b = p["from"], p["to"]
+        t = local.strftime("%H:%M")
+        return a <= t < b if a < b else (t >= a or t < b)
+    return hours.set and not hours.is_open(local)            # "closed": with no opening hours set there is no "closed", so nothing is raised
+
+
+async def _activity(conn, z, p: dict, area: str, alert: str, common: dict) -> int:
+    """Someone (or a vehicle) in the area for `minutes`, at a time it is being watched."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from .opening_hours import Hours
+    t = await conn.fetchrow("SELECT timezone, open_time, close_time, closed_days, day_hours FROM app.tenants WHERE id=$1", z["tenant_id"])
+    local = _dt.now(ZoneInfo(t["timezone"])).replace(tzinfo=None)
+    if not in_window(p, Hours.of(t), local):
+        return 0
+    minutes = int(p.get("minutes", 1))
+    if not await _held(conn, z["id"], minutes, 1):
+        return 0
+    n = int(await conn.fetchval("SELECT people FROM app.zone_samples WHERE zone_id=$1 ORDER BY at DESC LIMIT 1", z["id"]) or 1)
+    one, many = WHAT.get(p.get("target", "person"), WHAT["person"])
+    when = {"closed": "while the shop is closed", "between": f"between {p.get('from')} and {p.get('to')}", "always": ""}[p.get("when", "closed")]
+    seen = one if n == 1 else f"{n} {many}"
+    return int(await raise_alert(conn, z["tenant_id"], alert, title=f"Activity in {area}", body=f"{seen} seen in {area}{' ' + when if when else ''}.",
+                                 details={"area": area, "what": one.split()[-1], "when": when or "at any time", "count": n},
+                                 evidence_id=await _picture(conn, z["id"], minutes, int(p.get("picture_minutes", 10))), **common) is not None)

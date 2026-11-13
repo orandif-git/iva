@@ -128,3 +128,22 @@ async def test_every_customer_gets_everything_plates_move_the_shop_to_a_full_pla
     assert await su.fetchval("SELECT plan_id FROM app.tenants WHERE id=$1", t) == "full"
     rid = await su.fetchval("SELECT id FROM app.recorders WHERE tenant_id=$1", t)
     assert (await client.get(f"{base}/recorders/{rid}/channels/1/snapshot", headers=onboarding["headers"])).status_code in (409, 502, 503, 504)    # no real recorder here
+
+
+async def test_deleting_an_event_stops_it_for_this_shop_only(client, make, su):
+    a, b = await make.tenant(), await make.tenant()
+    staff = await make.staff("onboarding")
+    for t in (a, b):
+        r = await client.get(f"/admin/v1/tenants/{t}/shop/events", headers=staff["headers"])
+        assert {e["type"]: e["default"] for e in r.json()}["camera_offline"] is True and {e["type"]: e["default"] for e in r.json()}["crowding"] is False
+    base = f"/admin/v1/tenants/{a}/shop/events"
+    assert (await client.put(f"{base}/crowding", json={"label": "Busy", "enabled": True, "params": {"people": 40}}, headers=staff["headers"])).status_code == 200
+    assert (await client.delete(f"{base}/crowding", headers=staff["headers"])).status_code == 204                      # not a default: the rule is removed
+    assert await su.fetchval("SELECT count(*) FROM app.alert_rules WHERE tenant_id=$1 AND rule_type='crowding'", a) == 0
+    assert (await client.delete(f"{base}/camera_offline", headers=staff["headers"])).status_code == 204               # a default: kept as switched off, so it does not come back
+    mine = {e["type"]: e for e in (await client.get(base, headers=staff["headers"])).json()}
+    other = {e["type"]: e for e in (await client.get(f"/admin/v1/tenants/{b}/shop/events", headers=staff["headers"])).json()}
+    assert mine["camera_offline"]["enabled"] is False and mine["camera_offline"]["saved"] is True
+    assert other["camera_offline"]["enabled"] is True                                                                  # another shop is not touched
+    support = await make.staff("support")
+    assert (await client.delete(f"{base}/crowding", headers=support["headers"])).status_code == 403

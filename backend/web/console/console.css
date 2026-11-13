@@ -246,3 +246,8 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .vpic.big .picmsg{color:rgba(255,255,255,.75);position:static}
 .vpic.big img.snap{width:100%;height:auto}
 .whyline{margin:-6px 0 14px;font-size:13.5px}
+.acts{white-space:nowrap;text-align:right}
+.mt6{margin-top:6px}
+.form.full{max-width:none}
+.cfg{grid-template-columns:minmax(0,1fr) 220px 60px;max-width:640px}
+.cfg .in.sm{max-width:90px}

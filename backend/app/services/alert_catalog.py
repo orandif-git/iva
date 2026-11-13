@@ -73,6 +73,8 @@ CATALOG: dict[str, dict] = {
                          needs="People counting in a marked area", media="image", uses_evidence=True),
     "queue_long": _a(SMART, "People", "Long queue", "The queue in an area you marked is longer than your limit, or someone has waited too long.", built=True, shortcodes=["area", "length", "limit", "minutes", "wait_minutes"],
                      needs="People counting in a marked area", media="image", uses_evidence=True),
+    "area_activity": _a(SMART, "People", "Activity in an area", "A person or a vehicle is seen in an area you marked, when the shop is closed, between times you set, or at any time.", built=True,
+                        media="image", shortcodes=["area", "what", "when"], needs="Person and vehicle detection in a marked area", uses_evidence=True),
     "phone_use": _a(SMART, "People", "Possible phone use (staff area)", "A phone seems to be in use in an area you marked for staff. It names the area, never a person.", built=True, severity="info",
                     media="image", shortcodes=["area", "seconds"], needs="Person and phone detection in a marked area", uses_evidence=True),
     # ---- Smart Alerts: vehicles
@@ -114,7 +116,7 @@ def shortcodes_for(alert_type: str) -> list[str]:
 
 
 # The three alerts that work on areas the customer marks on a camera picture, and the kind of area each one uses.
-AREA_ALERTS = {"area_count": "people_in_area", "queue_area": "queue_long", "staff_area": "phone_use"}
+AREA_ALERTS = {"area_count": "people_in_area", "queue_area": "queue_long", "staff_area": "phone_use", "activity_area": "area_activity"}
 
 
 # What a plan with no explicit list is given when it is created: every System Alert that is built, people counting, and vehicles when the plan reads plates.

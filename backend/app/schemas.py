@@ -251,7 +251,7 @@ def check_shape(pts) -> None:
 
 class AreaIn(Strict):
     id: UUID | None = None                      # send the id of an area to keep and change it; leave it out for a new one
-    kind: Literal["area_count", "queue_area", "staff_area"]
+    kind: Literal["area_count", "queue_area", "staff_area", "activity_area"]
     name: str = Field(min_length=1, max_length=60)
     points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=3, max_length=12)
     params: dict = Field(default_factory=dict)

@@ -5,6 +5,7 @@ a limit does not have to wait for a restart. What is measured, every `every` sec
 
   area_count   people     the number of followed people whose floor point is inside the shape
   queue_area   people     the same, plus wait_seconds: the longest time a person still in the shape has been in it
+  activity_area people or vehicles (the area's `target`): how many are inside. When the shop is watched is decided at the backend.
   staff_area   people     the same, plus phone_seconds: how long a phone has been in use inside the shape without a break (a break of `grace` seconds ends it)
 
 A phone counts as in use when the detector sees a phone whose centre is inside the upper part of a person's box, that person being inside the shape. It is a
@@ -68,14 +69,20 @@ class AreaMonitor:
         top = y1 + (y2 - y1) * UPPER
         return any(x1 <= (p.box[0] + p.box[2]) / 2 <= x2 and y1 <= (p.box[1] + p.box[3]) / 2 <= top for p in phones)
 
-    def update(self, ts: float, w: int, h: int, people: list, phones: list) -> list[dict]:
+    @property
+    def wants_vehicles(self) -> bool:
+        """Does any area look for vehicles? Then the camera has to follow vehicles even when it reads no plates."""
+        return any(a.kind == "activity_area" and a.param("target", "person") == "vehicle" for a in self.areas)
+
+    def update(self, ts: float, w: int, h: int, people: list, phones: list, vehicles: list = ()) -> list[dict]:
         """`people` are confirmed tracks, `phones` are detections. Returns the reports that are due now (each: area, people, wait_seconds, phone_seconds, take_picture, inside)."""
         out = []
         if self.started is None:
             self.started = ts
         for a in self.areas:
             st = self.state[a.id]
-            inside = [t for t in people if point_in_polygon(self._point(t, w, h, a.kind), a.points)]
+            pool = vehicles if a.kind == "activity_area" and a.param("target", "person") == "vehicle" else people       # an activity area looks for people or for vehicles
+            inside = [t for t in pool if point_in_polygon(self._point(t, w, h, a.kind), a.points)]
             n = len(inside)
             wait = phone = None
             if a.kind == "queue_area":
@@ -105,7 +112,7 @@ class AreaMonitor:
                 st.shot_for = st.phone_since
             # A queue or a crowd at its limit: a picture when it first gets there, and another every `picture_minutes` (the customer sets it) while it stays,
             # so the alert always has a recent one to show.
-            limit = int(a.param("length", 5)) if a.kind == "queue_area" else (int(a.param("limit", 0)) if a.kind == "area_count" else 0)
+            limit = int(a.param("length", 5)) if a.kind == "queue_area" else (int(a.param("limit", 0)) if a.kind == "area_count" else (1 if a.kind == "activity_area" else 0))
             every_min = int(a.param("picture_minutes", 15))                  # the customer's choice: how often to take another; 0 means no pictures at all
             if limit >= 1 and n >= limit:
                 if st.over_since is None:

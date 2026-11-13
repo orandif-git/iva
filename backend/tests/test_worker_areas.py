@@ -260,3 +260,47 @@ async def test_what_the_worker_measures_reaches_the_backend_and_a_long_queue_bec
     assert await su.fetchval("SELECT count(*) FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(z["id"])) >= 13
     (alert,) = await su.fetch("SELECT title, body FROM app.alerts WHERE tenant_id=$1 AND rule_type='queue_long'", t)
     assert alert["title"] == "Long queue at Front queue" and "4 people" in alert["body"]
+
+
+# ------------------------------------------------------------------------------------------ activity in an area: people or vehicles
+def vehicle(i, x, y, w=120, h=70):
+    return Track(id=i, label="car", box=(x, y, x + w, y + h), score=0.9, confirmed=True)
+
+
+def test_an_activity_area_looks_for_the_kind_of_thing_it_was_set_for():
+    people_area, car_area = cfg("activity_area", "Store room", target="person"), cfg("activity_area", "Yard", target="vehicle")
+    m = AreaMonitor([people_area, car_area], every=10, warmup=0)
+    assert m.wants_vehicles is True and AreaMonitor([people_area], every=10).wants_vehicles is False
+    out = {r["area"].name: r for r in m.update(100.0, W, H, [person(1, *INSIDE)], [], [vehicle(7, 120, 100)])}
+    assert out["Store room"]["people"] == 1 and out["Yard"]["people"] == 1                      # one person in the first, one vehicle in the second
+    out = {r["area"].name: r for r in AreaMonitor([people_area, car_area], every=10, warmup=0).update(100.0, W, H, [], [], [vehicle(7, 120, 100)])}
+    assert out["Store room"]["people"] == 0 and out["Yard"]["people"] == 1                      # a vehicle is not a person
+
+
+def test_an_activity_area_takes_a_picture_when_something_is_first_seen_and_then_every_few_minutes():
+    m = AreaMonitor([cfg("activity_area", "Store room", target="person", picture_minutes=10)], every=10, warmup=0)
+    first = m.update(100.0, W, H, [person(1, *INSIDE)], [])[0]
+    assert first["take_picture"] is True
+    assert m.update(110.0, W, H, [person(1, *INSIDE)], [])[0]["take_picture"] is False
+    assert m.update(100.0 + 601, W, H, [person(1, *INSIDE)], [])[0]["take_picture"] is True
+
+
+class CarScript:
+    """Finds one car, drawn at the given box, in every picture."""
+    last_ms = 0.0
+
+    def __init__(self, box):
+        self.box = box
+
+    def detect(self, frame):
+        return [Detection(tuple(map(float, self.box)), 0.9, "car")]
+
+
+def test_a_camera_that_reads_no_plates_still_follows_vehicles_for_an_activity_area():
+    sink = MemorySink()
+    zone = {"id": "z7", "kind": "activity_area", "name": "Yard", "points": [list(p) for p in SQUARE], "params": {"target": "vehicle"}}
+    c = CameraConfig("cam", "Gate", areas=(AreaConfig.from_backend(zone),))
+    assert c.use_anpr is False
+    pipe = CameraPipeline(c, CarScript((120, 100, 240, 170)), None, sink)
+    feed(pipe, 30)
+    assert sink.zones and sink.zones[-1]["people"] == 1                     # the vehicle is counted in the area although no plates are read

@@ -13,7 +13,12 @@ from ..services import alert_catalog as cat
 from ..services.areas import LABEL, SPEC, alert_for_kind, clean_params
 
 router = APIRouter(prefix="/v1", tags=["customer: areas"])
-KINDS = list(cat.AREA_ALERTS)
+CUSTOMER_KINDS = ["area_count", "queue_area", "staff_area"]        # what a customer's own app knows about
+KINDS = list(cat.AREA_ALERTS)                                      # what the Control Center knows about
+
+
+def _kinds(ctx) -> list[str]:
+    return KINDS if getattr(ctx, "all_kinds", False) else CUSTOMER_KINDS
 
 
 def _out(r) -> dict:
@@ -22,7 +27,7 @@ def _out(r) -> dict:
 
 
 async def _rows(ctx: CustomerCtx, camera_id: UUID):
-    return await ctx.conn.fetch("SELECT id, kind::text AS kind, name, points, params FROM app.camera_zones WHERE camera_id=$1 AND kind::text = ANY($2::text[]) ORDER BY created_at, id", camera_id, KINDS)
+    return await ctx.conn.fetch("SELECT id, kind::text AS kind, name, points, params FROM app.camera_zones WHERE camera_id=$1 AND kind::text = ANY($2::text[]) ORDER BY created_at, id", camera_id, _kinds(ctx))
 
 
 async def _camera(ctx: CustomerCtx, camera_id: UUID):
@@ -37,7 +42,7 @@ async def area_kinds(ctx: CustomerCtx = Depends(customer_ctx())):
     """The kinds of area this customer may draw, with the settings each one has. Kinds that are not theirs are not listed."""
     visible = set(await cat.visible(ctx.conn, ctx.tenant_id))
     return [{"kind": k, "label": LABEL[k], "alert": a, "title": cat.CATALOG[a]["title"], "settings": {n: {"default": d, "min": lo, "max": hi} for n, (d, lo, hi) in SPEC[k].items()}}
-            for k, a in cat.AREA_ALERTS.items() if a in visible]
+            for k, a in cat.AREA_ALERTS.items() if a in visible and k in _kinds(ctx)]
 
 
 @router.get("/cameras/{camera_id}/areas")
@@ -53,6 +58,8 @@ async def put_areas(camera_id: UUID, body: AreasPut, ctx: CustomerCtx = Depends(
     existing = {r["id"]: r for r in await _rows(ctx, camera_id)}
     visible = set(await cat.visible(ctx.conn, ctx.tenant_id))
     for a in body.areas:
+        if a.kind not in _kinds(ctx):
+            raise ApiError(403, "not_available", "That kind of area is not available here.")
         if cat.AREA_ALERTS[a.kind] not in visible:
             raise ApiError(403, "not_available", f"{LABEL[a.kind].capitalize()} is not part of your plan.")
         if a.id is not None and a.id not in existing:
@@ -73,6 +80,6 @@ async def put_areas(camera_id: UUID, body: AreasPut, ctx: CustomerCtx = Depends(
             else:
                 await ctx.conn.execute("INSERT INTO app.camera_zones (tenant_id, camera_id, kind, name, points, params, created_at) VALUES ($1,$2,$3::app.zone_kind,$4,$5,$6, clock_timestamp())",
                                        ctx.tenant_id, camera_id, a.kind, a.name, a.points, params)
-        await ctx.conn.execute("UPDATE app.cameras SET use_areas=$2 WHERE id=$1", camera_id, bool(body.areas))
+        await ctx.conn.execute("UPDATE app.cameras SET use_areas=EXISTS (SELECT 1 FROM app.camera_zones WHERE camera_id=$1 AND kind::text = ANY($2::text[])) WHERE id=$1", camera_id, KINDS)
     await ctx.audit("areas.update", "camera", camera_id, {"areas": [{"kind": a.kind, "name": a.name} for a in body.areas]})
     return [_out(r) for r in await _rows(ctx, camera_id)]

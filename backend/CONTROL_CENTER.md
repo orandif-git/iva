@@ -31,3 +31,18 @@ way as Platform Admin: sign in at `/`, a staff account is handed on. It talks on
 
 An event is an alert switched on for one shop with its settings and the people chosen (`app.alert_rules`, with a name in `label`). Area events (people in an area, long queue,
 possible phone use) also save the marked area on the chosen camera. The camera of a non-area event is not stored: those alerts are per shop.
+
+## Adding an event (the wizard)
+
+Event (name and who it goes to) → Event type (the full list, grouped) → Recorder and Camera only when the type needs a camera → Mark the area (area types only) → Settings.
+A system event is three steps. Types that need a camera: marked-area events, Count people, Read number plates, and the alerts that depend on them (crowding, after-hours, counting stopped, blocked vehicle, vehicle overstay, unclear plate).
+
+The Events list shows everything the shop really gets: the alerts that are on by default (tagged Default), the others that were added, one row for each marked area (with its camera) and one for each camera that counts people or reads plates.
+Edit opens a side panel; Delete means "this shop stops getting it" and changes this shop only. An alert that is on by default is kept as switched off so the default does not bring it back.
+
+## Activity in an area
+
+A new kind of marked area (`activity_area`, alert `area_activity`). It looks for people or for vehicles (`target`) in the area, at the time set: while the shop is closed (needs opening hours), between two times
+(a night across midnight is fine), or at any time (`when`). It is drawn only in the Control Center; a customer's own app does not know this kind.
+The camera's worker counts vehicles in the area even when the camera reads no plates. The backend decides whether the time is one that is watched.
+Run `migrations/021_activity_area.sql` before using it. Other kinds of thing the detector can recognise (bags, animals and so on) can be added to `target` later.

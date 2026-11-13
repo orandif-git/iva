@@ -58,7 +58,7 @@ def test_the_three_area_alerts_are_smart_alerts_that_are_built():
         assert cat.CATALOG[k]["family"] == "smart" and cat.CATALOG[k]["built"] and cat.AREA_ALERTS[kind] == k
     assert "image_url" in cat.shortcodes_for("phone_use") and {"area", "people", "limit", "minutes"} <= set(cat.shortcodes_for("people_in_area"))
     assert {"area", "length", "wait_minutes"} <= set(cat.shortcodes_for("queue_long")) and "image_url" in cat.shortcodes_for("queue_long") and "image_url" in cat.shortcodes_for("people_in_area")
-    assert len(cat.LISTED) == 26 and len(cat.BUILT) == 26
+    assert len(cat.LISTED) == 27 and len(cat.BUILT) == 27
 
 
 def test_a_new_database_starts_with_the_area_alerts_switched_off():
@@ -309,3 +309,71 @@ async def test_the_webhook_gets_an_event_only_when_the_condition_is_met(client, 
     assert await delivery.run_once() == 1
     call = world["hook"].calls[-1]
     assert call["headers"]["x-event"] == "smart.people_in_area" and call["body"] == {"to": "919876543210", "area": "Billing counter", "people": "6", "limit": "5", "minutes": "2"}
+
+
+# ------------------------------------------------------------------------------------------ activity in an area (set up in the Control Center)
+async def staff_draw(client, make, t, cam, *areas):
+    owner = await make.staff("owner")
+    r = await client.put(f"/admin/v1/tenants/{t}/shop/cameras/{cam}/areas", json={"areas": list(areas)}, headers=owner["headers"])
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def watch(name="Store room", **params):
+    return {"kind": "activity_area", "name": name, "points": SQUARE, "params": params}
+
+
+def test_the_time_an_activity_area_is_watched_is_decided_by_the_shop_hours_or_the_times_set():
+    from datetime import datetime, time as T
+    from app.services.areas import in_window
+    from app.services.opening_hours import Hours
+    hours = Hours(T(9), T(21), (6,))
+    tue_noon, tue_night, sun_noon = datetime(2026, 11, 10, 12), datetime(2026, 11, 10, 23), datetime(2026, 11, 15, 12)
+    assert not in_window({"when": "closed"}, hours, tue_noon) and in_window({"when": "closed"}, hours, tue_night) and in_window({"when": "closed"}, hours, sun_noon)
+    assert not in_window({"when": "closed"}, Hours(None, None), tue_night)                     # no opening hours: nothing is "closed", so nothing is raised
+    assert in_window({"when": "always"}, hours, tue_noon)
+    night = {"when": "between", "from": "22:00", "to": "06:00"}
+    assert in_window(night, hours, tue_night) and in_window(night, hours, datetime(2026, 11, 10, 3)) and not in_window(night, hours, tue_noon)
+    day = {"when": "between", "from": "13:00", "to": "15:00"}
+    assert in_window(day, hours, datetime(2026, 11, 10, 14)) and not in_window(day, hours, tue_noon)
+
+
+async def test_only_the_control_center_can_draw_an_activity_area_and_its_choices_are_checked(client, make, su):
+    t, u, cam = await shop(client, make, su)
+    (a,) = await staff_draw(client, make, t, cam, watch(target="vehicle", when="between", **{"from": "22:00", "to": "06:00"}))
+    assert a["kind"] == "activity_area" and a["alert"] == "area_activity" and a["params"]["target"] == "vehicle" and a["params"]["minutes"] == 1
+    assert (await client.get(f"/v1/cameras/{cam}/areas", headers=u["headers"])).json() == []                       # the customer's own app does not know this kind
+    assert "activity_area" not in {k["kind"] for k in (await client.get("/v1/area-kinds", headers=u["headers"])).json()}
+    r = await client.put(f"/v1/cameras/{cam}/areas", json={"areas": [watch()]}, headers=u["headers"])
+    assert r.status_code == 403
+    owner = await make.staff("owner")
+    base = f"/admin/v1/tenants/{t}/shop/cameras/{cam}/areas"
+    for bad in ({"target": "dog"}, {"when": "sometimes"}, {"when": "between"}, {"when": "between", "from": "22:00", "to": "22:00"}, {"when": "between", "from": "25:00", "to": "06:00"}):
+        r = await client.put(base, json={"areas": [watch(**bad)]}, headers=owner["headers"])
+        assert r.status_code == 422, bad
+    assert await su.fetchval("SELECT use_areas FROM app.cameras WHERE id=$1", uuid.UUID(cam)) is True
+
+
+async def test_someone_in_the_store_room_raises_an_alert_only_when_it_is_being_watched(client, make, su):
+    t, u, cam = await shop(client, make, su)
+    await turn_on(client, u, "area_activity")
+    (a,) = await staff_draw(client, make, t, cam, watch(when="always", minutes=1))
+    await report(client, make, cam, a["id"], steady(1, 70))
+    (alert,) = await alerts_of(su, t, "area_activity")
+    assert alert["title"] == "Activity in Store room" and "A person seen in Store room" in alert["body"]
+    d = json.loads(alert["details"])
+    assert d["area"] == "Store room" and d["what"] == "person" and d["count"] == 1
+    await su.execute("DELETE FROM app.alerts WHERE tenant_id=$1", t)
+    await su.execute("DELETE FROM app.zone_samples WHERE zone_id=$1", uuid.UUID(a["id"]))
+    # the same area, watched only between two times that do not include now
+    now = datetime.now(timezone.utc).astimezone(__import__("zoneinfo").ZoneInfo(await su.fetchval("SELECT timezone FROM app.tenants WHERE id=$1", t)))
+    start, end = (now + timedelta(hours=2)).strftime("%H:%M"), (now + timedelta(hours=3)).strftime("%H:%M")
+    (b,) = await staff_draw(client, make, t, cam, watch(when="between", minutes=1, **{"from": start, "to": end}))
+    await report(client, make, cam, b["id"], steady(1, 70))
+    assert await alerts_of(su, t, "area_activity") == []
+    # a shop that is open now is not "closed"; with no opening hours there is no "closed" at all
+    await staff_draw(client, make, t, cam, watch(when="closed", minutes=1))
+    await su.execute("UPDATE app.tenants SET open_time=NULL, close_time=NULL WHERE id=$1", t)
+    (c,) = [z for z in await su.fetch("SELECT id FROM app.camera_zones WHERE camera_id=$1", uuid.UUID(cam))]
+    await report(client, make, cam, str(c["id"]), steady(1, 70))
+    assert await alerts_of(su, t, "area_activity") == []
