@@ -48,8 +48,13 @@ const sw = (id, on, dis, act) => `<label class="sw"><input type="checkbox" id="$
 const REC_LEVEL = new Set(["recorder_offline", "connection_unstable", "clock_wrong", "back_to_normal", "recorder_restarted", "hardware_fault", "storage_full", "disk_wear", "retention_low", "disk_fault", "recording_stopped"]);
 const HIDDEN = new Set(["daily_summary", "weekly_summary", "service_ended"]);                    // set in "Summaries and end date", not in the event wizard
 const AREA_KIND = { people_in_area: "area_count", queue_long: "queue_area", phone_use: "staff_area" };
-const CARRIES = { view_changed: "image", picture_poor: "image", crowding: "image", after_hours: "image", people_in_area: "image", queue_long: "image", phone_use: "image", blocked_plate: "clip", vehicle_overstay: "image", low_confidence_plate: "image", daily_summary: "direct", weekly_summary: "direct" };
-const MEDIA = { none: ["Text only", "mute"], image: ["Picture", "ai"], clip: ["Picture + video", "brand"], direct: ["Direct text", "mute"] };
+const CARRIES = { view_changed: "image", picture_poor: "image", crowding: "image", after_hours: "image", people_in_area: "image", queue_long: "image", phone_use: "image", blocked_plate: "clip", vehicle_overstay: "image", low_confidence_plate: "image", daily_summary: "direct", weekly_summary: "direct", __count: "data", __plates: "data" };
+const DATA_TYPES = [
+  { type: "__count", title: "Count people", group: "On this camera", ai: false, settings: {}, description: "Counts the people passing this camera. Used for the shop's visitor numbers and for crowding, after-hours and counting alerts. Sends no message." },
+  { type: "__plates", title: "Read number plates", group: "On this camera", ai: false, settings: {}, description: "Reads the number plates of vehicles on this camera, for the vehicle list and the blocked and overstay alerts. Sends no message." }];
+const NEEDS_COUNT = new Set(["crowding", "after_hours", "counting_stopped"]), NEEDS_PLATES = new Set(["blocked_plate", "vehicle_overstay", "low_confidence_plate"]);
+const evMeta = (type) => DATA_TYPES.find((x) => x.type === type) || S.cur.events.find((x) => x.type === type);
+const MEDIA = { data: ["No message", "mute"], none: ["Text only", "mute"], image: ["Picture", "ai"], clip: ["Picture + video", "brand"], direct: ["Direct text", "mute"] };
 const carries = (t) => CARRIES[t] || "none";
 const PARAM = { people: ["More than", "people"], picture_minutes: ["Picture at most every", "min"], grace_minutes: ["Wait after closing", "min"], drops: ["Drops in a day", "times"], minutes_out: ["Clock is out by", "min"], temperature: ["Too hot above", "°C"],
   percent: ["Health left below", "%"], days: ["Days of video wanted", "days"], hours: ["For", "hours"], max_minutes: ["Stays longer than", "min"] };
@@ -57,7 +62,7 @@ const AREA_FIELDS = { area_count: [["limit", "More than", "people", 5], ["minute
 const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate", "minutes", "recorder", "image_url", "clip_url"];
 
 /* ------------------------------------------------------------------------------------------------ state */
-const S = { route: "overview", me: null, role: "", cid: null, section: "people", step: "shop", q: "", filter: "all", view: "list", logChip: "all", setup: "tpl", tq: "", pop: false, estep: "event",
+const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", setup: "tpl", tq: "", pop: false, estep: "event",
   customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
 const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
@@ -66,13 +71,23 @@ const PERMS = [["See all customers and the message log", "oaos"], ["Add a new cu
 
 /* ------------------------------------------------------------------------------------------------ customers */
 const mapCustomer = (t) => ({ id: t.id, name: t.name, place: t.city || "", cams: t.cameras_in_use, recs: t.recorders_total, recsOn: t.recorders_online, lang: t.msg_language, people: t.people || "", last: t.last_message_at, endsOn: t.ends_on,
-  days: daysUntil(t.ends_on), status: t.status, reason: t.suspended_reason || "" });
+  days: daysUntil(t.ends_on), status: t.status, reason: t.suspended_reason || "", reasons: [], waiting: "" });
 const ended = (c) => c.status === "suspended" && c.reason.startsWith("Service ended");
-const issueOf = (c) => c.recs > 0 && c.recsOn < c.recs ? `${c.recs - c.recsOn === c.recs ? "Recorder" : "A recorder"} offline` : "";
-const statusOf = (c) => c.status === "suspended" ? (ended(c) ? ["Inactive", "crit"] : ["Paused", "mute"]) : c.days !== null && c.days < 0 ? ["Inactive", "crit"] : c.days !== null && c.days <= 7 ? ["Ending soon", "warn"] : issueOf(c) ? ["Needs a look", "warn"] : ["Active", "ok"];
-const STATUSES = ["Active", "Needs a look", "Ending soon", "Paused", "Inactive"];
+const since = (iso) => { if (!iso) return "a while"; const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 6e4)); return m < 60 ? `${m} minute${m === 1 ? "" : "s"}` : m < 1440 ? `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? "" : "s"}` : `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? "" : "s"}`; };
+const statusOf = (c) => c.status === "suspended" ? (ended(c) ? ["Inactive", "crit"] : ["Paused", "mute"]) : c.days !== null && c.days < 0 ? ["Inactive", "crit"] : c.days !== null && c.days <= 7 ? ["Ending soon", "warn"] : c.reasons.length ? ["Needs a look", "warn"] : c.waiting ? ["Waiting for recorder", "mute"] : ["Active", "ok"];
+const whyOf = (c) => { const st = statusOf(c)[0]; return st === "Needs a look" ? c.reasons.join(". ") : st === "Waiting for recorder" ? `Waiting for ${c.waiting} to connect` : st === "Ending soon" ? `Service ends in ${c.days} day${c.days === 1 ? "" : "s"}` : st === "Inactive" ? (c.status === "suspended" && !c.reason.startsWith("Service ended") ? c.reason : `Service ended on ${fmtDate(c.endsOn)}`) : st === "Paused" ? "Paused. No messages go out." : ""; };
+const STATUSES = ["Active", "Needs a look", "Waiting for recorder", "Ending soon", "Paused", "Inactive"];
+const peopleShort = (s) => { const a = (s || "").split(", ").filter(Boolean); return !a.length ? "—" : a.length <= 2 ? a.join(", ") : `${a[0]}, ${a[1]} +${a.length - 2} more`; };
 const cust = (id) => S.customers.find((c) => c.id === id);
-async function loadCustomers() { const r = await api.get("/admin/v1/tenants?limit=200"); S.customers = r.items.map(mapCustomer); }
+async function loadCustomers() {
+  const [r, recs] = await Promise.all([api.get("/admin/v1/tenants?limit=200"), api.get("/admin/v1/recorders?limit=500")]);
+  S.customers = r.items.map(mapCustomer);
+  for (const rec of recs) {
+    const c = cust(rec.tenant_id); if (!c) continue; const nm = rec.name || rec.device_id;
+    if (rec.status === "offline") c.reasons.push(`${nm} offline for ${since(rec.last_heartbeat_at)}`);
+    else if (rec.status === "never") { if (Date.now() - new Date(rec.created_at) > 864e5) c.reasons.push(`${nm} has never connected`); else c.waiting = nm; }
+  }
+}
 
 /* ------------------------------------------------------------------------------------------------ shell */
 const AREAS = [["overview", "Overview", "grid"], ["customers", "Customers", "users"], ["messages", "Messages", "chat"], ["setup", "Setup", "gear"]];
@@ -95,7 +110,7 @@ function side() {
   const el = $("#side"); let h = "";
   if (S.route === "new") h = `<h3>New customer</h3>` + NSTEPS.map((s, i) => `<button class="si" type="button" data-step="${s[0]}" aria-current="${S.step === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.form.done[s[0]] ? "done" : ""}">${S.form.done[s[0]] ? "✓" : i + 1}</span></button>`).join("");
   else if (S.route === "event") h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = s[0] === "area" && S.ev.key && !needsArea(); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join("");
-  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ["summary", "send", "Summaries and end date"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
+  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
   else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
   if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
   el.hidden = !h; el.innerHTML = h;
@@ -110,19 +125,19 @@ function videoFrame(title, pts, drawable, snap) {
 
 /* ------------------------------------------------------------------------------------------------ Overview */
 async function pageOverview() {
-  const [ov, att, msgs, sum] = await Promise.all([api.get("/admin/v1/overview"), api.get("/admin/v1/overview/attention"), api.get("/admin/v1/messaging/notifications?limit=200"), api.get("/admin/v1/messaging/summary")]);
+  const [ov, msgs, sum] = await Promise.all([api.get("/admin/v1/overview"), api.get("/admin/v1/messaging/notifications?limit=200"), api.get("/admin/v1/messaging/summary")]);
   const cs = S.customers, cnt = (s) => cs.filter((c) => statusOf(c)[0] === s).length;
   const recs = Object.values(ov.recorders || {}).reduce((a, b) => a + b, 0);
-  const all24 = Object.values(sum.last_24_hours || {}).reduce((a, ch) => { for (const [k, v] of Object.entries(ch)) { a.total += v; if (k === "failed") a.failed += v; } return a; }, { total: 0, failed: 0 });
-  const needs = att.items.filter((i) => ["recorder_offline", "recorder_never_connected"].includes(i.kind));
+  const all24 = Object.values(sum.last_24_hours || {}).reduce((a, ch) => { for (const [k, v] of Object.entries(ch)) { if (["sent", "delivered", "read"].includes(k)) a.sent += v; else if (k === "failed") a.failed += v; else if (["suppressed", "cancelled"].includes(k)) a.held += v; } return a; }, { sent: 0, held: 0, failed: 0 });
+  const needs = cs.filter((c) => statusOf(c)[0] === "Needs a look");
   const ending = cs.filter((c) => c.days !== null && c.days <= 30 && c.days >= -30).sort((a, b) => a.days - b.days);
   const hours = Array.from({ length: 24 }, () => ({ n: 0, bad: false })), now = Date.now();
   for (const m of msgs) { const age = Math.floor((now - new Date(m.created_at)) / 36e5); if (age >= 0 && age < 24) { const b = hours[23 - age]; b.n++; if (m.status === "failed") b.bad = true; } }
   const max = Math.max(1, ...hours.map((h) => h.n));
   return `<div class="rise"><div class="title"><h1>Overview</h1><span class="sub">Everything across all customers, right now</span></div>
-  <div class="stats"><div class="st"><b>${cs.length}</b><span>Customers</span></div><div class="st"><b>${cnt("Active")}</b><span>Active</span></div><div class="st"><b class="t-warn">${cnt("Needs a look")}</b><span>Need a look</span></div><div class="st"><b>${ov.cameras_in_use}</b><span>Cameras</span></div><div class="st"><b>${recs}</b><span>Recorders</span></div><div class="st"><b>${all24.total}</b><span>Messages in 24 hours</span></div><div class="st"><b class="${all24.failed ? "t-crit" : ""}">${all24.failed}</b><span>Failed to send</span></div></div>
+  <div class="stats"><div class="st"><b>${cs.length}</b><span>Customers</span></div><div class="st"><b>${cnt("Active")}</b><span>Active</span></div><div class="st"><b class="t-warn">${cnt("Needs a look")}</b><span>Need a look</span></div><div class="st"><b>${ov.cameras_in_use}</b><span>Cameras</span></div><div class="st"><b>${recs}</b><span>Recorders</span></div><div class="st"><b>${all24.sent}</b><span>Sent in 24 hours</span></div><div class="st"><b class="${all24.held ? "t-warn" : ""}">${all24.held}</b><span>Held back</span></div><div class="st"><b class="${all24.failed ? "t-crit" : ""}">${all24.failed}</b><span>Failed to send</span></div></div>
   <div class="cc"><div>
-   <div class="pn"><h3>Needs a look</h3>${needs.length ? `<table class="tbl"><thead><tr><th class="dotc"></th><th>Customer</th><th>What is wrong</th></tr></thead><tbody>${needs.map((i) => `<tr><td class="dotc"><span class="dot ${i.severity === "critical" ? "crit" : "warn"}"></span></td><td class="main-c">${esc((i.subtitle || "").split(" · ")[0])}</td><td>${esc(i.title)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing needs a look.</div>`}</div>
+   <div class="pn"><h3>Needs a look</h3>${needs.length ? `<table class="tbl"><thead><tr><th class="dotc"></th><th>Customer</th><th>What is wrong</th></tr></thead><tbody>${needs.map((c) => `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot warn"></span></td><td class="main-c">${esc(c.name)}</td><td>${esc(whyOf(c))}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing needs a look.</div>`}</div>
    <div class="pn"><h3>Ending soon <span class="sub light">next 30 days, plus ended in the last 30</span></h3>${ending.length ? `<table class="tbl"><thead><tr><th class="dotc"></th><th>Customer</th><th>Ends on</th><th>Days left</th><th></th></tr></thead><tbody>${ending.map((c) => `<tr><td class="dotc"><span class="dot ${c.days < 0 ? "crit" : c.days <= 7 ? "warn" : ""}"></span></td><td class="main-c"><button class="lnk dark" type="button" data-cust="${c.id}">${esc(c.name)}</button></td><td class="num">${fmtDate(c.endsOn)}</td><td class="num ${c.days < 0 ? "t-crit" : c.days <= 7 ? "t-warn" : ""}">${c.days < 0 ? "Ended" : c.days}</td><td><button class="btn sm" type="button" data-extendc="${c.id}" ${can("expiry") ? "" : "disabled"}>Extend</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty">No end dates in the next 30 days.</div>`}</div>
   </div><div>
    <div class="pn"><h3>Latest messages <button class="lnk" type="button" data-go="messages">See all</button></h3>${msgs.length ? `<table class="tbl"><tbody>${msgs.slice(0, 6).map((m) => `<tr><td class="dotc"><span class="dot ${m.status === "failed" ? "crit" : "ok"}"></span></td><td class="main-c">${esc(m.title || humanize((m.event || "message").split(".").pop()))}<br><span class="sub small">${esc(m.tenant)}</span></td><td class="num sub">${fmtTime(m.created_at)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No messages yet.</div>`}</div>
@@ -135,7 +150,7 @@ function pageCustomers() {
   const q = S.q.toLowerCase();
   const list = S.customers.filter((c) => (!q || (c.name + c.place).toLowerCase().includes(q)) && (S.filter === "all" || statusOf(c)[0] === S.filter));
   const body = !list.length ? `<div class="empty">${S.customers.length ? "No customers match. Clear the search or the filter." : "No customers yet. Add the first one."}</div>` : S.view === "list" ?
-    `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Place</th><th>Cameras</th><th>Messages go to</th><th>Language</th><th>Last message</th><th>Ends on</th></tr></thead><tbody>${list.map((c) => { const st = statusOf(c); return `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span></td><td class="ico"><span class="glyph">${ico("store", 20)}</span></td><td class="main-c">${esc(c.name)}</td><td class="t-${st[1]}">${st[0]}</td><td>${esc(c.place)}</td><td class="num">${c.cams}</td><td>${esc(c.people || "—")}</td><td>${langName(c.lang)}</td><td class="num">${fmtTime(c.last)}</td><td class="num">${fmtDate(c.endsOn)}</td></tr>`; }).join("")}</tbody></table></div>` :
+    `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Place</th><th>Cameras</th><th>Messages go to</th><th>Language</th><th>Last message</th><th>Ends on</th></tr></thead><tbody>${list.map((c) => { const st = statusOf(c); return `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span></td><td class="ico"><span class="glyph">${ico("store", 20)}</span></td><td class="main-c">${esc(c.name)}</td><td class="t-${st[1]}">${st[0]}${whyOf(c) ? `<br><span class="sub small">${esc(whyOf(c))}</span>` : ""}</td><td>${esc(c.place)}</td><td class="num">${c.cams}</td><td>${esc(peopleShort(c.people))}</td><td>${langName(c.lang)}</td><td class="num">${fmtTime(c.last)}</td><td class="num">${fmtDate(c.endsOn)}</td></tr>`; }).join("")}</tbody></table></div>` :
     `<div class="grid">${list.map((c) => { const st = statusOf(c); return `<button class="tile" type="button" data-cust="${c.id}"><div class="pic"><span class="cc2">${c.cams} cameras</span>${ico("store", 30)}</div><div class="tb"><b>${esc(c.name)}</b><span class="t-${st[1]}">${st[0]}</span><span> · ${esc(c.place)}</span></div></button>`; }).join("")}</div>`;
   return `<div class="rise"><div class="bar"><label class="search">${ico("search")}<span class="sr">Search customers</span><input id="q" placeholder="Search" value="${esc(S.q)}"></label>${S.filter !== "all" ? `<span class="tag brand">${S.filter}</span>` : ""}<span class="sp"></span>
    <div class="tools rel"><button class="tool" type="button" data-view="list" aria-pressed="${S.view === "list"}" aria-label="List">${ico("list")}</button><button class="tool" type="button" data-view="grid" aria-pressed="${S.view === "grid"}" aria-label="Grid">${ico("grid")}</button><button class="tool" type="button" data-pop aria-pressed="${S.pop || S.filter !== "all"}" aria-label="Filter">${ico("filter")}</button>
@@ -160,6 +175,9 @@ function secRecorderNew(f) { return `<div class="stack"><div class="note">Add th
 function secSummary(f, c) { return `<div class="f"><span class="lb">Daily summary<small>One message each morning</small></span><div class="row">${sw("f-daily", f.daily, false, "daily")}<label class="sr" for="f-dat">Daily time</label><input class="in time" id="f-dat" type="time" data-bind="dailyAt" value="${f.dailyAt}"></div>
   <span class="lb">Weekly summary<small>Sent once a week, on the day set for all shops</small></span><div class="row">${sw("f-weekly", f.weekly, false, "weekly")}</div>
   <label for="f-exp">Service ends on<small>Everything stops the day after and the shop is told once by WhatsApp</small></label><div class="stack"><input class="in time wide" id="f-exp" type="date" data-bind="expiry" value="${f.expiry}" ${can("expiry") || !c ? "" : "disabled"}>${can("expiry") || !c ? "" : `<span class="sub">${ico("lock", 13)} Owner or Admin can change the end date</span>`}</div></div>`; }
+
+function secSummaries(f) { return `<h2 class="h2 pt8">Daily and weekly summary</h2><div class="f"><span class="lb">Daily summary<small>One message each morning</small></span><div class="row">${sw("f-daily", f.daily, false, "daily")}<label class="sr" for="f-dat">Daily time</label><input class="in time" id="f-dat" type="time" data-bind="dailyAt" value="${f.dailyAt}"></div>
+  <span class="lb">Weekly summary<small>Sent once a week, on the day set for all shops</small></span><div class="row">${sw("f-weekly", f.weekly, false, "weekly")}</div></div>`; }
 
 /* ------------------------------------------------------------------------------------------------ New customer */
 const blankForm = () => ({ _id: null, name: "", place: "", lang: "en+ta", people: [{ id: null, n: "", m: "", a: true, s: true }], hmode: "set", hours: DAYS.map((d, i) => ({ open: i < 6, from: "09:00", to: "21:00" })), rtype: "dahua", rname: "", daily: true, dailyAt: "08:00", weekly: true, expiry: plusDays(365), done: {} });
@@ -212,34 +230,37 @@ async function loadCurrent(id) {
 async function pageCustomer() {
   if (!S.cur || S.cur.id !== S.cid) await loadCurrent(S.cid);
   const c = cust(S.cid), st = statusOf(c), f = S.cur.f;
-  const titles = { people: "Who gets messages", hours: "Business hours", cams: "Recorder and cameras", events: "Events", summary: "Summaries and end date", log: "Messages sent" };
+  const titles = { people: "Who gets messages", hours: "Business hours", cams: "Recorder and cameras", events: "Events", log: "Messages sent" };
   let body;
   if (S.section === "events") body = secEvents();
   else if (S.section === "cams") body = secCams();
   else if (S.section === "log") { const log = await api.get(`/admin/v1/messaging/notifications?tenant_id=${S.cid}&limit=30`); body = logTable(log, false); }
-  else body = { people: secPeople, hours: secHours, summary: secSummary }[S.section](f, c) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
+  else body = (S.section === "hours" ? secHours(f) + secSummaries(f) : secPeople(f)) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
   return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span>
    <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></div>
+   ${whyOf(c) ? `<div class="whyline ${st[1] === "warn" ? "t-warn" : st[1] === "crit" ? "t-crit" : "sub"}">${esc(whyOf(c))}</div>` : ""}
    <h2 class="h2">${titles[S.section]}</h2><div class="form">${body}</div></div>`;
 }
 function secEvents() {
   const list = S.cur.events.filter((e) => e.saved && !HIDDEN.has(e.type)), names = (ids) => ids.map((i) => S.cur.people.find((p) => p.id === i)?.name).filter(Boolean).join(", ") || "Nobody yet";
-  return `<div class="stack"><div class="bar flush"><span class="sub">What this shop is told about. Only admins can change these.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${can("events") ? "" : "disabled title='Not for your role'"}>${ico("plus")}Add event</button></div>
-  ${list.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Sends</th><th>Goes to</th><th>On</th></tr></thead><tbody>${list.map((e) => { const m = MEDIA[carries(e.type)]; return `<tr><td class="dotc"><span class="dot ${e.enabled ? "ok" : ""}"></span></td><td class="main-c">${esc(e.label || e.title)}</td><td>${esc(e.title)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(names(e.recipient_ids))}</td><td>${sw("evon-" + e.type, e.enabled, !can("events"), "evon:" + e.type)}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
+  const data = S.cur.cams.flatMap((c) => [c.use_footfall ? { t: "Count people", id: c.id, name: c.name, act: "camfoot", on: true } : null, c.use_anpr ? { t: "Read number plates", id: c.id, name: c.name, act: "camplate", on: true } : null]).filter(Boolean);
+  return `<div class="stack"><div class="bar flush"><span class="sub">What this shop is told about, and what its cameras count and read. Only admins can change these.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${can("events") ? "" : "disabled title='Not for your role'"}>${ico("plus")}Add event</button></div>
+  ${list.length || data.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Sends</th><th>Goes to</th><th>On</th></tr></thead><tbody>${data.map((d) => `<tr><td class="dotc"><span class="dot ok"></span></td><td class="main-c">${d.t} · ${esc(d.name)}</td><td>${d.t}</td><td><span class="tag mute">No message</span></td><td>—</td><td>${sw(d.act + "-" + d.id, true, !can("events"), d.act + ":" + d.id)}</td></tr>`).join("")}${list.map((e) => { const m = MEDIA[carries(e.type)]; return `<tr><td class="dotc"><span class="dot ${e.enabled ? "ok" : ""}"></span></td><td class="main-c">${esc(e.label || e.title)}</td><td>${esc(e.title)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(names(e.recipient_ids))}</td><td>${sw("evon-" + e.type, e.enabled, !can("events"), "evon:" + e.type)}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
 }
 function secCams() {
   const { recs, cams, channels } = S.cur;
   return `<div class="stack"><div class="bar flush"><span class="sub">The recorder sends its cameras once it has connected to our server.</span><span class="sp"></span><button class="btn pri" type="button" data-addrec ${can("events") ? "" : "disabled title='Not for your role'"}>${ico("plus")}Add recorder</button></div>
   ${recs.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Recorder</th><th>Brand</th><th>Status</th><th>Last seen</th><th></th></tr></thead><tbody>${recs.map((r) => `<tr><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : r.status === "offline" ? "t-crit" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td><td class="num">${fmtTime(r.last_heartbeat_at)}</td><td><button class="btn sm" type="button" data-findcams="${r.id}">Find cameras</button> <button class="btn sm" type="button" data-showconn="${r.id}">Details</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No recorder yet. Add one, then type its details into the recorder.</div>`}
   ${Object.entries(channels).map(([rid, list]) => `<div class="sec-h">Cameras found on ${esc(recs.find((r) => r.id === rid)?.name || recs.find((r) => r.id === rid)?.device_id || "the recorder")}</div>${list.length ? `<div class="cams">${list.map((ch, i) => `<div class="cam"><div class="pic" data-pic="${rid}|${ch.channel_no}">${ico("cam", 24)}<span class="picmsg">Loading picture…</span></div><div class="cb">${ch.enabled_as_camera ? `<span class="tag ok">Already added</span>` : `<label class="chk"><input type="checkbox" data-ch="${rid}.${i}" ${ch.on ? "checked" : ""}>Watch this camera</label><input class="in" aria-label="Camera name" data-chn="${rid}.${i}" value="${esc(ch.name)}">`}</div></div>`).join("")}</div>${list.some((x) => !x.enabled_as_camera) ? `<div><button class="btn pri" type="button" data-addcams="${rid}">Add the ticked cameras</button></div>` : ""}` : `<div class="note">The recorder has not sent its cameras yet. Check its details, then try again in a minute.</div>`}`).join("")}
-  <div class="sec-h">Cameras</div>${cams.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Name</th><th>Counts people</th><th>Reads plates</th><th>Watching</th><th></th></tr></thead><tbody>${cams.map((c) => `<tr><td class="dotc"><span class="dot ${c.enabled ? "ok" : ""}"></span></td><td class="main-c"><input class="in bare-in" aria-label="Camera name" data-cam-name="${c.id}" value="${esc(c.name)}" ${can("events") ? "" : "disabled"}></td><td>${sw("camfoot-" + c.id, c.use_footfall, !can("events"), "camfoot:" + c.id)}</td><td>${sw("camplate-" + c.id, c.use_anpr, !can("events"), "camplate:" + c.id)}</td><td>${sw("camon-" + c.id, c.enabled, !can("events"), "camon:" + c.id)}</td><td><button class="btn sm" type="button" data-campic="${c.id}">See picture</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No cameras added yet.</div>`}</div>`;
+  <div class="sec-h">Cameras</div>${cams.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Name</th><th>Used for</th><th>Watching</th><th></th></tr></thead><tbody>${cams.map((c) => `<tr><td class="dotc"><span class="dot ${c.enabled ? "ok" : ""}"></span></td><td class="main-c"><input class="in bare-in" aria-label="Camera name" data-cam-name="${c.id}" value="${esc(c.name)}" ${can("events") ? "" : "disabled"}></td><td>${[c.use_footfall ? "Counts people" : "", c.use_anpr ? "Reads plates" : "", c.use_areas ? "Marked areas" : ""].filter(Boolean).map((x) => `<span class="tag">${x}</span>`).join(" ") || '<span class="sub">Nothing yet</span>'}</td><td>${sw("camon-" + c.id, c.enabled, !can("events"), "camon:" + c.id)}</td><td><button class="btn sm" type="button" data-campic="${c.id}">See picture</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No cameras added yet.</div>`}<div class="sub">What a camera is used for is set in Events (Count people, Read number plates, and the alerts that use areas).</div></div>`;
 }
+const kindOf = (m) => m.status === "failed" ? "Failed" : m.status === "queued" ? "Waiting" : ["suppressed", "cancelled"].includes(m.status) ? "Held back" : "Sent";
 function logTable(rows, withCustomer) {
-  const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"]];
-  const kind = (m) => ["failed"].includes(m.status) ? "Failed" : ["queued"].includes(m.status) ? "Waiting" : ["suppressed", "cancelled"].includes(m.status) ? "Held back" : "Sent";
-  const shown = withCustomer ? rows.filter((m) => S.logChip === "all" || kind(m) === S.logChip) : rows;
-  return `${withCustomer ? `<div class="bar"><div class="seg" role="group" aria-label="Filter">${chips.map((c) => `<button type="button" data-lchip="${c[0]}" aria-pressed="${S.logChip === c[0]}">${c[1]}</button>`).join("")}</div></div>` : ""}
-  ${shown.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th></th></tr></thead><tbody>${shown.map((m) => `<tr><td class="dotc"><span class="dot ${m.status === "failed" ? "crit" : ["queued"].includes(m.status) ? "warn" : "ok"}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${m.status === "failed" ? "t-crit" : "t-ok"}" title="${esc(m.error || "")}">${kind(m)}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No messages yet.</div>`}`;
+  const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"], ["Held back", "Held back"]], q = S.logQ.toLowerCase();
+  const shown = rows.filter((m) => (S.logChip === "all" || kindOf(m) === S.logChip) && (!q || `${m.tenant} ${m.title || ""} ${m.event || ""} ${m.recipient || ""} ${m.error || ""}`.toLowerCase().includes(q)));
+  const cls = (m) => ({ Failed: "crit", Waiting: "warn", "Held back": "", Sent: "ok" }[kindOf(m)]), txt = (m) => ({ Failed: "t-crit", Waiting: "t-warn", "Held back": "t-mute", Sent: "t-ok" }[kindOf(m)]);
+  return `<div class="bar"><label class="search">${ico("search")}<span class="sr">Search messages</span><input id="lq" placeholder="Search" value="${esc(S.logQ)}"></label><div class="seg" role="group" aria-label="Filter">${chips.map((c) => `<button type="button" data-lchip="${c[0]}" aria-pressed="${S.logChip === c[0]}">${c[1]}</button>`).join("")}</div></div>
+  ${shown.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${shown.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">${rows.length ? "No messages match." : "No messages yet."}</div>`}`;
 }
 async function saveSection() {
   const f = S.cur.f, base = `/admin/v1/tenants/${S.cid}/shop`;
@@ -256,11 +277,9 @@ async function saveSection() {
       await syncRecipients(f);
     } else if (S.section === "hours") {
       await api.put(base + "/hours", f.hmode === "always" ? { always_open: true, days: [] } : { always_open: false, days: f.hours.map((h) => ({ open: h.open, from: h.open ? h.from : null, to: h.open ? h.to : null })) });
-    } else if (S.section === "summary") {
       const ids = f.people.filter((p) => p.id && p.s).map((p) => p.id);
       await api.put(base + "/events/daily_summary", { enabled: f.daily, params: { hour: +f.dailyAt.slice(0, 2) }, recipient_ids: ids });
       await api.put(base + "/events/weekly_summary", { enabled: f.weekly, params: {}, recipient_ids: ids });
-      if (can("expiry") && f.expiry !== (cust(S.cid).endsOn || "")) { await api.patch(`/admin/v1/tenants/${S.cid}`, { ends_on: f.expiry || null }); await loadCustomers(); }
     }
     await loadCurrent(S.cid); toast("Saved"); render();
   } catch (e) { toast(errText(e), true); }
@@ -282,21 +301,23 @@ function pageEvent() {
   if (S.estep === "event") body = `<div class="f"><label for="e-name">Event name<small>Shown in your list. You can leave the suggestion.</small></label><input class="in" id="e-name" data-ebind="name" value="${esc(e.name)}" placeholder="For example, Queue at the counter" autocomplete="off">
     <span class="lb">Send to<small>Only these people get this event</small></span><div class="stack">${S.cur.people.length ? S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-eto="${p.id}" ${e.to.includes(p.id) ? "checked" : ""}>${esc(p.name)} <span class="sub">${esc(p.phone || "")}</span></label>`).join("") : `<div class="note warn">This shop has nobody to message yet. Add people first.</div>`}</div></div>`;
   else if (S.estep === "camera") body = `<div class="note">Pick one camera for a picture event, or the recorder for a system event such as "Recorder offline".</div><div class="pick scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th></th><th>Name</th><th>Kind</th><th>Status</th></tr></thead><tbody>${S.cur.recs.map((r) => ["rec", r.id, r.name || r.device_id, r.status === "online"]).concat(S.cur.cams.map((c) => ["cam", c.id, c.name, c.stream_state === "live" || c.enabled])).map((t) => `<tr data-etarget="${t[0]}|${t[1]}"><td class="dotc"><span class="dot ${t[3] ? "ok" : ""}"></span></td><td class="radio"><input type="radio" name="tg" aria-label="${esc(t[2])}" ${e.target?.id === t[1] ? "checked" : ""}></td><td class="main-c">${esc(t[2])}</td><td>${t[0] === "rec" ? "Recorder (whole system)" : "Camera"}</td><td class="${t[3] ? "t-ok" : "t-mute"}">${t[3] ? "Online" : "Not connected"}</td></tr>`).join("")}</tbody></table></div>${!S.cur.recs.length && !S.cur.cams.length ? `<div class="note warn">Add a recorder and cameras first (Recorder and cameras).</div>` : ""}`;
-  else if (S.estep === "type") { const opts = S.cur.events.filter((x) => !HIDDEN.has(x.type) && (REC_LEVEL.has(x.type) ? "rec" : "cam") === e.level), groups = [...new Set(opts.map((x) => x.group))];
+  else if (S.estep === "type") { const opts = (e.level === "cam" ? DATA_TYPES : []).concat(S.cur.events.filter((x) => !HIDDEN.has(x.type) && (REC_LEVEL.has(x.type) ? "rec" : "cam") === e.level)), groups = [...new Set(opts.map((x) => x.group))];
     body = e.level ? `<div class="pick scroll"><table class="tbl"><tbody>${groups.map((g) => `<tr><td colspan="4" class="sec-h grp">${g}</td></tr>` + opts.filter((x) => x.group === g).map((x) => `<tr data-etype="${x.type}"><td class="radio"><input type="radio" name="ty" aria-label="${esc(x.title)}" ${e.key === x.type ? "checked" : ""}></td><td class="main-c">${esc(x.title)}${x.ai ? ' <span class="tag ai">Smart</span>' : ""}<br><span class="sub small wrap">${esc(x.description)}</span></td><td><span class="tag ${MEDIA[carries(x.type)][1]}">${MEDIA[carries(x.type)][0]}</span></td><td>${AREA_KIND[x.type] ? '<span class="tag">Marks an area</span>' : ""}</td></tr>`).join("")).join("")}</tbody></table></div>` : `<div class="empty">Choose a camera or recorder first.</div>`; }
   else if (S.estep === "area") body = needsArea() ? `${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap)}<div class="vtool"><span class="sub">Click on the picture to add the corners of the area. At least 3 corners.${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span><button class="btn sm" type="button" data-clearpts>Start again</button></div>` : `<div class="note">This event does not use a marked area, so this step is skipped.</div>`;
   else body = settingsBody(e);
   const order = ESTEPS.map((s) => s[0]).filter((s) => s !== "area" || needsArea() || !e.key), pos = order.indexOf(S.estep), last = pos === order.length - 1;
-  const ok = { event: !!S.cur.people.length, camera: !!e.target, type: !!e.key, area: e.pts.length >= 3, settings: true }[S.estep];
+  const ok = { event: true, camera: !!e.target, type: !!e.key, area: e.pts.length >= 3, settings: true }[S.estep];
   return `<div class="rise"><div class="title"><h1>${ESTEPS[i][1]}</h1><span class="tag brand">Step ${pos + 1} of ${order.length}</span><span class="sub">${esc(cname())}</span></div><div class="form">${body}
    <div class="actions">${last ? `<button class="btn pri" type="button" data-evcreate>Create event</button>` : `<button class="btn pri" type="button" data-evnext ${ok ? "" : "disabled"}>Next</button>`}${pos ? `<button class="btn" type="button" data-evprev>Back</button>` : ""}<button class="btn bare" type="button" data-go="customer">Cancel</button></div></div></div>`;
 }
 function settingsBody(e) {
-  const x = S.cur.events.find((q) => q.type === e.key), kind = AREA_KIND[e.key], rows = [];
+  const x = evMeta(e.key), kind = AREA_KIND[e.key], rows = [], data = e.key.startsWith("__");
   if (kind) for (const [k, label, unit, def] of AREA_FIELDS[kind]) rows.push(`<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="1" aria-label="${label}" data-ev="${k}" value="${e.v[k] ?? def}"><span class="sub">${unit}</span></div>`);
   else for (const [k, s] of Object.entries(x.settings || {})) { if (s.type === "boolean") { rows.push(`<div class="cfg"><span>Include a short video</span><span>${sw("e-clip", e.clip, false, "eclip")}</span><span></span></div>`); continue; } const [label, unit] = PARAM[k] || [humanize(k), ""]; rows.push(`<div class="cfg"><span>${label}</span><input class="in sm" type="number" min="${s.min}" max="${s.max}" aria-label="${label}" data-ev="${k}" value="${e.v[k] ?? s.default}"><span class="sub">${unit}</span></div>`); }
   if (e.key === "phone_use") rows.push(`<label class="chk dark notice"><input type="checkbox" data-enotice ${e.notice ? "checked" : ""}>I have told the staff that this area is watched for phone use.</label>`);
   const m = MEDIA[carries(e.key)];
+  const needs = NEEDS_COUNT.has(e.key) ? "People counting will be switched on for this camera, because this event needs it." : NEEDS_PLATES.has(e.key) ? "Number plate reading will be switched on for this camera, because this event needs it. It uses the camera's full-quality picture." : "";
+  if (needs) rows.push(`<div class="note">${needs}</div>`);
   return `<div class="stack"><div class="f f-narrow"><span class="lb">${esc(x.title)}<small>${esc(x.description)}</small></span><div class="stack">${rows.join("") || `<div class="sub">No setting needed for this event.</div>`}
     <div class="cfg"><span>Message carries</span><span class="tag ${m[1]}">${m[0]}</span><span></span></div><div class="cfg"><span>Switch on now</span><span>${sw("e-on", e.on !== false, false, "eon")}</span><span></span></div></div></div></div>`;
 }
@@ -305,9 +326,15 @@ async function loadSnap(e) {
   try { const blob = await api.call("GET", `/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/snapshot`, undefined, { blob: true }); e.snap = URL.createObjectURL(blob); } catch { /* a sample view is shown instead */ }
 }
 async function createEvent() {
-  const e = S.ev, x = S.cur.events.find((q) => q.type === e.key), base = `/admin/v1/tenants/${S.cid}/shop`, kind = AREA_KIND[e.key];
+  const e = S.ev, x = evMeta(e.key), base = `/admin/v1/tenants/${S.cid}/shop`, kind = AREA_KIND[e.key];
   const btn = document.querySelector("[data-evcreate]"); if (btn) btn.disabled = true;
   try {
+    if (!e.key.startsWith("__") && !e.to.length) throw new Error("Choose at least one person to send this to. Add people first if the shop has none.");
+    if (e.key.startsWith("__")) {
+      await api.patch(`${base}/cameras/${e.target.id}`, e.key === "__count" ? { use_footfall: e.on !== false } : { use_anpr: e.on !== false, ...(e.on !== false ? { stream: "main" } : {}) });
+      await loadCurrent(S.cid);
+      return modal(`${mh("Setup complete!")}<p class="sub nm center">${esc(x.title)} is on for ${esc(e.target.name)}.</p><button class="btn pri wide" type="button" data-evdone>Manage events</button>`);
+    }
     if (kind) {
       if (e.key === "phone_use" && !e.notice) throw new Error("Please confirm that the staff have been told.");
       const existing = await api.get(`${base}/cameras/${e.target.id}/areas`);
@@ -317,6 +344,8 @@ async function createEvent() {
     }
     const params = {}; if (!kind) for (const [k, s] of Object.entries(x.settings || {})) params[k] = s.type === "boolean" ? !!e.clip : +(e.v[k] ?? s.default);
     await api.put(`${base}/events/${e.key}`, { label: e.name || x.title, enabled: e.on !== false, params, recipient_ids: e.to });
+    if (e.target.kind === "cam" && NEEDS_COUNT.has(e.key)) await api.patch(`${base}/cameras/${e.target.id}`, { use_footfall: true });
+    if (e.target.kind === "cam" && NEEDS_PLATES.has(e.key)) await api.patch(`${base}/cameras/${e.target.id}`, { use_anpr: true, stream: "main" });
   } catch (err) { if (btn) btn.disabled = false; return toast(errText(err), true); }
   await loadCurrent(S.cid);
   modal(`${mh("Setup complete!")}<p class="sub nm center">${esc(e.name || x.title)} is on for ${esc(e.target.name)}.</p>${kind ? videoFrame(e.target.name + " · " + cname(), e.pts, false, e.snap) : ""}<button class="btn pri wide" type="button" data-evdone>Manage events</button>`);
@@ -410,7 +439,7 @@ document.addEventListener("click", async (ev) => {
     if ("close" in d) return closeModal();
     if ("retry" in d) return render();
     if (d.go) { if (d.go === "new") { S.form = blankForm(); S.step = "shop"; } if (d.go === "customers") await loadCustomers(); if (d.go === "customer") S.cur = null; return go(d.go); }
-    if (d.cust) { S.cid = d.cust; S.cur = null; S.section = "people"; return go("customer"); }
+    if (d.cust) { S.cid = d.cust; S.cur = null; S.section = "cams"; return go("customer"); }
     if (d.view) { S.view = d.view; return render(true); }
     if ("pop" in d) { S.pop = !S.pop; return render(true); }
     if (d.filter) { S.filter = d.filter; S.pop = false; return render(true); }
@@ -455,7 +484,7 @@ document.addEventListener("click", async (ev) => {
     if ("addev" in d) { S.ev = newEv(); S.estep = "event"; return go("event"); }
     if (d.estep) { S.estep = d.estep; if (d.estep === "area") await loadSnap(S.ev); return render(); }
     if (d.etarget) { const [kind, id] = d.etarget.split("|"), name = kind === "rec" ? (S.cur.recs.find((r) => r.id === id).name || S.cur.recs.find((r) => r.id === id).device_id) : S.cur.cams.find((c) => c.id === id).name; if (S.ev.level !== kind) { S.ev.key = null; S.ev.v = {}; } S.ev.target = { kind, id, name }; S.ev.level = kind; S.ev.snap = null; return render(true); }
-    if (d.etype) { const x = S.cur.events.find((q) => q.type === d.etype); S.ev.key = d.etype; S.ev.v = {}; if (!S.ev.name) S.ev.name = x.title; return render(true); }
+    if (d.etype) { const x = evMeta(d.etype); S.ev.key = d.etype; S.ev.v = {}; if (!S.ev.name || S.ev.nameAuto) { S.ev.name = x.title; S.ev.nameAuto = true; } return render(true); }
     if ("clearpts" in d) { S.ev.pts = []; return render(true); }
     if ("evnext" in d) { S.ev.done[S.estep] = true; const o = eorder(); S.estep = o[o.indexOf(S.estep) + 1]; if (S.estep === "area") await loadSnap(S.ev); return render(); }
     if ("evprev" in d) { const o = eorder(); S.estep = o[o.indexOf(S.estep) - 1]; return render(); }
@@ -478,9 +507,10 @@ document.addEventListener("click", async (ev) => {
 document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
+  if (t.id === "lq") { S.logQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "tq") { S.tq = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#tq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (S.route === "event" && S.ev) { const v = S.ev, d = t.dataset;
-    if (d.ebind) v[d.ebind] = t.value; else if (d.eto) { const i = v.to.indexOf(d.eto); if (t.checked && i < 0) v.to.push(d.eto); if (!t.checked && i >= 0) v.to.splice(i, 1); } else if (d.ev) v.v[d.ev] = t.value; else if ("enotice" in d) v.notice = t.checked;
+    if (d.ebind) { v[d.ebind] = t.value; if (d.ebind === "name") v.nameAuto = false; } else if (d.eto) { const i = v.to.indexOf(d.eto); if (t.checked && i < 0) v.to.push(d.eto); if (!t.checked && i >= 0) v.to.splice(i, 1); } else if (d.ev) v.v[d.ev] = t.value; else if ("enotice" in d) v.notice = t.checked;
     else if (d.act === "eon") v.on = t.checked; else if (d.act === "eclip") v.clip = t.checked; return; }
   const f = S.route === "new" ? S.form : S.route === "customer" ? S.cur?.f : null; if (!f) return; const d = t.dataset;
   if (d.bind) f[d.bind] = t.value;
@@ -500,7 +530,7 @@ document.addEventListener("change", async (ev) => {
       await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
     if (d.act?.startsWith("camon:")) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.act.slice(6)}`, { enabled: t.checked }); toast("Saved"); return loadCurrent(S.cid).then(() => render(true)); }
     if (d.camName) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.camName}`, { name: t.value.trim() }); toast("Saved"); }
-  } catch (e) { toast(errText(e), true); render(true); }
+  } catch (e) { toast(e.code === "use_required" ? "A camera needs at least one use. Turn Watching off to stop it instead." : errText(e), true); render(true); }
 });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
 

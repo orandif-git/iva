@@ -245,3 +245,4 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .vpic.big{min-height:300px;background:var(--frame);display:grid;place-items:center}
 .vpic.big .picmsg{color:rgba(255,255,255,.75);position:static}
 .vpic.big img.snap{width:100%;height:auto}
+.whyline{margin:-6px 0 14px;font-size:13.5px}
