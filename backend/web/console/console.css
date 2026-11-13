@@ -291,3 +291,4 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .logbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .logbar .count{white-space:nowrap}
 .in.sel{width:auto;min-width:150px;max-width:none;height:36px;padding:0 12px}
+.logbar .sp{flex:1}
