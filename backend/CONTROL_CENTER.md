@@ -97,4 +97,4 @@ New customer, step 1 ("Customer"): customer name, owner name, owner mobile (up t
 Setup, Console users: **Edit** changes a person's name, email and role. **Delete** removes them for good (type their name to confirm). Owner and Admin only; an Admin cannot touch an Owner.
 - You cannot change your own role or delete yourself, and the last active Owner can never be changed or deleted.
 - A changed role signs the person out, so the old permissions do not linger.
-- A person who has already viewed a customer's account on screen has a history that must stay, so they cannot be deleted: use Switch off instead (the screen says so).
+- The record of which customers a person viewed ("view as customer") stays after they are deleted, with their name.

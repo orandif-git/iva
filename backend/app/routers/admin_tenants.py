@@ -233,9 +233,9 @@ async def impersonate(tenant_id: UUID, body: ImpersonateIn, ctx: AdminCtx = Depe
     await _get(ctx, tenant_id)
     expires = datetime.now(timezone.utc) + timedelta(minutes=body.minutes)
     sid = await ctx.conn.fetchval(
-        """INSERT INTO platform.impersonation_sessions (staff_id, tenant_id, reason, notified, expires_at)
-           VALUES ($1,$2,$3,$4,$5) RETURNING id""",
-        ctx.staff.id, tenant_id, body.reason, body.notify, expires,
+        """INSERT INTO platform.impersonation_sessions (staff_id, staff_name, tenant_id, reason, notified, expires_at)
+           VALUES ($1,$6,$2,$3,$4,$5) RETURNING id""",
+        ctx.staff.id, tenant_id, body.reason, body.notify, expires, ctx.staff.name,
     )
     await ctx.audit("impersonate.start", tenant_id=tenant_id, target_type="tenant", target_id=tenant_id, reason=body.reason, after={"session_id": str(sid), "minutes": body.minutes})
     # TODO(notifications slice): when body.notify is true, email the tenant admins that support is viewing the account.

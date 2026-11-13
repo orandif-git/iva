@@ -801,7 +801,8 @@ CREATE TABLE app.usage_daily (
 -- Staff access to a tenant ("view as customer"). Tokens issued from this row are read-only and short-lived.
 CREATE TABLE platform.impersonation_sessions (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id    uuid NOT NULL REFERENCES platform.staff_users(id),
+  staff_id    uuid REFERENCES platform.staff_users(id) ON DELETE SET NULL,     -- empty once that person is deleted; staff_name keeps who it was
+  staff_name  text,
   tenant_id   uuid NOT NULL REFERENCES app.tenants(id),
   reason      text NOT NULL CHECK (length(trim(reason)) >= 5),
   read_only   boolean NOT NULL DEFAULT true,

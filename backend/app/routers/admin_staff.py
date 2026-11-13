@@ -74,8 +74,7 @@ async def edit_staff(sid: UUID, body: StaffPatchIn, ctx: AdminCtx = Depends(admi
 
 @router.delete("/{sid}", status_code=204)
 async def delete_staff(sid: UUID, reason: str = Query(..., min_length=5, max_length=500), ctx: AdminCtx = Depends(admin_ctx("owner"))):
-    """Removes a person for good. Not yourself, and never the last active Owner. A person who has already looked into a customer's account on screen cannot be
-    removed (that record must stay): switch them off instead."""
+    """Removes a person for good. Not yourself, and never the last active Owner. The records of what they looked at stay, with their name."""
     cur = await _get(ctx, sid)
     _guard(ctx, None, cur["role"])
     if sid == ctx.staff.id:
