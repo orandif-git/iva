@@ -116,3 +116,15 @@ async def test_channels_cameras_snapshot_and_deleting_a_customer(client, make, s
     assert (await client.delete(url, params={"reason": "Test customer"}, headers=owner["headers"])).status_code == 204
     assert (await client.get(url, headers=owner["headers"])).status_code == 404
     assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='tenant.delete' AND target_id=$1", str(n)) == 1
+
+
+async def test_every_customer_gets_everything_plates_move_the_shop_to_a_full_plan(client, make, su):
+    t, u, (cam,), rec = await setup_cameras(client, make, plan="quick", anpr=0)
+    onboarding = await make.staff("onboarding")
+    base = f"/admin/v1/tenants/{t}/shop"
+    assert await su.fetchval("SELECT plan_id FROM app.tenants WHERE id=$1", t) == "quick"
+    r = await client.patch(f"{base}/cameras/{cam}", json={"use_anpr": True, "stream": "main"}, headers=onboarding["headers"])
+    assert r.status_code == 200 and r.json()["use_anpr"] is True
+    assert await su.fetchval("SELECT plan_id FROM app.tenants WHERE id=$1", t) == "full"
+    rid = await su.fetchval("SELECT id FROM app.recorders WHERE tenant_id=$1", t)
+    assert (await client.get(f"{base}/recorders/{rid}/channels/1/snapshot", headers=onboarding["headers"])).status_code in (409, 502, 503, 504)    # no real recorder here

@@ -178,8 +178,8 @@ async function createCustomer() {
   let t;
   try {
     if (!S.plans.length) S.plans = (await api.get("/admin/v1/plans")).items || (await api.get("/admin/v1/plans"));
-    const plan = S.plans.find((p) => p.active !== false) || S.plans[0];
-    t = await api.post("/admin/v1/tenants", { name: f.name.trim(), city: f.place.trim() || null, plan_id: plan.id, camera_limit: 16, ends_on: f.expiry || null, msg_language: f.lang });
+    const plan = S.plans.find((p) => p.anpr && !p.alerts_chosen) || S.plans.find((p) => p.anpr) || S.plans[0];       // there is no plan to choose: every customer gets everything
+    t = await api.post("/admin/v1/tenants", { name: f.name.trim(), city: f.place.trim() || null, plan_id: plan.id, camera_limit: 64, ends_on: f.expiry || null, msg_language: f.lang });
   } catch (e) { if (btn) btn.disabled = false; return toast(errText(e), true); }
   const base = `/admin/v1/tenants/${t.id}/shop`, problems = []; let creds = null;
   const ids = [];
@@ -231,8 +231,8 @@ function secCams() {
   const { recs, cams, channels } = S.cur;
   return `<div class="stack"><div class="bar flush"><span class="sub">The recorder sends its cameras once it has connected to our server.</span><span class="sp"></span><button class="btn pri" type="button" data-addrec ${can("events") ? "" : "disabled title='Not for your role'"}>${ico("plus")}Add recorder</button></div>
   ${recs.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Recorder</th><th>Brand</th><th>Status</th><th>Last seen</th><th></th></tr></thead><tbody>${recs.map((r) => `<tr><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : r.status === "offline" ? "t-crit" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td><td class="num">${fmtTime(r.last_heartbeat_at)}</td><td><button class="btn sm" type="button" data-findcams="${r.id}">Find cameras</button> <button class="btn sm" type="button" data-showconn="${r.id}">Details</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No recorder yet. Add one, then type its details into the recorder.</div>`}
-  ${Object.entries(channels).map(([rid, list]) => `<div class="sec-h">Cameras found on ${esc(recs.find((r) => r.id === rid)?.name || recs.find((r) => r.id === rid)?.device_id || "the recorder")}</div>${list.length ? `<div class="cams">${list.map((ch, i) => `<div class="cam"><div class="pic">${ico("cam", 24)}</div><div class="cb">${ch.enabled_as_camera ? `<span class="tag ok">Already added</span>` : `<label class="chk"><input type="checkbox" data-ch="${rid}.${i}" ${ch.on ? "checked" : ""}>Watch this camera</label><input class="in" aria-label="Camera name" data-chn="${rid}.${i}" value="${esc(ch.name)}">`}</div></div>`).join("")}</div>${list.some((x) => !x.enabled_as_camera) ? `<div><button class="btn pri" type="button" data-addcams="${rid}">Add the ticked cameras</button></div>` : ""}` : `<div class="note">The recorder has not sent its cameras yet. Check its details, then try again in a minute.</div>`}`).join("")}
-  <div class="sec-h">Cameras</div>${cams.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Name</th><th>Counts people</th><th>Reads plates</th><th>On</th></tr></thead><tbody>${cams.map((c) => `<tr><td class="dotc"><span class="dot ${c.enabled ? "ok" : ""}"></span></td><td class="main-c"><input class="in bare-in" aria-label="Camera name" data-cam-name="${c.id}" value="${esc(c.name)}" ${can("events") ? "" : "disabled"}></td><td>${c.use_footfall ? "Yes" : "No"}</td><td>${c.use_anpr ? "Yes" : "No"}</td><td>${sw("camon-" + c.id, c.enabled, !can("events"), "camon:" + c.id)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No cameras added yet.</div>`}</div>`;
+  ${Object.entries(channels).map(([rid, list]) => `<div class="sec-h">Cameras found on ${esc(recs.find((r) => r.id === rid)?.name || recs.find((r) => r.id === rid)?.device_id || "the recorder")}</div>${list.length ? `<div class="cams">${list.map((ch, i) => `<div class="cam"><div class="pic" data-pic="${rid}|${ch.channel_no}">${ico("cam", 24)}<span class="picmsg">Loading picture…</span></div><div class="cb">${ch.enabled_as_camera ? `<span class="tag ok">Already added</span>` : `<label class="chk"><input type="checkbox" data-ch="${rid}.${i}" ${ch.on ? "checked" : ""}>Watch this camera</label><input class="in" aria-label="Camera name" data-chn="${rid}.${i}" value="${esc(ch.name)}">`}</div></div>`).join("")}</div>${list.some((x) => !x.enabled_as_camera) ? `<div><button class="btn pri" type="button" data-addcams="${rid}">Add the ticked cameras</button></div>` : ""}` : `<div class="note">The recorder has not sent its cameras yet. Check its details, then try again in a minute.</div>`}`).join("")}
+  <div class="sec-h">Cameras</div>${cams.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Name</th><th>Counts people</th><th>Reads plates</th><th>Watching</th><th></th></tr></thead><tbody>${cams.map((c) => `<tr><td class="dotc"><span class="dot ${c.enabled ? "ok" : ""}"></span></td><td class="main-c"><input class="in bare-in" aria-label="Camera name" data-cam-name="${c.id}" value="${esc(c.name)}" ${can("events") ? "" : "disabled"}></td><td>${sw("camfoot-" + c.id, c.use_footfall, !can("events"), "camfoot:" + c.id)}</td><td>${sw("camplate-" + c.id, c.use_anpr, !can("events"), "camplate:" + c.id)}</td><td>${sw("camon-" + c.id, c.enabled, !can("events"), "camon:" + c.id)}</td><td><button class="btn sm" type="button" data-campic="${c.id}">See picture</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No cameras added yet.</div>`}</div>`;
 }
 function logTable(rows, withCustomer) {
   const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"]];
@@ -370,6 +370,18 @@ function modal(html) { $("#layer").innerHTML = `<div class="scrim" data-scrim><d
 const closeModal = () => { $("#layer").innerHTML = ""; };
 const mh = (t) => `<div class="mh"><span class="spacer"></span><h2>${t}</h2><button class="ibtn" type="button" data-close aria-label="Close">${ico("x")}</button></div>`;
 const PAGES = { overview: pageOverview, customers: pageCustomers, new: pageNew, customer: pageCustomer, event: pageEvent, messages: pageMessages, setup: pageSetup };
+let picRun = 0;
+async function loadPics() {
+  const run = ++picRun, jobs = [...document.querySelectorAll("[data-pic],[data-campic-box]")];
+  const one = async (el) => {
+    if (run !== picRun || !el.isConnected) return;
+    const url = el.dataset.pic ? (([rid, ch]) => `/admin/v1/tenants/${S.cid}/shop/recorders/${rid}/channels/${ch}/snapshot`)(el.dataset.pic.split("|")) : `/admin/v1/tenants/${S.cid}/shop/cameras/${el.dataset.campicBox}/snapshot`;
+    try { const blob = await api.call("GET", url, undefined, { blob: true }); if (!el.isConnected) return; const img = document.createElement("img"); img.className = "snap"; img.alt = "Camera picture"; img.src = URL.createObjectURL(blob); el.textContent = ""; el.appendChild(img); }
+    catch (e) { if (!el.isConnected) return; const m = el.querySelector(".picmsg") || el.appendChild(document.createElement("span")); m.className = "picmsg"; m.textContent = e.status === 409 ? "Camera offline" : e.status === 504 ? "No picture: the camera did not answer in time" : "No picture available right now"; }
+  };
+  let i = 0; const worker = async () => { while (i < jobs.length && run === picRun) await one(jobs[i++]); };         // two at a time: each picture is taken from the recorder at the shop
+  await Promise.all([worker(), worker()]);
+}
 let token = 0;
 async function render(keepScroll) {
   const mine = ++token, p = $("#page"), y = p.scrollTop;
@@ -379,6 +391,7 @@ async function render(keepScroll) {
   if (mine !== token) return;
   p.innerHTML = html; p.scrollTop = keepScroll ? y : 0;
   p.querySelectorAll(".bars i[data-h]").forEach((b) => { b.style.height = b.dataset.h + "px"; });
+  loadPics();
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const r = d.getBoundingClientRect(); S.ev.pts.push([Math.round((ev.clientX - r.left) / r.width * 640), Math.round((ev.clientY - r.top) / r.height * 360)]); render(true); });
 }
 function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = false; closeModal(); try { history.replaceState(null, "", "#" + r); } catch { /* fine */ } return render(); }
@@ -386,7 +399,7 @@ const ORDER = NSTEPS.map((s) => s[0]);
 const eorder = () => ESTEPS.map((s) => s[0]).filter((s) => s !== "area" || needsArea());
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-etarget],[data-etype],[data-clearpts],[data-evdone],[data-retry],[data-addrec],[data-findcams],[data-showconn],[data-addcams],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-etarget],[data-etype],[data-clearpts],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (!t) return; const d = t.dataset;
   try {
@@ -434,8 +447,9 @@ document.addEventListener("click", async (ev) => {
     /* recorder and cameras */
     if ("addrec" in d) return modal(`${mh("Add a recorder")}<label class="bold" for="rn">Recorder name</label><input class="in" id="rn" placeholder="For example, Main shop" autocomplete="off"><p class="sub nm">Dahua recorders connect to our server by themselves. You get the details to type into the recorder next.</p><button class="btn pri wide" type="button" data-confirm="addrec">Add recorder</button>`);
     if (d.confirm === "addrec") { const r = await api.post(`/admin/v1/tenants/${S.cid}/recorders`, { brand: "dahua", name: $("#rn").value.trim() || null, reason: "Added from the Control Center" }); S.cur = null; modal(`${mh("Type these into the recorder")}<div class="creds">${credRows(r)}</div><p class="sub nm">This is the only time the key is shown.</p><button class="btn pri wide" type="button" data-close>Done</button>`); return render(true); }
+    if (d.campic) { const c = S.cur.cams.find((x) => x.id === d.campic); modal(`${mh(esc(c.name))}<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(c.name)} · ${esc(cname())}</span></div><div class="vpic big" data-campic-box="${c.id}"><span class="picmsg">Loading picture…</span></div></div><button class="btn wide" type="button" data-close>Close</button>`); return loadPics(); }
     if (d.showconn) { const r = await api.get(`/admin/v1/recorders/${d.showconn}/connection`); return modal(`${mh("Recorder details")}<div class="creds">${credRows(r)}</div><button class="btn pri wide" type="button" data-close>Done</button>`); }
-    if (d.findcams) { const list = await api.get(`/admin/v1/tenants/${S.cid}/shop/recorders/${d.findcams}/channels`); S.cur.channels[d.findcams] = list.map((c) => ({ ...c, on: !c.enabled_as_camera, name: c.name || "Camera " + c.channel_no })); return render(true); }
+    if (d.findcams) { const list = await api.get(`/admin/v1/tenants/${S.cid}/shop/recorders/${d.findcams}/channels`); S.cur.channels = { [d.findcams]: list.map((c) => ({ ...c, on: !c.enabled_as_camera, name: c.name || "Camera " + c.channel_no })) }; return render(true); }
     if (d.addcams) { const rid = d.addcams; let n = 0; for (const ch of S.cur.channels[rid]) { if (ch.enabled_as_camera || !ch.on) continue; await api.post(`/admin/v1/tenants/${S.cid}/shop/cameras`, { recorder_id: rid, channel_no: ch.channel_no, name: ch.name.trim() || "Camera " + ch.channel_no, use_footfall: true }); n++; } delete S.cur.channels[rid]; const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; await loadCustomers(); toast(n ? `${n} camera${n === 1 ? "" : "s"} added` : "Nothing was ticked"); return render(true); }
     /* event wizard */
     if ("addev" in d) { S.ev = newEv(); S.estep = "event"; return go("event"); }
@@ -481,6 +495,9 @@ document.addEventListener("change", async (ev) => {
   const t = ev.target, d = t.dataset;
   try {
     if (d.act?.startsWith("evon:") && S.cur) { const type = d.act.slice(5), e = S.cur.events.find((x) => x.type === type); await api.put(`/admin/v1/tenants/${S.cid}/shop/events/${type}`, { label: e.label, enabled: t.checked, params: e.params, recipient_ids: e.recipient_ids, quiet_start: e.quiet_start, quiet_end: e.quiet_end }); e.enabled = t.checked; toast(t.checked ? "Event is on" : "Event is off"); return render(true); }
+    if (d.act?.startsWith("camfoot:") || d.act?.startsWith("camplate:")) { const plate = d.act.startsWith("camplate:"), id = d.act.split(":")[1], c = S.cur.cams.find((x) => x.id === id);
+      const body = plate ? { use_anpr: t.checked, ...(t.checked ? { stream: "main" } : {}) } : { use_footfall: t.checked };
+      await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
     if (d.act?.startsWith("camon:")) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.act.slice(6)}`, { enabled: t.checked }); toast("Saved"); return loadCurrent(S.cid).then(() => render(true)); }
     if (d.camName) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.camName}`, { name: t.value.trim() }); toast("Saved"); }
   } catch (e) { toast(errText(e), true); render(true); }

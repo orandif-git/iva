@@ -194,14 +194,43 @@ async def cameras(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
     return await customer_cameras.list_cameras(ctx)
 
 
+async def _everything(ctx: CustomerCtx) -> None:
+    """Every customer gets everything: there is no plan to choose in the Control Center. When a shop is on a plan without number plate reading, it is moved to the
+    cheapest plan that has it (and every alert), so what staff switch on is never refused for a reason the customer cannot see."""
+    f = await ctx.conn.fetchval("SELECT p.features FROM app.tenants t JOIN platform.plans p ON p.id=t.plan_id WHERE t.id=$1", ctx.tenant_id) or {}
+    if f.get("anpr"):
+        return
+    best = await ctx.conn.fetchval("SELECT id FROM platform.plans WHERE active AND (features->>'anpr')::boolean IS TRUE ORDER BY (alert_types IS NOT NULL), price_per_camera_paise LIMIT 1")
+    if best is None:
+        raise ApiError(409, "no_full_plan", "There is no plan with number plate reading. Create one in Platform Admin first.")
+    await ctx.conn.execute("UPDATE app.tenants SET plan_id=$2, price_override_paise=NULL WHERE id=$1", ctx.tenant_id, best)
+    await ctx.audit("plan.change", "tenant", ctx.tenant_id, {"plan_id": best, "why": "Control Center: every customer gets everything"})
+
+
 @router.post("/cameras", status_code=201)
 async def add_camera(body: CameraCreate, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    if body.use_anpr:
+        await _everything(ctx)
     return await customer_cameras.add_camera(body, ctx)
 
 
 @router.patch("/cameras/{camera_id}")
 async def edit_camera(camera_id: UUID, body: CameraPatch, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    if body.use_anpr:
+        await _everything(ctx)
     return await customer_cameras.patch_camera(camera_id, body, ctx)
+
+
+@router.get("/recorders/{recorder_id}/channels/{channel_no}/snapshot")
+async def channel_snapshot(recorder_id: UUID, channel_no: int, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))) -> Response:
+    """A current picture of one channel of a recorder, so it can be seen before it is added as a camera."""
+    import uuid as _uuid
+    from ..services import snapshot
+    row = await ctx.conn.fetchrow("SELECT NULL::bytea AS source_ciphertext, $2::int AS channel_no, r.device_id, r.protocol::text AS protocol FROM app.recorders r WHERE r.id=$1", recorder_id, channel_no)
+    if not row:
+        raise ApiError(404, "recorder_not_found", "Recorder not found.")
+    jpeg = await snapshot.get(_uuid.uuid5(recorder_id, str(channel_no)), row, lambda: "")
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/cameras/{camera_id}/snapshot")
