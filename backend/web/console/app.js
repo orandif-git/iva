@@ -103,10 +103,13 @@ function shell() {
   side();
 }
 const NSTEPS = [["shop", "Shop", "store"], ["people", "Who gets messages", "users"], ["hours", "Business hours", "clock"], ["cams", "Recorder", "cam"], ["summary", "Summaries and end date", "send"]];
-const ESTEPS = [["event", "Event", "bell"], ["type", "Event type", "list"], ["recorder", "Recorder", "rec"], ["camera", "Camera", "cam"], ["area", "Mark the area", "area"], ["settings", "Settings", "gear"]];
+const ESTEPS = [["event", "Event", "bell"], ["type", "Event type", "list"], ["recorder", "Recorder", "rec"], ["camera", "Camera", "cam"], ["area", "Mark on the picture", "area"], ["settings", "Settings", "gear"]];
 const needsArea = () => !!(S.ev && S.ev.key && AREA_KIND[S.ev.key]);
+/* What has to be marked on the picture: an area (area events), a counting line (counting people) or the area plates are read in (reading plates) */
+const markMode = (k) => !k ? null : AREA_KIND[k] ? "area" : (k === "__count" || NEEDS_COUNT.has(k)) ? "line" : (k === "__plates" || NEEDS_PLATES.has(k)) ? "zone" : null;
+const MARK_TITLE = { area: "Mark the area", line: "Mark the counting line", zone: "Mark the plate area" };
 const needsCam = (k) => !!(k && (AREA_KIND[k] || NEEDS_COUNT.has(k) || NEEDS_PLATES.has(k) || k.startsWith("__")));
-const eorder = () => { const o = ["event", "type"]; if (S.ev.key && needsCam(S.ev.key)) { if (S.cur.recs.length > 1) o.push("recorder"); o.push("camera"); } if (needsArea()) o.push("area"); o.push("settings"); return o; };
+const eorder = () => { const o = ["event", "type"]; if (S.ev.key && needsCam(S.ev.key)) { if (S.cur.recs.length > 1) o.push("recorder"); o.push("camera"); } if (markMode(S.ev.key)) o.push("area"); o.push("settings"); return o; };
 const cname = () => cust(S.cid)?.name || "";
 function side() {
   const el = $("#side"); let h = "";
@@ -120,8 +123,19 @@ function side() {
 
 /* ------------------------------------------------------------------------------------------------ the picture used for drawing areas */
 const SCENE = `<svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8E8794"/><stop offset="1" stop-color="#6F6874"/></linearGradient><linearGradient id="wl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#E9EAEE"/><stop offset="1" stop-color="#C9CCD4"/></linearGradient></defs><rect width="640" height="360" fill="url(#wl)"/><polygon points="0,150 640,120 640,360 0,360" fill="url(#fl)"/><rect x="40" y="40" width="190" height="150" fill="#8FB8E6" opacity=".85"/><rect x="40" y="40" width="190" height="150" fill="none" stroke="#2B2F36" stroke-width="6"/><path d="M135 40v150M40 115h190" stroke="#2B2F36" stroke-width="4"/><rect x="420" y="95" width="190" height="95" fill="#D9DCE3"/><ellipse cx="330" cy="250" rx="52" ry="10" fill="#000" opacity=".18"/><rect x="316" y="152" width="28" height="86" rx="10" fill="#22252B"/><circle cx="330" cy="140" r="14" fill="#D8B494"/></svg>`;
-function videoFrame(title, pts, drawable, snap) {
-  const poly = (pts && pts.length) || drawable ? `<svg class="draw" ${drawable ? 'id="draw"' : ""} viewBox="0 0 640 360" preserveAspectRatio="none">${pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="#fff" stroke="#2F8BFF" stroke-width="3"/>`).join("")}` : ""}</svg>` : "";
+const dot = (p) => `<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="#fff" stroke="#2F8BFF" stroke-width="3"/>`;
+function lineSvg(pts, flip) {
+  if (!pts || !pts.length) return "";
+  if (pts.length < 2) return pts.map(dot).join("");
+  const [a, b] = pts, dx = (b[0] - a[0]) / 640, dy = (b[1] - a[1]) / 360;
+  let nx = -dy, ny = dx; if (flip) { nx = -nx; ny = -ny; }
+  const len = Math.hypot(nx * 640, ny * 360) || 1, ux = nx * 640 / len, uy = ny * 360 / len, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ex = mx + ux * 55, ey = my + uy * 55;
+  const head = `${ex},${ey} ${ex - ux * 14 - uy * 8},${ey - uy * 14 + ux * 8} ${ex - ux * 14 + uy * 8},${ey - uy * 14 - ux * 8}`;
+  return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#2F8BFF" stroke-width="4" stroke-linecap="round"/><line x1="${mx}" y1="${my}" x2="${ex - ux * 10}" y2="${ey - uy * 10}" stroke="#fff" stroke-width="3"/><polygon points="${head}" fill="#fff"/><text x="${ex + ux * 14}" y="${ey + uy * 14 + 5}" fill="#fff" font-size="16" font-weight="700" text-anchor="middle" stroke="#0a2a55" stroke-width="3" paint-order="stroke">IN</text>${pts.map(dot).join("")}`;
+}
+function videoFrame(title, pts, drawable, snap, mode, flip) {
+  const shape = mode === "line" ? lineSvg(pts, flip) : (pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : "");
+  const poly = (pts && pts.length) || drawable ? `<svg class="draw" ${drawable ? 'id="draw"' : ""} viewBox="0 0 640 360" preserveAspectRatio="none">${shape}</svg>` : "";
   return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk">Live</span><span class="sp"></span>${ico("photo", 20)}${ico("gear", 20)}</div><div class="vpic">${snap ? `<img class="snap" src="${snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
 }
 
@@ -228,7 +242,8 @@ async function loadCurrent(id) {
   const f = { _id: id, name: c.name, place: c.place, lang: c.lang, people: people.map((p) => ({ id: p.id, n: p.name, m: p.phone || "", a: inAlerts(p.id), s: inSummary(p.id) })),
     hmode: hours.set ? "set" : "always", hours: hours.days.map((d) => ({ open: d.open, from: d.from, to: d.to })), daily: daily ? daily.enabled : true, dailyAt: String(daily?.params?.hour ?? 8).padStart(2, "0") + ":00", weekly: weekly ? weekly.enabled : true, expiry: c.endsOn || "", done: {} };
   const areas = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/areas`).catch(() => [])])));
-  S.cur = { id, f, people, events, cams, recs, areas, channels: {} };
+  const zones = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/zones`).catch(() => [])])));
+  S.cur = { id, f, people, events, cams, recs, areas, zones, channels: {} };
 }
 async function pageCustomer() {
   if (!S.cur || S.cur.id !== S.cid) await loadCurrent(S.cid);
@@ -298,15 +313,19 @@ function pageEvent() {
   if (S.estep === "event") body = `<div class="f"><label for="e-name">Event name<small>Shown in your list. It fills in when you choose the type.</small></label><input class="in" id="e-name" data-ebind="name" value="${esc(e.name)}" placeholder="For example, Queue at the counter" autocomplete="off">
     <span class="lb">Send to<small>Only these people get this event</small></span><div class="stack">${S.cur.people.length ? S.cur.people.map((p) => `<label class="chk dark"><input type="checkbox" data-eto="${p.id}" ${e.to.includes(p.id) ? "checked" : ""}>${esc(p.name)} <span class="sub">${esc(p.phone || "")}</span></label>`).join("") : `<div class="note warn">This shop has nobody to message yet. Add people under Who gets messages first.</div>`}</div></div>`;
   else if (S.estep === "type") { const all = DATA_TYPES.concat(S.cur.events.filter((x) => !HIDDEN.has(x.type)));
-    body = `<div class="pick scroll"><table class="tbl"><tbody>${GROUPS.map((g) => { const rows = all.filter((x) => x.group === g); return rows.length ? `<tr><td colspan="4" class="sec-h grp">${g}</td></tr>` + rows.map((x) => `<tr data-etype="${x.type}"><td class="radio"><input type="radio" name="ty" aria-label="${esc(x.title)}" ${e.key === x.type ? "checked" : ""}></td><td class="main-c">${esc(x.title)}${x.ai ? ' <span class="tag ai">Smart</span>' : ""}${typeOn(x) ? ' <span class="tag ok">On for this shop</span>' : ""}<br><span class="sub small wrap">${esc(x.description)}</span></td><td><span class="tag ${MEDIA[carries(x.type)][1]}">${MEDIA[carries(x.type)][0]}</span></td><td>${AREA_KIND[x.type] ? '<span class="tag">Marks an area</span> ' : ""}${needsCam(x.type) ? '<span class="tag">Needs a camera</span>' : ""}</td></tr>`).join("") : ""; }).join("")}</tbody></table></div>`; }
+    body = `<div class="pick scroll"><table class="tbl"><tbody>${GROUPS.map((g) => { const rows = all.filter((x) => x.group === g); return rows.length ? `<tr><td colspan="4" class="sec-h grp">${g}</td></tr>` + rows.map((x) => `<tr data-etype="${x.type}"><td class="radio"><input type="radio" name="ty" aria-label="${esc(x.title)}" ${e.key === x.type ? "checked" : ""}></td><td class="main-c">${esc(x.title)}${x.ai ? ' <span class="tag ai">Smart</span>' : ""}${typeOn(x) ? ' <span class="tag ok">On for this shop</span>' : ""}<br><span class="sub small wrap">${esc(x.description)}</span></td><td><span class="tag ${MEDIA[carries(x.type)][1]}">${MEDIA[carries(x.type)][0]}</span></td><td>${{ area: '<span class="tag">Marks an area</span> ', line: '<span class="tag">Marks a counting line</span> ', zone: '<span class="tag">Marks the plate area</span> ' }[markMode(x.type)] || ""}${needsCam(x.type) ? '<span class="tag">Needs a camera</span>' : ""}</td></tr>`).join("") : ""; }).join("")}</tbody></table></div>`; }
   else if (S.estep === "recorder") body = `<div class="pick scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th></th><th>Recorder</th><th>Brand</th><th>Status</th></tr></thead><tbody>${S.cur.recs.map((r) => `<tr data-erec="${r.id}"><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="radio"><input type="radio" name="rc" aria-label="${esc(r.name || r.device_id)}" ${e.rec?.id === r.id ? "checked" : ""}></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td></tr>`).join("")}</tbody></table></div>`;
   else if (S.estep === "camera") { const list = S.cur.cams.filter((c) => !e.rec || S.cur.recs.length <= 1 || c.recorder_id === e.rec.id);
-    body = list.length ? `<div class="pick scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th></th><th>Camera</th><th>Used for</th><th>Watching</th></tr></thead><tbody>${list.map((c) => `<tr data-ecam="${c.id}"><td class="dotc"><span class="dot ${c.enabled ? "ok" : ""}"></span></td><td class="radio"><input type="radio" name="cm" aria-label="${esc(c.name)}" ${e.target?.id === c.id ? "checked" : ""}></td><td class="main-c">${esc(c.name)}</td><td>${usedFor(c)}</td><td class="${c.enabled ? "t-ok" : "t-mute"}">${c.enabled ? "Yes" : "No"}</td></tr>`).join("")}</tbody></table></div>` : `<div class="note warn">${e.rec && S.cur.recs.length > 1 ? "This recorder has no cameras added yet." : "This shop has no cameras added yet."} Add them under Recorder and cameras first.</div>`; }
-  else if (S.estep === "area") body = `${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap)}<div class="vtool"><span class="sub">Click on the picture to add the corners of the area. At least 3 corners.${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span><button class="btn sm" type="button" data-clearpts>Start again</button></div>`;
+    body = list.length ? `<div class="cams big">${list.map((c) => `<div class="cam ${e.target?.id === c.id ? "sel" : ""}" data-ecam="${c.id}" role="radio" aria-checked="${e.target?.id === c.id}" tabindex="0"><div class="pic" data-campic-box="${c.id}">${ico("cam", 24)}<span class="picmsg">Loading picture…</span></div><div class="cb"><b class="dark">${esc(c.name)}</b><div>${usedFor(c)}</div>${e.target?.id === c.id ? '<span class="tag brand">Selected</span>' : ""}</div></div>`).join("")}</div>` : `<div class="note warn">${e.rec && S.cur.recs.length > 1 ? "This recorder has no cameras added yet." : "This shop has no cameras added yet."} Add them under Recorder and cameras first.</div>`; }
+  else if (S.estep === "area") { const m = markMode(e.key), help = { area: "Click on the picture to add the corners of the area. At least 3 corners.", line: "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN, the others OUT.", zone: "Click the corners of the area where vehicles and their plates should be read. Or use the whole picture." }[m];
+    const had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
+    body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>`; }
   else body = settingsBody(e);
   const pos = o.indexOf(S.estep), last = pos === o.length - 1;
-  const ok = { event: true, type: !!e.key, recorder: !!e.rec, camera: !!e.target, area: e.pts.length >= 3, settings: true }[S.estep];
-  const title = ESTEPS.find((s) => s[0] === S.estep)[1];
+  const m = markMode(e.key), had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
+  const markOk = m === "line" ? (e.pts.length === 2 || (had && !e.touched)) : m === "zone" ? true : e.pts.length >= 3;
+  const ok = { event: true, type: !!e.key, recorder: !!e.rec, camera: !!e.target, area: markOk, settings: true }[S.estep];
+  const title = S.estep === "area" ? MARK_TITLE[m] : ESTEPS.find((s) => s[0] === S.estep)[1];
   return `<div class="rise"><div class="title"><h1>${title}</h1><span class="tag brand">Step ${pos + 1} of ${o.length}</span><span class="sub">${esc(cname())}</span></div><div class="form">${body}
    <div class="actions">${last ? `<button class="btn pri" type="button" data-evcreate>Create event</button>` : `<button class="btn pri" type="button" data-evnext ${ok ? "" : "disabled"}>Next</button>`}${pos ? `<button class="btn" type="button" data-evprev>Back</button>` : ""}<button class="btn bare" type="button" data-go="customer">Cancel</button></div></div></div>`;
 }
@@ -336,9 +355,47 @@ function settingsBody(e) {
   return `<div class="stack"><div class="f f-narrow"><span class="lb">${esc(x.title)}<small>${esc(x.description)}</small></span><div class="stack">${rows.join("") || `<div class="sub">No setting needed for this event.</div>`}
     <div class="cfg"><span>Message carries</span><span class="tag ${m[1]}">${m[0]}</span><span></span></div><div class="cfg"><span>Switch on now</span><span>${sw("e-on", e.on !== false, false, "eon")}</span><span></span></div></div></div></div>`;
 }
+async function loadZones(e) {
+  if (!e.target || e.zones) return;
+  try {
+    e.zones = await api.get(`/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/zones`);
+    const m = markMode(e.key), z = e.zones.find((q) => q.kind === (m === "line" ? "count_line" : "anpr_zone"));
+    if (z && !e.pts.length && m !== "area") { e.pts = z.points.map((p) => [Math.round(p[0] * 640), Math.round(p[1] * 360)]); if (m === "line" && z.in_direction) { const [a, b] = z.points, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1; e.flip = (-dy / len) * z.in_direction[0] + (dx / len) * z.in_direction[1] < 0; } }
+  } catch { e.zones = []; }
+}
 async function loadSnap(e) {
+  await loadZones(e);
   if (e.snap || !e.target) return;
   try { const blob = await api.call("GET", `/admin/v1/tenants/${S.cid}/shop/cameras/${e.target.id}/snapshot`, undefined, { blob: true }); e.snap = URL.createObjectURL(blob); } catch { /* a sample view is shown instead */ }
+}
+const norm1 = (p) => [Math.round(p[0] / 640 * 1000) / 1000, Math.round(p[1] / 360 * 1000) / 1000];
+/* Save the counting line or the plate area of a camera. What is not being changed is sent again, because the server replaces both together. */
+async function saveGeometry(camId, mode, pts, flip, touched) {
+  if (!mode || mode === "area") return;
+  const base = `/admin/v1/tenants/${S.cid}/shop/cameras/${camId}/zones`, cur = await api.get(base);
+  const keep = (kind) => cur.filter((z) => z.kind === kind).map((z) => ({ kind: z.kind, points: z.points, in_direction: z.in_direction || null }));
+  let zones;
+  if (mode === "line") {
+    if (!touched && keep("count_line").length) return;
+    if (pts.length !== 2) throw new Error("Click two points to draw the counting line.");
+    const [a, b] = pts.map(norm1), dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1; let n = [-dy / len, dx / len]; if (flip) n = [-n[0], -n[1]];
+    zones = [{ kind: "count_line", points: [a, b], in_direction: n }, ...keep("anpr_zone")];
+  } else {
+    if (!touched) return;
+    if (pts.length && pts.length < 3) throw new Error("A plate area needs at least 3 corners. Or press Use the whole picture.");
+    zones = [...keep("count_line"), ...(pts.length >= 3 ? [{ kind: "anpr_zone", points: pts.map(norm1), in_direction: null }] : [])];
+  }
+  await api.put(base, { zones });
+}
+async function openMark(i) {
+  const r = S.cur.rows[i], mode = r.flag === "use_footfall" ? "line" : "zone";
+  S.mark = { i, mode, pts: [], flip: false, touched: false, snap: null, key: mode === "line" ? "__count" : "__plates", target: { kind: "cam", id: r.cam.id, name: r.cam.name }, zones: null };
+  await loadSnap(S.mark); S.mark.snap = S.mark.snap; drawMark();
+}
+function drawMark() {
+  const M = S.mark, r = S.cur.rows[M.i];
+  modal(`${mh(MARK_TITLE[M.mode])}${videoFrame(r.cam.name + " · " + cname(), M.pts, true, M.snap, M.mode, M.flip)}<div class="vtool"><span class="sub">${M.mode === "line" ? "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN." : "Click the corners of the area where plates should be read, or use the whole picture."}</span><span class="grow"></span>${M.mode === "line" ? '<button class="btn sm" type="button" data-mflip>Swap IN and OUT</button>' : '<button class="btn sm" type="button" data-mwhole>Use the whole picture</button>'}<button class="btn sm" type="button" data-mclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-msave>Save</button><button class="btn" type="button" data-close>Cancel</button></div>`);
+  const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); if (M.mode === "line" && M.pts.length >= 2) M.pts = []; M.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); M.touched = true; drawMark(); });
 }
 async function createEvent() {
   const e = S.ev, x = evMeta(e.key), base = `/admin/v1/tenants/${S.cid}/shop`, kind = AREA_KIND[e.key], cam = e.target;
@@ -346,6 +403,7 @@ async function createEvent() {
   try {
     if (!e.key.startsWith("__") && !e.to.length) throw new Error("Choose at least one person to send this to. Add people first if the shop has none.");
     if (needsCam(e.key) && !cam) throw new Error("Choose a camera first.");
+    if (cam && markMode(e.key) && markMode(e.key) !== "area") await saveGeometry(cam.id, markMode(e.key), e.pts, e.flip, e.touched);
     if (e.key.startsWith("__")) {
       await api.patch(`${base}/cameras/${cam.id}`, e.key === "__count" ? { use_footfall: e.on !== false } : { use_anpr: e.on !== false, ...(e.on !== false ? { stream: "main" } : {}) });
       await loadCurrent(S.cid);
@@ -382,7 +440,8 @@ const namesOf = (ids) => (ids || []).map((i) => S.cur.people.find((p) => p.id ==
 function secEvents() {
   const rows = S.cur.rows = eventRows(), ro = !can("events");
   const line = (r, i) => {
-    if (r.k === "data") return `<tr><td class="dotc"><span class="dot ok"></span></td><td class="main-c">${r.t} · ${esc(r.cam.name)}</td><td>${r.t}</td><td>${esc(r.cam.name)}</td><td><span class="tag mute">No message</span></td><td>—</td><td class="t-ok">On</td><td class="acts"><button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`;
+    if (r.k === "data") { const z = S.cur.zones[r.cam.id] || [], marked = z.some((q) => q.kind === (r.flag === "use_footfall" ? "count_line" : "anpr_zone")), warn = r.flag === "use_footfall" && !marked;
+      return `<tr><td class="dotc"><span class="dot ${warn ? "warn" : "ok"}"></span></td><td class="main-c">${r.t} · ${esc(r.cam.name)} ${warn ? '<span class="tag warn">No line marked. Nothing is counted yet</span>' : r.flag === "use_footfall" ? '<span class="tag ok">Line marked</span>' : marked ? '<span class="tag ok">Plate area marked</span>' : '<span class="tag">Whole picture</span>'}</td><td>${r.t}</td><td>${esc(r.cam.name)}</td><td><span class="tag mute">No message</span></td><td>—</td><td class="${warn ? "t-warn" : "t-ok"}">${warn ? "Needs a line" : "On"}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>${warn ? "Mark the line" : "Edit"}</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`; }
     if (r.k === "area") { const on = !!r.rule?.enabled, m = MEDIA[carries(r.type)]; return `<tr><td class="dotc"><span class="dot ${on ? "ok" : ""}"></span></td><td class="main-c">${esc(r.area.name)}</td><td>${esc(evMeta(r.type)?.title || r.type)}</td><td>${esc(r.cam.name)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(namesOf(r.rule?.recipient_ids))}</td><td class="${on ? "t-ok" : "t-mute"}">${on ? "On" : "Off"}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>Edit</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`; }
     const e = r.rule, m = MEDIA[carries(e.type)], dflt = e.default;
     return `<tr><td class="dotc"><span class="dot ${e.enabled ? "ok" : ""}"></span></td><td class="main-c">${esc(e.label || e.title)}${dflt ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(e.title)}</td><td>${REC_LEVEL.has(e.type) ? "Every recorder" : NEEDS_COUNT.has(e.type) || NEEDS_PLATES.has(e.type) ? "Counting or plate cameras" : "Every camera"}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(namesOf(e.recipient_ids))}</td><td>${dflt ? '<span class="t-ok">On</span>' : sw("evon-" + e.type, e.enabled, ro, "evon:" + e.type)}</td><td class="acts"><button class="btn sm" type="button" data-editev="${i}" ${ro ? "disabled" : ""}>Edit</button> <button class="btn sm danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button></td></tr>`;
@@ -520,13 +579,13 @@ async function render(keepScroll) {
   p.innerHTML = html; p.scrollTop = keepScroll ? y : 0;
   p.querySelectorAll(".bars i[data-h]").forEach((b) => { b.style.height = b.dataset.h + "px"; });
   loadPics();
-  const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const r = d.getBoundingClientRect(); S.ev.pts.push([Math.round((ev.clientX - r.left) / r.width * 640), Math.round((ev.clientY - r.top) / r.height * 360)]); render(true); });
+  const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const r = d.getBoundingClientRect(), E = S.ev; if (markMode(E.key) === "line" && E.pts.length >= 2) E.pts = []; E.pts.push([Math.round((ev.clientX - r.left) / r.width * 640), Math.round((ev.clientY - r.top) / r.height * 360)]); E.touched = true; E.whole = false; render(true); });
 }
 function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = false; closeModal(); try { history.replaceState(null, "", "#" + r); } catch { /* fine */ } return render(); }
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-editev],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-editev],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (!t) return; const d = t.dataset;
   try {
@@ -583,9 +642,13 @@ document.addEventListener("click", async (ev) => {
     if ("addev" in d) { S.ev = newEv(); S.estep = "event"; return go("event"); }
     if (d.estep) { S.estep = d.estep; if (d.estep === "area") await loadSnap(S.ev); return render(); }
     if (d.erec) { S.ev.rec = { id: d.erec }; S.ev.target = null; S.ev.snap = null; return render(true); }
-    if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; return render(true); }
+    if (d.ecam) { const c = S.cur.cams.find((q) => q.id === d.ecam); S.ev.target = { kind: "cam", id: c.id, name: c.name }; S.ev.snap = null; S.ev.zones = null; S.ev.pts = []; S.ev.touched = false; S.ev.whole = false; S.ev.flip = false; return render(true); }
     if (d.etype) { const x = evMeta(d.etype); S.ev.key = d.etype; S.ev.v = {}; if (!needsCam(d.etype)) S.ev.target = null; if (S.cur.recs.length === 1) S.ev.rec = { id: S.cur.recs[0].id }; if (!S.ev.name || S.ev.nameAuto) { S.ev.name = x.title; S.ev.nameAuto = true; } return render(true); }
-    if (d.editev) { openEditEvent(+d.editev); return; }
+    if (d.editev) { const r = S.cur.rows[+d.editev]; if (r.k === "data") return openMark(+d.editev); openEditEvent(+d.editev); return; }
+    if ("mflip" in d) { S.mark.flip = !S.mark.flip; S.mark.touched = true; return drawMark(); }
+    if ("mwhole" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
+    if ("mclear" in d) { S.mark.pts = []; S.mark.touched = true; return drawMark(); }
+    if ("msave" in d) { const M = S.mark, r = S.cur.rows[M.i]; await saveGeometry(r.cam.id, M.mode, M.pts, M.flip, true); closeModal(); await loadCurrent(S.cid); toast("Saved"); return render(true); }
     if (d.delev) { confirmDelete(+d.delev); return; }
     if (d.confirm === "delev") return doDelete(+d.i);
     if ("esave" in d) return saveEdit();
@@ -593,7 +656,9 @@ document.addEventListener("click", async (ev) => {
     if ("redrawclear" in d) { S.redraw.pts = []; return drawRedraw(); }
     if ("redrawcancel" in d) { drawEdit(); return; }
     if ("redrawsave" in d) { S.edit.pts = S.redraw.pts; drawEdit(); return; }
-    if ("clearpts" in d) { S.ev.pts = []; return render(true); }
+    if ("clearpts" in d) { S.ev.pts = []; S.ev.touched = true; S.ev.whole = false; return render(true); }
+    if ("flip" in d) { S.ev.flip = !S.ev.flip; S.ev.touched = true; return render(true); }
+    if ("whole" in d) { S.ev.pts = []; S.ev.whole = true; S.ev.touched = true; return render(true); }
     if ("evnext" in d) { S.ev.done[S.estep] = true; const o = eorder(); S.estep = o[o.indexOf(S.estep) + 1]; if (S.estep === "area") await loadSnap(S.ev); return render(); }
     if ("evprev" in d) { const o = eorder(); S.estep = o[o.indexOf(S.estep) - 1]; return render(); }
     if ("evcreate" in d) return createEvent();

@@ -251,3 +251,9 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .form.full{max-width:none}
 .cfg{grid-template-columns:minmax(0,1fr) 220px 60px;max-width:640px}
 .cfg .in.sm{max-width:90px}
+.cams.big{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));max-width:none}
+.cams.big .pic{height:130px}
+.cam[data-ecam]{cursor:pointer}
+.cam.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
+.cam .cb b{display:block}
+.cam .cb .tag{margin-top:2px}

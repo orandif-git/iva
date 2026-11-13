@@ -46,3 +46,8 @@ A new kind of marked area (`activity_area`, alert `area_activity`). It looks for
 (a night across midnight is fine), or at any time (`when`). It is drawn only in the Control Center; a customer's own app does not know this kind.
 The camera's worker counts vehicles in the area even when the camera reads no plates. The backend decides whether the time is one that is watched.
 Run `migrations/021_activity_area.sql` before using it. Other kinds of thing the detector can recognise (bags, animals and so on) can be added to `target` later.
+
+## Marking on the picture
+
+Every event that needs a camera needs something marked on that camera's picture: an area (area events), a counting line with its IN direction (Count people, and the alerts that depend on counting), or the area plates are read in (Read number plates, and the plate alerts; leaving it out means the whole picture).
+Without a counting line the worker counts nobody, so a camera that "counts people" but has no line is shown in the Events list with "No line marked. Nothing is counted yet". The line and the plate area are saved through `/admin/v1/tenants/{id}/shop/cameras/{camera}/zones`.

@@ -13,7 +13,7 @@ from pydantic import Field
 from ..db import db
 from ..deps import CustomerCtx, _bearer, _uuid, client_ip
 from ..errors import ApiError
-from ..schemas import AreasPut, CameraCreate, CameraPatch, ChannelOut, Strict
+from ..schemas import AreasPut, CameraCreate, CameraPatch, ChannelOut, Strict, ZonesPut
 from ..security import verify_token
 from . import customer_alerts, customer_areas, customer_cameras, customer_recorders
 from ..services import alert_catalog
@@ -245,6 +245,18 @@ async def channel_snapshot(recorder_id: UUID, channel_no: int, ctx: CustomerCtx 
         raise ApiError(404, "recorder_not_found", "Recorder not found.")
     jpeg = await snapshot.get(_uuid.uuid5(recorder_id, str(channel_no)), row, lambda: "")
     return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/cameras/{camera_id}/zones")
+async def get_zones(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
+    """The counting line and the plate area marked on a camera (either may be missing)."""
+    return await customer_cameras.get_zones(camera_id, ctx)
+
+
+@router.put("/cameras/{camera_id}/zones")
+async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
+    """Replaces the counting line and the plate area of a camera. Send both when both are wanted: what is left out is removed."""
+    return await customer_cameras.put_zones(camera_id, body, ctx)
 
 
 @router.get("/cameras/{camera_id}/snapshot")

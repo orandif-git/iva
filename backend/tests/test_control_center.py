@@ -147,3 +147,19 @@ async def test_deleting_an_event_stops_it_for_this_shop_only(client, make, su):
     assert other["camera_offline"]["enabled"] is True                                                                  # another shop is not touched
     support = await make.staff("support")
     assert (await client.delete(f"{base}/crowding", headers=support["headers"])).status_code == 403
+
+
+async def test_the_counting_line_and_the_plate_area_are_marked_from_the_control_center(client, make, su):
+    t, u, (cam,), rec = await setup_cameras(client, make, plan="full", anpr=1)
+    staff, support = await make.staff("onboarding"), await make.staff("support")
+    base = f"/admin/v1/tenants/{t}/shop/cameras/{cam}/zones"
+    assert (await client.get(base, headers=support["headers"])).json() == []
+    line = {"kind": "count_line", "points": [[0.2, 0.5], [0.8, 0.5]], "in_direction": [0.0, 1.0]}
+    r = await client.put(base, json={"zones": [line]}, headers=staff["headers"])
+    assert r.status_code == 200 and [z["kind"] for z in r.json()] == ["count_line"]
+    both = await client.put(base, json={"zones": [line, {"kind": "anpr_zone", "points": [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6]]}]}, headers=staff["headers"])
+    assert [z["kind"] for z in both.json()] == ["anpr_zone", "count_line"] or {z["kind"] for z in both.json()} == {"count_line", "anpr_zone"}
+    assert (await client.put(base, json={"zones": [{"kind": "count_line", "points": [[0.2, 0.5], [0.4, 0.5], [0.8, 0.5]]}]}, headers=staff["headers"])).status_code == 422
+    assert (await client.put(base, json={"zones": [line]}, headers=support["headers"])).status_code == 403
+    cfg = (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()
+    assert {z["kind"] for z in cfg["zones"]} == {"count_line", "anpr_zone"}                                           # the worker is told about the line and the plate area
