@@ -240,3 +240,41 @@ async def test_an_alert_that_is_still_being_sent_is_never_cleaned_up(client, mak
     await retention.purge_alerts(time.monotonic() + 30)
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE id=$1", old) == 0
     assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE id=$1", waiting) == 1
+
+
+async def test_staff_can_rename_a_recorder_change_its_id_get_a_new_password_and_delete_it_with_its_events(client, make, su):
+    t, u, (cam,), rec = await setup_cameras(client, make, plan="full", anpr=1)
+    owner, support = await make.staff("owner"), await make.staff("support")
+    rid = await su.fetchval("SELECT id FROM app.recorders WHERE tenant_id=$1", t)
+    old = await su.fetchval("SELECT device_id FROM app.recorders WHERE id=$1", rid)
+    url = f"/admin/v1/recorders/{rid}"
+    assert (await client.patch(url, json={"name": "Godown"}, headers=support["headers"])).status_code == 403
+    r = await client.patch(url, json={"name": "  Godown  "}, headers=owner["headers"])
+    assert r.status_code == 200 and r.json()["name"] == "Godown" and r.json()["id_changed"] is False
+    assert (await client.patch(url, json={"device_id": "ab"}, headers=owner["headers"])).status_code == 422
+    assert (await client.patch(url, json={"device_id": "has space"}, headers=owner["headers"])).status_code == 422
+    other = await su.fetchval("SELECT device_id FROM app.recorders WHERE id<>$1 LIMIT 1", rid)
+    if other:
+        assert (await client.patch(url, json={"device_id": other}, headers=owner["headers"])).status_code == 409
+    from app.crypto import vault
+    key = vault().decrypt(bytes(await su.fetchval("SELECT key_ciphertext FROM app.recorders WHERE id=$1", rid)), old)
+    r = await client.patch(url, json={"device_id": "GODOWN-01"}, headers=owner["headers"])
+    assert r.status_code == 200 and r.json()["id_changed"] is True
+    row = await su.fetchrow("SELECT device_id, status::text AS status, key_ciphertext FROM app.recorders WHERE id=$1", rid)
+    assert row["device_id"] == "GODOWN-01" and row["status"] == "never"
+    assert vault().decrypt(bytes(row["key_ciphertext"]), "GODOWN-01") == key, "the same password still works under the new id"
+    p = await client.post(f"{url}/new-password", headers=owner["headers"])
+    assert p.status_code == 200 and p.json()["key"] and p.headers["cache-control"] == "no-store"
+    assert (await client.post(f"{url}/new-password", headers=support["headers"])).status_code == 403
+    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action IN ('recorder.edit','recorder.new_password') AND target_id=$1", str(rid)) == 3
+    assert p.json()["key"] not in str(await su.fetch("SELECT after FROM platform.audit_log WHERE target_id=$1", str(rid)))
+    # events: a plate event has no camera left to watch once this recorder is gone
+    await su.execute("INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params) VALUES ($1,'blocked_plate',true,'{}'), ($1,'camera_offline',true,'{}')", t)
+    pre = (await client.get(f"{url}/delete-preview", headers=owner["headers"])).json()
+    assert pre["name"] == "Godown" and pre["cameras"] >= 1 and [e["type"] for e in pre["events"]] == ["blocked_plate"]
+    assert (await client.delete(url, headers=support["headers"])).status_code == 403
+    assert (await client.delete(url, headers=owner["headers"])).status_code == 204
+    assert await su.fetchval("SELECT count(*) FROM app.recorders WHERE id=$1", rid) == 0
+    assert await su.fetchval("SELECT count(*) FROM app.cameras WHERE id=$1", cam) == 0
+    assert [r["rule_type"] for r in await su.fetch("SELECT rule_type FROM app.alert_rules WHERE tenant_id=$1", t)] == ["camera_offline"]
+    assert await su.fetchval("SELECT count(*) FROM platform.audit_log WHERE action='recorder.delete' AND target_id=$1", str(rid)) == 1

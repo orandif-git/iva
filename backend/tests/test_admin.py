@@ -81,11 +81,11 @@ async def test_staff_can_look_at_recorders_but_cannot_change_them(client, make):
     assert [r["device_id"] for r in rows] == [cred["device_id"]]
     conn = (await client.get(f"/admin/v1/recorders/{rid}/connection", headers=support["headers"])).json()
     assert conn["device_id"] == cred["device_id"] and cred["key"] not in str(conn)
-    for who in (support, owner):                                                      # recorders belong to the customer, not to staff
+    for who in (support, owner):                                                      # recorders are added through a customer, never by this route
         assert (await client.post("/admin/v1/recorders", json={"tenant_id": str(t), "brand": "dahua"}, headers=who["headers"])).status_code == 405
-        assert (await client.delete(f"/admin/v1/recorders/{rid}", params={"reason": "Customer left"}, headers=who["headers"])).status_code == 405
-        assert (await client.patch(f"/admin/v1/recorders/{rid}", json={"name": "x"}, headers=who["headers"])).status_code == 405
         assert (await client.post(f"/admin/v1/recorders/{rid}/rotate-key", json={"reason": "Lost it"}, headers=who["headers"])).status_code in (404, 405)
+    assert (await client.delete(f"/admin/v1/recorders/{rid}", headers=support["headers"])).status_code == 403          # Support only looks
+    assert (await client.patch(f"/admin/v1/recorders/{rid}", json={"name": "x"}, headers=support["headers"])).status_code == 403
 
 
 async def test_audit_log_cannot_be_changed_even_by_the_admin_role(client, make, su):

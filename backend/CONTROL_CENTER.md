@@ -75,3 +75,10 @@ People in an area, long queue, activity in an area and phone use can now send a 
 ## Pictures for occupancy and after-hours alerts
 
 These two pictures are taken by the API (not the worker). Before they are saved, the AI draws a green box on each person, the counting line with its IN arrow, and a caption with the number of people in view. If the detector model is not available, the plain picture is used and the alert is not delayed. The detector is the same model file the worker uses (`GI_WORKER_MODEL_DIR`), so the API must be able to read it.
+
+## Changing a recorder
+
+On Recorder and cameras, each recorder has an **Edit** button (Owner, Admin and Onboarding; Support can only look).
+- **Name and Recorder ID** can be changed. The ID is what the recorder calls itself when it connects; after a change it shows as "not connected" until the new ID is typed into the recorder. The saved password is re-locked to the new ID, so it keeps working.
+- **New password** makes a new password, shown once. The old one stops working at once.
+- **Delete** (type the recorder's name to confirm) removes the recorder, its cameras with their counts and marked areas, and any event left with nothing to watch. Alerts and messages stay until the "Data kept" clean-up removes them.
