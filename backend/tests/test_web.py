@@ -1,5 +1,6 @@
 """The web pages are served safely, the camera picture endpoint works, and cameras can choose their stream."""
 import pathlib
+import shlex
 import stat
 import sys
 import uuid
@@ -224,7 +225,8 @@ async def test_an_unreachable_relay_is_a_503(monkeypatch):
 # ------------------------------------------------------------------------ taking the picture with FFmpeg
 def _ffmpeg(tmp_path, body: str):
     p = tmp_path / "fake_ffmpeg"
-    p.write_text(f"#!{sys.executable}\nimport sys\n{body}\n")
+    # A shebang cannot carry a path with spaces (a project folder such as "My Projects"), so let /bin/sh start Python instead.
+    p.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -c {shlex.quote("import sys\n" + body)}\n')
     p.chmod(p.stat().st_mode | stat.S_IEXEC)
     return str(p)
 
@@ -412,13 +414,19 @@ async def test_the_shared_shell_files_the_staff_console_uses_are_served_as_scrip
 
 
 def test_every_staff_page_is_in_exactly_one_menu_group():
+    """The sidebar, tabs, More page and search all read one registry, so a page cannot drift out of the menu."""
     import re
-    src = (_web() / "js/staff/main.js").read_text()
-    pages = re.findall(r'\["(\w+)", "[^"]+", "\w+", (?:null|"owner")\]', src)
-    groups = re.search(r"const GROUPS = \[(.*)\];", src).group(1)
-    keys = [k for k in re.findall(r'"(\w+)"', groups) if k in pages]
-    assert sorted(keys) == sorted(pages), (keys, pages)
-    assert len(keys) == len(set(keys))
+    src = (_web() / "js/staff/routes.js").read_text()
+    routes = re.findall(r'\{ key: "(\w+)",[^}]*?group: "([^"]*)"', src)
+    keys = [k for k, _ in routes]
+    assert len(keys) == len(set(keys)) and len(keys) == 12, keys
+    assert set(g for _, g in routes) == {"", "Customers", "Money", "Support", "System"}
+    assert all(g for k, g in routes if k != "today"), "only Today is in the unlabelled top block"
+    main = (_web() / "js/staff/main.js").read_text()
+    assert "const NAV" not in main and "const GROUPS" not in main and "const TABS" not in main, "the menu is described once, in routes.js"
+    assert re.search(r"export const TABS = ROUTES\.filter\(\(r\) => r\.tab\)\.map\(\(r\) => r\.key\);", src)
+    tabs = re.findall(r'\{ key: "(\w+)",[^}]*?tab: true', src)
+    assert tabs == ["today", "customers", "fleet", "billing"], tabs
 
 
 async def test_platform_admin_lives_at_platform_and_has_no_sign_in_page_of_its_own(client):

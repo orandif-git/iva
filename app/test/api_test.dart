@@ -58,7 +58,7 @@ class Fake {
       case 'POST /v1/alerts/x1/snooze':
         return ok({});
       case 'POST /v1/cameras/c1/live':
-        return ok({'id': 's1'}, 201);
+        return ok({'id': 's1', 'smooth': true, 'ice': ['stun:stun.example.test:3478']}, 201);
     }
     return http.Response('{"error":{"code":"not_found","message":"no"}}', 404);
   }
@@ -69,7 +69,7 @@ void main() {
 
   Future<(ApiRepository, ApiClient, Fake)> signedIn() async {
     final f = Fake();
-    final c = ApiClient(base: 'http://x', client: MockClient((r) async => f.handle(r)));
+    final c = ApiClient(base: 'http://x', client: MockClient((r) async => f.handle(r)), tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await c.restore();
     await c.signIn('a@b.test', 'pw');
     return (ApiRepository(c), c, f);
@@ -84,7 +84,7 @@ void main() {
   });
 
   test('a staff account is handed to the staff console, not signed in here', () async {
-    final c = ApiClient(base: 'http://x', client: MockClient((r) async => http.Response('{"kind":"staff","access_token":"s","refresh_token":"t"}', 200)));
+    final c = ApiClient(base: 'http://x', client: MockClient((r) async => http.Response('{"kind":"staff","access_token":"s","refresh_token":"t"}', 200)), tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await c.restore();
     expect(await c.signIn('s@b.test', 'pw'), 'staff');
     expect(c.takeStaffToken(), 't', reason: 'handed to the console, once');
@@ -175,6 +175,8 @@ void main() {
     expect(f.bodies['POST /v1/alerts/x1/snooze'], {'minutes': 30});
     final s = await repo.startLive('c1', LiveMode.ai);
     expect(s.id, 's1');
+    expect(s.smooth, isTrue, reason: 'the server said it has smooth video');
+    expect(s.ice, ['stun:stun.example.test:3478']);
     expect(f.bodies['POST /v1/cameras/c1/live'], {'mode': 'ai'});
   });
 
@@ -192,7 +194,7 @@ void main() {
       }
       return http.Response(jsonEncode(r.headers['Authorization'] == 'Bearer a1' ? {'ok': true} : {'error': {'code': 'x', 'message': 'no'}}), r.headers['Authorization'] == 'Bearer a1' ? 200 : 401);
     });
-    final api = ApiClient(base: 'https://x.test', client: client);
+    final api = ApiClient(base: 'https://x.test', client: client, tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await api.restore();
     expect(api.signedIn, true);
     final out = await Future.wait([api.call('GET', '/v1/me'), api.call('GET', '/v1/health-summary'), api.call('GET', '/v1/cameras'), api.call('GET', '/v1/push')]);

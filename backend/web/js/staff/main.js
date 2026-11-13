@@ -1,28 +1,35 @@
 // Jas iVision Platform Admin (the panel our own staff use): shell, sign-in, routing, and the "open the customer's app" hand-off. Screens live in screens.js.
-import { Api, busy, clear, errText, h, mount } from "../lib.js";
+import { Api, busy, clear, errText, h, mount, qs } from "../lib.js";
 import { theme } from "../app/theme.js";
 import { openPalette, searchShortcuts, sidebar, tabbar } from "../app/shell.js";
 import { field, ic, lockupPair, logoPair, mountOverlays, note, openSheet, skeleton, toast } from "../app/ui.js";
-import { customerDetail, recorderDetail, SCREENS, TITLES } from "./screens.js";
+import { customerDetail, recorderDetail, SCREENS } from "./screens.js";
+import { groupsFor, navItem, pagesFor, TABS, TITLES } from "./routes.js";
+import { watchEvents } from "./live.js";
 
 const host = document.getElementById("app");
 const state = { me: null };
 const mem = {};
 const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => { state.me = null; showSignIn(); } });
 
-// What each person can open. The server enforces the same rules; hiding is only for tidiness.
-const NAV = [
-  ["today", "Today", "today", null], ["customers", "Customers", "users", null], ["fleet", "Fleet", "server", null], ["billing", "Billing", "card", "owner"],
-  ["plans", "Plans", "tag", "owner"], ["storage", "Storage", "cloud", "owner"], ["alerts", "Alerts", "bell", null], ["webhooks", "Webhooks", "link", "owner"], ["summaries", "WhatsApp summaries", "chat", "owner"], ["maintenance", "Maintenance", "wrench", "owner"], ["audit", "Audit log", "log", null], ["staff", "Staff and roles", "shield", "owner"],
-];
-const TABS = ["today", "customers", "fleet", "billing"];
-// The sidebar groups the same pages by what they are for. Pages a role may not open are left out, and so are groups left empty.
-const GROUPS = [["", ["today"]], ["Customers", ["customers", "fleet"]], ["Money", ["billing", "plans"]], ["Support", ["alerts", "webhooks", "summaries", "audit"]], ["System", ["storage", "maintenance", "staff"]]];
-const MORE = ["plans", "storage", "alerts", "webhooks", "summaries", "maintenance", "audit", "staff"];
-const allowed = (need) => !need || state.me?.role === need;
+// Every page is described once in routes.js: the sidebar, the phone tabs, the search box and the More page all read it.
 const desk = () => matchMedia("(min-width: 780px)").matches;
 
-let ui = null, token = 0, leaveFns = [];
+let ui = null, token = 0, leaveFns = [], feed = null;
+
+// Live counts: a new alert is worth a word, and the Today and Alerts pages redraw when the numbers move. Nothing is redrawn
+// while someone is typing (a search or a reason), so the feed never takes the keyboard away from them.
+function startFeed() {
+  feed?.stop();
+  feed = watchEvents(api, { onCounts: (c) => {
+    const was = state.counts;
+    state.counts = c;
+    if (was && c.alerts_open > was.alerts_open) toast("A new alert needs attention");
+    const screen = parse().screen;
+    const typing = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || "");
+    if (!typing && document.visibilityState === "visible" && (screen === "today" || screen === "alerts")) render(true);
+  } });
+}
 const X = {
   api, state, mem, theme,
   get isOwner() { return state.me?.role === "owner"; },
@@ -68,8 +75,7 @@ async function render(keep = false) {
   leaveFns.forEach((f) => f()); leaveFns = [];
   const { screen, id } = parse();
   const key = screen === "today" || SCREENS[screen] ? screen : "today";
-  const nav = NAV.find((n) => n[0] === key);
-  if (nav && !allowed(nav[3])) { location.hash = "#/today"; return; }
+  if (key !== "more" && !navItem(key, X.isOwner)) { location.hash = "#/today"; return; }
   ui.mark(key);
   if (!keep && (!id || (key !== "customers" && key !== "fleet"))) closeDetail();      // leaving a list closes its detail pane
   const y = ui.scroll.scrollTop;
@@ -91,9 +97,8 @@ async function render(keep = false) {
 function shell() {
   const page = h("div", { class: "page" }), cbar = h("div", { class: "cbar", "aria-hidden": "true" });
   const scroll = h("main", { class: "scroll", id: "main" }, page);
-  const navItems = NAV.filter((n) => allowed(n[3]));
-  const item = (k) => { const n = navItems.find((x) => x[0] === k); return n && { key: n[0], label: n[1], icon: n[2] }; };
-  const groups = GROUPS.map(([label, keys]) => ({ label, items: keys.map(item).filter(Boolean) })).filter((g) => g.items.length);
+  const item = (k) => navItem(k, X.isOwner);
+  const groups = groupsFor(X.isOwner);
   const go = (href) => X.go(href);
   const tabbarEl = tabbar(go, [...TABS.map(item).filter(Boolean), { key: "more", label: "More", icon: "more" }]);
   const insp = h("aside", { class: "insp", hidden: true });
@@ -124,11 +129,12 @@ function shell() {
 function search() {
   openPalette({
     placeholder: "Search customers, recorders or pages", recentKey: "gi_staff_recent", go: (href) => X.go(href),
-    pages: NAV.filter((n) => allowed(n[3])).map((n) => ({ label: n[1], icon: n[2], href: "#/" + n[0] })),
-    load: async () => {
-      const [t, r] = await Promise.all([api.get("/admin/v1/tenants?limit=200").catch(() => ({ items: [] })), api.get("/admin/v1/recorders?limit=200").catch(() => [])]);
-      return [{ section: "Customers", icon: "users", items: t.items.map((c) => ({ label: c.name, sub: c.city || null, href: "#/customers/" + c.id })) },
-        { section: "Recorders", icon: "server", items: r.map((x) => ({ label: x.name || x.device_id, sub: x.tenant_name, href: "#/fleet/" + x.id })) }];
+    pages: pagesFor(X.isOwner),
+    lookup: async (q) => {
+      const r = await api.get("/admin/v1/search" + qs({ q }));
+      return [{ section: "Customers", icon: "users", items: r.customers.map((c) => ({ label: c.name, sub: c.city || null, href: "#/customers/" + c.id })) },
+        { section: "Recorders", icon: "server", items: r.recorders.map((x) => ({ label: x.name || x.device_id, sub: x.tenant_name, href: "#/fleet/" + x.id })) }]
+        .filter((s) => s.items.length);
     },
   });
 }
@@ -164,7 +170,7 @@ addEventListener("message", async (e) => {
 // ------------------------------------------------------------------------------------------------- sign-in
 function authPage(...body) {
   mount(host, h("div", { class: "ax" }, h("div", { class: "authwrap" }, h("div", { class: "authbox" }, h("div", {}, lockupPair(), h("p", { class: "tag" }, "Platform Admin"), ...body)))));
-  ui = null;
+  ui = null; feed?.stop(); feed = null;
 }
 
 // There is one sign-in page for everyone, at "/". A staff member who signs in there is handed on to this panel already signed in, so with no sign-in
@@ -201,6 +207,7 @@ async function boot() {
   }
   if (!ui) shell();
   render();
+  startFeed();
 }
 addEventListener("hashchange", () => render());
 matchMedia("(min-width: 780px)").addEventListener?.("change", () => { closeDetail(); });

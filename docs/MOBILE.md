@@ -43,6 +43,14 @@ This build is signed with a test key, so it works for trying but cannot be uploa
 
 See `docs/PUSH.md`. Android already has its Firebase file (`app/android/app/google-services.json`) and turns push on from Settings. iPhone push needs an APNs key from your Apple account.
 
+## Links into the app
+
+The web address is read once, at start-up, by `app/lib/browser.dart`: `/set-password?token=…` opens the invitation screen and removes the one-time token from the address bar; a console hand-off opens the view-only session. Every other address is the app itself. The app deliberately does not use a routing package: the five places keep their own state and sub-screens open over them, so a URL cannot describe them without losing that state. If a public link is needed later (for example `/rules`), add it to `browser.dart` beside the invitation hand-off.
+
+## Smooth live video
+
+On phones the live view tries WebRTC first (go2rtc) and falls back to the picture stream when the server has no go2rtc, the camera cannot be reached, or the offer is refused. Nothing needs to be installed on the phone. The server side is in `API.md` (§4d): set `GI_GO2RTC_URL`, make go2rtc reachable from the phone network, and give it ICE candidates. Without it, live view keeps working with refreshed pictures.
+
 ## Building on your own computer
 
 ```

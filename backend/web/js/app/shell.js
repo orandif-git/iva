@@ -45,7 +45,8 @@ function highlight(text, q) {
 
 /**
  * cfg.pages: [{label, icon, href}] always available.
- * cfg.load(): Promise<[{section, icon, items: [{label, sub?, href}]}]> things looked up from the server (already limited to what this person may see).
+ * cfg.lookup(q): Promise<[{section, icon, items: [{label, sub?, href}]}]> asked as the person types, so a big list is never
+ *   downloaded to find one name. It is already limited to what this person may see.
  * cfg.recentKey: where the last few picks are remembered on this device.
  */
 export function openPalette(cfg) {
@@ -83,7 +84,21 @@ export function openPalette(cfg) {
     input.setAttribute("aria-activedescendant", "pal-" + sel);
     list.querySelector("#pal-" + sel)?.scrollIntoView?.({ block: "nearest" });
   };
-  input.oninput = () => { sel = 0; draw(); };
+  let seq = 0, timer = null;
+  const lookup = (q) => {
+    if (!cfg.lookup) return;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      if (!q) { found.length = 0; draw(); return; }
+      try {
+        const r = await cfg.lookup(q);
+        if (mine !== seq) return;                       // a later keystroke has already asked for newer results
+        found.length = 0; found.push(...r); draw();
+      } catch { /* the pages below still work offline */ }
+    }, 160);
+  };
+  input.oninput = () => { sel = 0; draw(); lookup(input.value.trim()); };
   input.onkeydown = (e) => {
     if (e.key === "ArrowDown") { sel = Math.min(sel + 1, flat.length - 1); mark(); e.preventDefault(); }
     else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); mark(); e.preventDefault(); }
@@ -92,7 +107,6 @@ export function openPalette(cfg) {
   openSheet("Search", h("div", { class: "field" }, input), list, status);
   draw();
   input.focus();
-  Promise.resolve(cfg.load()).then((r) => { found.push(...r); draw(); }).catch(() => { /* pages still work offline */ });
 }
 
 /** Ctrl or Cmd + K and "/" open the search from anywhere except a text box. */

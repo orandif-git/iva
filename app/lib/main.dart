@@ -379,9 +379,9 @@ class _NavItem extends StatelessWidget {
             duration: const Duration(milliseconds: 180),
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(color: selected ? t.brandSoft : Colors.transparent, borderRadius: BorderRadius.circular(Radii.control)),
             child: Row(children: [
-              AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12, left: -6), decoration: BoxDecoration(color: t.accent, borderRadius: BorderRadius.circular(4))),
+              Transform.translate(offset: const Offset(-6, 0), child: AnimatedContainer(duration: const Duration(milliseconds: 180), width: 4, height: selected ? 22 : 0, margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: t.accent, borderRadius: BorderRadius.circular(4)))),
               def.glyph(selected, selected ? t.brand : t.fg2, 24),
               const SizedBox(width: 14),
               Expanded(child: Text(def.label, style: TextStyle(color: selected ? t.brand : t.fg, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 15))),

@@ -50,7 +50,7 @@ class _AlertEvidenceState extends State<AlertEvidence> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(Radii.control),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: FutureBuilder<Uint8List?>(

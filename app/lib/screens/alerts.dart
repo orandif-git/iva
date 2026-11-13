@@ -171,7 +171,9 @@ class _ManageAlertsPageState extends State<ManageAlertsPage> {
               final all = defs.where((d) => d.smart == smartTab).toList();
               final nSystem = defs.where((d) => !d.smart && d.enabled).length, nSmart = defs.where((d) => d.smart && d.enabled).length;
               final on = all.where((d) => d.enabled).toList();
-              final off = all.where((d) => !d.enabled && d.recipientIds.isNotEmpty).toList();
+              // Every alert that is off stays visible, even before anyone has been chosen. Otherwise switching one off
+              // makes it disappear and there is no way to switch it back on.
+              final off = all.where((d) => !d.enabled).toList();
               // The marked areas an alert is watching, one line each: tap one to change it (its shape and numbers are loaded).
               Widget areaLines(AlertDef m) {
                 final mine = areas.where((a) => a.kind == m.areaKind).toList();

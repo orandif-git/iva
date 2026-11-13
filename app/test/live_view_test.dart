@@ -7,6 +7,7 @@ import 'package:ivision_app/live/jpeg_splitter.dart';
 import 'package:ivision_app/live/live_view.dart';
 import 'package:ivision_app/models.dart';
 import 'package:ivision_app/repo.dart';
+import 'package:ivision_app/theme.dart';
 
 class Spy extends MockRepository {
   final calls = <String>[];
@@ -37,7 +38,7 @@ class Spy extends MockRepository {
   Future<void> stopLive(LiveSession s) async => calls.add('stop');
 }
 
-Widget host(Spy repo, {bool working = true}) => MaterialApp(home: Scaffold(body: SingleChildScrollView(child: LiveView(repo: repo, camera: CameraItem('c1', 'Front door', 'Store recorder', working), compact: true))));
+Widget host(Spy repo, {bool working = true}) => MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: SingleChildScrollView(child: LiveView(repo: repo, camera: CameraItem('c1', 'Front door', 'Store recorder', working), compact: true))));
 
 void tall(WidgetTester t) {
   t.view.physicalSize = const Size(390 * 2, 1600 * 2);

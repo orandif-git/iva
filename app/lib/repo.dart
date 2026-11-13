@@ -11,7 +11,10 @@ export 'api_client.dart' show ApiError;
 class LiveSession {
   final String id;
   final LiveMode mode;
-  const LiveSession(this.id, this.mode);
+  /// Whether the server has smooth video for this view, and the STUN/TURN addresses to give it. A server without go2rtc says no, so the app never waits for it.
+  final bool smooth;
+  final List<String> ice;
+  const LiveSession(this.id, this.mode, {this.smooth = false, this.ice = const []});
 }
 
 /// Everything the screens need from the server. [ApiRepository] talks to the real backend; [MockRepository] runs the same screens with demo data.
@@ -53,6 +56,7 @@ abstract class Repository {
   Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
+
   Future<OpeningHours> openingHours();
   Future<void> saveOpeningHours(OpeningHours h);
   Future<Uint8List?> snapshot(String cameraId);
@@ -67,6 +71,12 @@ abstract class Repository {
   Future<void> makeReport(String type, DateTime from, DateTime to);
   Future<({String name, Uint8List bytes})> downloadReport(String id);
   Future<LiveSession> startLive(String cameraId, LiveMode mode);
+
+  /// Could this app show smooth video (WebRTC) rather than refreshed pictures? False in the demo and in tests.
+  bool get smoothVideo;
+
+  /// Sends an SDP offer and returns the server's answer, or null when smooth video cannot be used and pictures should carry on.
+  Future<String?> liveOffer(LiveSession s, String offer);
   Future<void> extendLive(LiveSession s);
   Future<void> stopLive(LiveSession s);
 
@@ -230,9 +240,9 @@ class ApiRepository implements Repository {
 
   @override
   Future<Footfall> today() async {
-    final n = DateTime.now();
-    final from = DateTime(n.year, n.month, n.day);
-    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': from.toUtc().toIso8601String(), 'to': n.add(const Duration(hours: 1)).toUtc().toIso8601String()}) as Map<String, dynamic>);
+    // The server cuts days at midnight in India, so "today" must be the same day there as the other ranges,
+    // not midnight on whatever timezone this phone happens to use.
+    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': _istDay(0), 'to': _istDay(1), 'tz': 'Asia/Kolkata'}) as Map<String, dynamic>);
   }
 
   @override
@@ -429,8 +439,14 @@ class ApiRepository implements Repository {
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async {
     final j = await api.call('POST', '/v1/cameras/$cameraId/live', body: {'mode': mode.name});
-    return LiveSession(j['id'], mode);
+    return LiveSession(j['id'], mode, smooth: j['smooth'] == true, ice: [for (final a in (j['ice'] as List? ?? const [])) a as String]);
   }
+
+  @override
+  bool get smoothVideo => true;
+
+  @override
+  Future<String?> liveOffer(LiveSession s, String offer) => api.sdp('/v1/live/${s.id}/whep', offer);
 
   @override
   Future<void> extendLive(LiveSession s) => api.call('POST', '/v1/live/${s.id}/extend');
@@ -647,6 +663,7 @@ class MockRepository implements Repository {
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
   Future<List<Person>> people() async => List.of(_people);
+
   OpeningHours hours = const OpeningHours();
   @override
   Future<OpeningHours> openingHours() async => hours;
@@ -708,6 +725,10 @@ class MockRepository implements Repository {
   Future<({String name, Uint8List bytes})> downloadReport(String id) async => (name: 'Report $id.xlsx', bytes: Uint8List.fromList([80, 75, 3, 4]));
   @override
   Future<LiveSession> startLive(String cameraId, LiveMode mode) async => LiveSession('demo-$cameraId', mode);
+  @override
+  bool get smoothVideo => false;               // the demo has no video to send: it draws its own scene
+  @override
+  Future<String?> liveOffer(LiveSession s, String offer) async => null;
   @override
   Future<void> extendLive(LiveSession s) async {}
   @override

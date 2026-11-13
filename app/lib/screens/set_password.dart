@@ -53,7 +53,7 @@ class _SetPasswordPageState extends State<SetPasswordPage> {
                 if (widget.token.isEmpty)
                   Container(
                     padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(color: t.warnSoft, borderRadius: BorderRadius.circular(14)),
+                    decoration: BoxDecoration(color: t.warnSoft, borderRadius: BorderRadius.circular(Radii.control)),
                     child: Text('This link is not complete. Open the full link you were sent, or ask for a new one.', style: TextStyle(color: t.warnInk, fontWeight: FontWeight.w600)),
                   )
                 else ...[

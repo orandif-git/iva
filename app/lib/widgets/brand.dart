@@ -112,7 +112,7 @@ class SmartTag extends StatelessWidget {
     final t = Tok.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(6, 3, 10, 3),
-      decoration: BoxDecoration(color: t.aiSoft, borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(color: t.aiSoft, borderRadius: BorderRadius.circular(Radii.pill)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [const AiSpark(size: 15), const SizedBox(width: 4), Text(label, style: TextStyle(color: t.ai, fontWeight: FontWeight.w700, fontSize: 12))]),
     );
   }
