@@ -259,10 +259,10 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .cam .cb .tag{margin-top:2px}
 
 /* ---- compact Events list and its side panel ---- */
-.ev-tbl th{padding:6px 12px;font-size:12.5px;color:var(--fg2)}
-.ev-tbl td{padding:3px 12px;height:34px;font-size:13px;border-top:1px solid var(--line);vertical-align:middle}
-.ev-tbl tr.grp td{background:var(--panel);padding:0;height:30px}
-.gb{border:0;background:none;width:100%;text-align:left;padding:5px 12px;font-weight:700;color:var(--head);display:flex;align-items:center;gap:6px;font-size:13px}
+.ev-tbl th{padding:9px 12px;font-size:14px;color:var(--head)}
+.ev-tbl td{padding:8px 12px;height:38px;font-size:14px;border-top:1px solid var(--line);vertical-align:middle}
+.ev-tbl tr.grp td{background:var(--panel);padding:0;height:36px}
+.gb{border:0;background:none;width:100%;text-align:left;padding:8px 12px;font-weight:700;color:var(--head);display:flex;align-items:center;gap:6px;font-size:14px}
 .gb .cnt{background:var(--field);color:var(--fg2);border-radius:999px;padding:0 8px;font-size:12px}
 .car{width:12px;color:var(--fg2)}
 .ev-tbl .sw-c{width:70px;text-align:right}
@@ -274,9 +274,6 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .ev.off .tag{opacity:.6}
 .nm b{font-weight:700;color:var(--head)}
 .nm .ty{display:block;font-size:11.5px;color:var(--fg2);line-height:1.2}
-.ev-tbl .sw{width:34px;height:20px}
-.ev-tbl .sw i::after{width:16px;height:16px}
-.ev-tbl .sw input:checked+i::after{transform:translateX(14px)}
 .shade{position:fixed;inset:46px 0 0 0;background:var(--scrim);z-index:15}
 .drawer.ev{padding:0;gap:0}
 .dh{display:flex;justify-content:space-between;gap:12px;padding:16px 18px 10px;border-bottom:1px solid var(--line)}
