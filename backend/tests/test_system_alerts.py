@@ -139,3 +139,17 @@ async def test_the_daily_summary_comes_once_a_day_at_the_chosen_hour_and_only_wh
 
 
 # ------------------------------------------------------------------------------------------ the new alerts reach a webhook with their own shortcodes
+
+
+async def test_the_occupancy_and_after_hours_pictures_get_boxes_and_stay_plain_when_the_detector_is_missing():
+    import cv2
+    import numpy as np
+    from app.services import annotate
+    img = np.zeros((360, 640, 3), np.uint8)
+    jpeg = cv2.imencode(".jpg", img)[1].tobytes()
+    out = annotate.draw(jpeg, [(100, 80, 200, 300)], ((0.1, 0.5), (0.9, 0.5), (0, 1)), "2 in view")
+    pic = cv2.imdecode(np.frombuffer(out, np.uint8), cv2.IMREAD_COLOR)
+    assert pic[80:300, 100].max() > 100 and pic[180, 320].max() > 100, "a person's box and the counting line are drawn"
+    annotate._detector = None
+    annotate._load = lambda: (_ for _ in ()).throw(RuntimeError("no model"))
+    assert await annotate.people_picture(jpeg) == jpeg, "no detector: the plain picture goes out and the alert is not held back"

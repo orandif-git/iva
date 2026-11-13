@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from ..db import db
 from ..messaging import evidence
-from . import snapshot
+from . import annotate, snapshot
 from .opening_hours import Hours
 from .alerts import raise_alert
 
@@ -91,6 +91,7 @@ async def _crowd_picture(conn, tenant_id, place_key: str, camera_ids: list, tz: 
             return vault().decrypt(bytes(cam["source_ciphertext"]), str(cam["id"]))
         url, fmt = await asyncio.wait_for(snapshot.source_for(cam, decrypt), 20)
         jpeg = await asyncio.wait_for(snapshot.grab(url, fmt), snapshot.GRAB_TIMEOUT + 5)
+        jpeg = await annotate.people_picture(jpeg, await annotate.count_line(conn, cam["id"]))
         eid = await evidence.save_image(conn, tenant_id, cam["id"], jpeg, cam["retention_snapshots_days"])
     except Exception as e:                                  # a picture is a bonus: never hold an alert back for it
         log.info("no picture for the occupancy alert: %s", type(e).__name__)
@@ -153,6 +154,7 @@ async def _camera_picture(conn, tenant_id, camera_id):
             return vault().decrypt(bytes(cam["source_ciphertext"]), str(cam["id"]))
         url, fmt = await asyncio.wait_for(snapshot.source_for(cam, decrypt), 20)
         jpeg = await asyncio.wait_for(snapshot.grab(url, fmt), snapshot.GRAB_TIMEOUT + 5)
+        jpeg = await annotate.people_picture(jpeg, await annotate.count_line(conn, cam["id"]))
         return await evidence.save_image(conn, tenant_id, cam["id"], jpeg, cam["retention_snapshots_days"])
     except Exception as e:
         log.info("no picture for the alert: %s", type(e).__name__)

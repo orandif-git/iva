@@ -71,3 +71,7 @@ People in an area, long queue, activity in an area and phone use can now send a 
 - The shop's date and time are written in the bottom-left corner of every picture of the video.
 - Three shortcodes give the time range on the shop's clock, so the owner can find the same moment on the recorder: `{clip_time}` (13 Nov, 10:11:50 PM to 10:12:05 PM), `{clip_from}` and `{clip_to}`.
 - The message waits up to 40 seconds for the video, then goes out without it. The webhook template must contain `{clip_url}` for the message to wait.
+
+## Pictures for occupancy and after-hours alerts
+
+These two pictures are taken by the API (not the worker). Before they are saved, the AI draws a green box on each person, the counting line with its IN arrow, and a caption with the number of people in view. If the detector model is not available, the plain picture is used and the alert is not delayed. The detector is the same model file the worker uses (`GI_WORKER_MODEL_DIR`), so the API must be able to read it.
