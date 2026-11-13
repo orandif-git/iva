@@ -96,9 +96,10 @@ async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("o
         try:
             async with ctx.conn.transaction():
                 tenant_id = await ctx.conn.fetchval(
-                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language)
-                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8) RETURNING id""",
+                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language, retention_events_days, retention_snapshots_days)
+                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8, $9, $9) RETURNING id""",
                     body.name, slug, body.city, body.plan_id, body.partner_id, body.camera_limit, body.ends_on, body.msg_language,
+                    await ctx.conn.fetchval("SELECT coalesce((SELECT keep_days FROM platform.data_retention WHERE id), 30)"),
                 )
             break
         except asyncpg.UniqueViolationError:

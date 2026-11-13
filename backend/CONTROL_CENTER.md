@@ -51,3 +51,13 @@ Run `migrations/021_activity_area.sql` before using it. Other kinds of thing the
 
 Every event that needs a camera needs something marked on that camera's picture: an area (area events), a counting line with its IN direction (Count people, and the alerts that depend on counting), or the area plates are read in (Read number plates, and the plate alerts; leaving it out means the whole picture).
 Without a counting line the worker counts nobody, so a camera that "counts people" but has no line is shown in the Events list with "No line marked. Nothing is counted yet". The line and the plate area are saved through `/admin/v1/tenants/{id}/shop/cameras/{camera}/zones`.
+
+## How long data is kept
+
+One setting for every customer (Setup, Data kept; `platform.data_retention`, default 30 days, 7 to 730): alerts and their messages, people counts, plate reads, and pictures and clips.
+Saving it writes the same number into every customer's own retention and into the expiry of stored pictures, so the existing clean-up (every six hours, `services/retention.py`) does the work.
+New customers start with the current setting. An alert that is still being sent is never removed. Clear now runs the clean-up straight away and is recorded in the Activity log.
+
+## The message log
+
+`GET /admin/v1/messaging/log` reads the log for a range of days (India time), a status group and a search, 100 at a time with the total; both Messages pages use it.

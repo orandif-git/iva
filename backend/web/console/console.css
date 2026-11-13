@@ -287,3 +287,4 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .cam.offl{opacity:.65;cursor:not-allowed}
 .cam.offl .pic{filter:grayscale(1)}
 .cam .cb .tag{align-self:flex-start}
+.more{text-align:center;padding:12px}

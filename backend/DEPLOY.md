@@ -149,6 +149,7 @@ Sign-in exists in the API (`/v1/auth/login`, `/admin/v1/auth/login`); the web pa
    su postgres -c "psql -d gateinsight -f migrations/019_summaries.sql"           # the daily and weekly summary: settings for sending it straight to WhatsApp
    su postgres -c "psql -d gateinsight -f migrations/020_control_center.sql"        # the Control Center: Admin and Onboarding roles, service end date, hours per day, shop language, event names
    su postgres -c "psql -d gateinsight -f migrations/021_activity_area.sql"          # a new kind of marked area: activity in an area (people or vehicles, when the shop is closed or between set times)
+   su postgres -c "psql -d gateinsight -f migrations/022_data_retention.sql"        # one setting for how long data is kept (Setup, Data kept)
    ```
    Then restart the API: `systemctl restart gi-api`.
 2. [ ] Create your own staff account. It asks for a password (hidden, typed twice) and prints a setup key for an authenticator app:

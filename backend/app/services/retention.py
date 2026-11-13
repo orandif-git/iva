@@ -47,7 +47,8 @@ async def purge_alerts(deadline: float) -> int:
     return await _batched(
         """DELETE FROM app.alerts WHERE ctid IN (
              SELECT a.ctid FROM app.alerts a JOIN app.tenants t ON t.id = a.tenant_id
-             WHERE a.created_at < now() - make_interval(days => t.retention_events_days) LIMIT $1)""", deadline)
+             WHERE a.created_at < now() - make_interval(days => t.retention_events_days)
+               AND NOT EXISTS (SELECT 1 FROM app.notifications q WHERE q.alert_id = a.id AND q.status = 'queued') LIMIT $1)""", deadline)
 
 
 async def purge_loose_notifications(deadline: float) -> int:

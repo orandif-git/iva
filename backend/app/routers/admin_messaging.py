@@ -3,6 +3,7 @@ Alerts are not sent from here: they leave as webhook events (see admin_webhooks.
 import json
 import re
 from typing import Literal
+from datetime import date
 from uuid import UUID
 
 import asyncpg
@@ -208,6 +209,42 @@ async def all_notifications(tenant_id: UUID | None = None, status: str | None = 
            FROM app.notifications n JOIN app.tenants t ON t.id=n.tenant_id LEFT JOIN app.alerts a ON a.id=n.alert_id
            WHERE ($1::uuid IS NULL OR n.tenant_id=$1) AND ($2::text IS NULL OR n.status::text=$2) ORDER BY n.created_at DESC LIMIT $3""", tenant_id, status, limit)
     return [dict(r) for r in rows]
+
+
+_GROUPS = {"Sent": ("sent", "delivered", "read"), "Failed": ("failed",), "Waiting": ("queued",), "Held back": ("suppressed", "cancelled")}
+
+
+@router.get("/log")
+async def message_log(
+    date_from: date | None = Query(None, alias="from"), date_to: date | None = Query(None, alias="to"),
+    tenant_id: UUID | None = None, group: str | None = Query(None, pattern="^(Sent|Failed|Waiting|Held back)$"),
+    q: str | None = Query(None, max_length=80), limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0, le=100000),
+    ctx: AdminCtx = Depends(admin_ctx()),
+):
+    """The message log for a range of days (India time, both ends included), with the search done here so it finds old messages too. Returns the page and the total."""
+    where, args = [], []
+
+    def add(sql, v):
+        args.append(v)
+        where.append(sql.replace("?", f"${len(args)}"))
+
+    if date_from:
+        add("n.created_at >= (?::date)::timestamp AT TIME ZONE 'Asia/Kolkata'", date_from)
+    if date_to:
+        add("n.created_at < ((?::date) + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'", date_to)
+    if tenant_id:
+        add("n.tenant_id = ?", tenant_id)
+    if group:
+        add("n.status::text = ANY(?::text[])", list(_GROUPS[group]))
+    if q and q.strip():
+        add("(t.name ILIKE ? OR n.recipient ILIKE ? OR n.error ILIKE ? OR n.event ILIKE ? OR a.title ILIKE ?)", "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    w = (" WHERE " + " AND ".join(where)) if where else ""
+    base = f"FROM app.notifications n JOIN app.tenants t ON t.id=n.tenant_id LEFT JOIN app.alerts a ON a.id=n.alert_id{w}"
+    total = await ctx.conn.fetchval(f"SELECT count(*) {base}", *args)
+    rows = await ctx.conn.fetch(
+        f"""SELECT n.id, n.tenant_id, t.name AS tenant, n.channel::text AS channel, n.recipient, n.status::text AS status, n.event, n.attempts, n.response_status, n.error, n.created_at, n.sent_at, a.title
+            {base} ORDER BY n.created_at DESC, n.id LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}""", *args, limit, offset)
+    return {"items": [dict(r) for r in rows], "total": total}
 
 
 @router.get("/summary")

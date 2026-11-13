@@ -62,9 +62,9 @@ const AREA_FIELDS = { area_count: [["limit", "More than", "people", 5], ["minute
 const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate", "minutes", "recorder", "image_url", "clip_url"];
 
 /* ------------------------------------------------------------------------------------------------ state */
-const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", evQ: "", evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
+const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", logRange: "7", logFrom: "", logTo: "", logData: null, evQ: "", keepDays: null, evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
   customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
-const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
+const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], keep: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
 const PERMS = [["See all customers and the message log", "oaos"], ["Add a new customer and set it up", "oao-"], ["Edit people, hours and cameras", "oaos"], ["Add and change events", "oao-"], ["Pause or resume a customer", "oa-s"], ["Change the end date", "oa--"], ["Delete a customer", "o---"],
   ["WhatsApp templates", "oa--"], ["Console users", "oa--"], ["WhatsApp connection and key", "o---"]];
@@ -116,7 +116,7 @@ function side() {
   if (S.route === "new") h = `<h3>New customer</h3>` + NSTEPS.map((s, i) => `<button class="si" type="button" data-step="${s[0]}" aria-current="${S.step === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.form.done[s[0]] ? "done" : ""}">${S.form.done[s[0]] ? "✓" : i + 1}</span></button>`).join("");
   else if (S.route === "event") { const o = eorder(); h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = !!S.ev.key && !o.includes(s[0]); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join(""); }
   else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
-  else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
+  else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["keep", "log", "Data kept", can("keep")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
   if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
   el.hidden = !h; el.innerHTML = h;
 }
@@ -252,7 +252,7 @@ async function pageCustomer() {
   let body;
   if (S.section === "events") body = secEvents();
   else if (S.section === "cams") body = secCams();
-  else if (S.section === "log") { const log = await api.get(`/admin/v1/messaging/notifications?tenant_id=${S.cid}&limit=30`); body = logTable(log, false); }
+  else if (S.section === "log") { await loadLog(S.cid, false, true); body = logTable(false); }
   else body = (S.section === "hours" ? secHours(f) + secSummaries(f) : secPeople(f)) + `<div class="actions"><button class="btn pri" type="button" data-save>Save changes</button></div>`;
   return `<div class="rise"><div class="title"><h1>${esc(c.name)}</h1><span class="t-${st[1]} bold"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span> ${st[0]}</span><span class="sub">${esc(c.place)} · ends ${fmtDate(c.endsOn)}</span><span class="sp"></span>
    <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></div>
@@ -265,13 +265,35 @@ function secCams() {
   ${recs.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Recorder</th><th>Brand</th><th>Status</th><th>Last seen</th><th></th></tr></thead><tbody>${recs.map((r) => `<tr><td class="dotc"><span class="dot ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}"></span></td><td class="main-c">${esc(r.name || r.device_id)}</td><td>${esc(humanize(r.brand || ""))}</td><td class="${r.status === "online" ? "t-ok" : r.status === "offline" ? "t-crit" : "t-mute"}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</td><td class="num">${fmtTime(r.last_heartbeat_at)}</td><td><button class="btn sm" type="button" data-findcams="${r.id}">Find cameras</button> <button class="btn sm" type="button" data-showconn="${r.id}">Details</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">No recorder yet. Add one, then type its details into the recorder.</div>`}
   ${Object.entries(channels).map(([rid, list]) => `<div class="sec-h">Cameras found on ${esc(recs.find((r) => r.id === rid)?.name || recs.find((r) => r.id === rid)?.device_id || "the recorder")}</div>${list.length ? `${list.some((x) => !x.enabled_as_camera) ? `<div class="row"><button class="btn sm" type="button" data-chall="${rid}|1">Select all</button><button class="btn sm" type="button" data-chall="${rid}|0">Deselect all</button><span class="sub">${list.filter((x) => !x.enabled_as_camera && x.on).length} of ${list.filter((x) => !x.enabled_as_camera).length} selected</span></div>` : ""}<div class="cams">${list.map((ch, i) => `<div class="cam"><div class="pic" data-pic="${rid}|${ch.channel_no}">${ico("cam", 24)}<span class="picmsg">Loading picture…</span></div><div class="cb">${ch.enabled_as_camera ? `<span class="tag ok">Already added</span>` : `<label class="chk"><input type="checkbox" data-ch="${rid}.${i}" ${ch.on ? "checked" : ""}>Watch this camera</label><input class="in" aria-label="Camera name" data-chn="${rid}.${i}" value="${esc(ch.name)}">`}</div></div>`).join("")}</div>${list.some((x) => !x.enabled_as_camera) ? `<div><button class="btn pri" type="button" data-addcams="${rid}">Add the ticked cameras</button></div>` : ""}` : `<div class="note">The recorder has not sent its cameras yet. Check its details, then try again in a minute.</div>`}`).join("")}</div>`;
 }
+const RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["custom", "Custom"]];
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function rangeDates() {
+  const t = todayIST(), back = (n) => { const d = new Date(t); d.setDate(d.getDate() - n); return isoDay(d); };
+  if (S.logRange === "today") return [isoDay(t), isoDay(t)];
+  if (S.logRange === "yesterday") return [back(1), back(1)];
+  if (S.logRange === "30") return [back(29), isoDay(t)];
+  if (S.logRange === "custom") return [S.logFrom || "", S.logTo || ""];
+  return [back(6), isoDay(t)];
+}
+/* Reads one page of the message log for the range, status and search chosen. "Load more" adds the next page. */
+async function loadLog(tenantId, more, reuse) {
+  const [from, to] = rangeDates(), p = new URLSearchParams({ limit: "100" });
+  if (from) p.set("from", from); if (to) p.set("to", to); if (tenantId) p.set("tenant_id", tenantId);
+  if (S.logChip !== "all") p.set("group", S.logChip); if (S.logQ.trim()) p.set("q", S.logQ.trim());
+  const key = p.toString(), same = S.logData && S.logData.key === key;
+  if (reuse && same) return;
+  if (more && same) p.set("offset", String(S.logData.items.length));
+  const r = await api.get("/admin/v1/messaging/log?" + p.toString());
+  S.logData = { key, total: r.total, items: more && same ? S.logData.items.concat(r.items) : r.items };
+}
 const kindOf = (m) => m.status === "failed" ? "Failed" : m.status === "queued" ? "Waiting" : ["suppressed", "cancelled"].includes(m.status) ? "Held back" : "Sent";
-function logTable(rows, withCustomer) {
-  const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"], ["Held back", "Held back"]], q = S.logQ.toLowerCase();
-  const shown = rows.filter((m) => (S.logChip === "all" || kindOf(m) === S.logChip) && (!q || `${m.tenant} ${m.title || ""} ${m.event || ""} ${m.recipient || ""} ${m.error || ""}`.toLowerCase().includes(q)));
+function logTable(withCustomer) {
+  const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"], ["Held back", "Held back"]], D = S.logData, rows = D.items;
   const cls = (m) => ({ Failed: "crit", Waiting: "warn", "Held back": "", Sent: "ok" }[kindOf(m)]), txt = (m) => ({ Failed: "t-crit", Waiting: "t-warn", "Held back": "t-mute", Sent: "t-ok" }[kindOf(m)]);
-  return `<div class="bar"><label class="search">${ico("search")}<span class="sr">Search messages</span><input id="lq" placeholder="Search" value="${esc(S.logQ)}"></label><div class="seg" role="group" aria-label="Filter">${chips.map((c) => `<button type="button" data-lchip="${c[0]}" aria-pressed="${S.logChip === c[0]}">${c[1]}</button>`).join("")}</div></div>
-  ${shown.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${shown.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">${rows.length ? "No messages match." : "No messages yet."}</div>`}`;
+  return `<div class="bar"><div class="seg" role="group" aria-label="Date range">${RANGES.map((c) => `<button type="button" data-lrange="${c[0]}" aria-pressed="${S.logRange === c[0]}">${c[1]}</button>`).join("")}</div>
+    ${S.logRange === "custom" ? `<label class="sub">From <input class="in time" type="date" id="lfrom" value="${esc(S.logFrom)}"></label><label class="sub">To <input class="in time" type="date" id="lto" value="${esc(S.logTo)}"></label>` : ""}</div>
+  <div class="bar"><label class="search">${ico("search")}<span class="sr">Search messages</span><input id="lq" placeholder="Search" value="${esc(S.logQ)}" autocomplete="off"></label><div class="seg" role="group" aria-label="Filter">${chips.map((c) => `<button type="button" data-lchip="${c[0]}" aria-pressed="${S.logChip === c[0]}">${c[1]}</button>`).join("")}</div><span class="sp"></span><span class="sub">${D.total ? `Showing ${rows.length} of ${D.total}` : ""}</span></div>
+  ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${rows.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div>${rows.length < D.total ? `<div class="more"><button class="btn" type="button" data-lmore>Load more</button></div>` : ""}` : `<div class="empty">No messages in this range${S.logQ || S.logChip !== "all" ? " match" : ""}.</div>`}`;
 }
 async function saveSection() {
   const f = S.cur.f, base = `/admin/v1/tenants/${S.cid}/shop`;
@@ -568,7 +590,7 @@ async function doDelete(i) {
 }
 
 /* ------------------------------------------------------------------------------------------------ Messages */
-async function pageMessages() { const rows = await api.get("/admin/v1/messaging/notifications?limit=200"); return `<div class="rise">${logTable(rows, true)}</div>`; }
+async function pageMessages() { await loadLog(null, false, true); return `<div class="rise">${logTable(true)}</div>`; }
 
 /* ------------------------------------------------------------------------------------------------ Setup */
 const lock = (n) => `<div class="empty rise">${ico("lock", 28)}<h2 class="h2 pt8">${n} is for ${n === "WhatsApp connection" ? "the Owner" : "Owner or Admin"}</h2><p>Ask the Owner if you need this changed.</p></div>`;
@@ -582,6 +604,16 @@ async function pageSetup() {
     return `<div class="rise"><div class="bar"><label class="search">${ico("search")}<span class="sr">Search</span><input id="tq" placeholder="Search" value="${esc(S.tq)}"></label><span class="sp"></span><span class="sub">Picture and video links open for <b class="dark">${wh.settings.link_hours} hours</b></span><button class="btn" type="button" data-setupall>Set up all alerts</button></div>
     <div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Template</th><th>Carries</th><th>Values filled in</th><th>Sent</th><th>Failed</th></tr></thead><tbody>${rows.map((a) => { const w = byType[a.type], direct = ["daily_summary", "weekly_summary"].includes(a.type), m = MEDIA[carries(a.type)]; const used = w ? [...new Set([...(w.payload_template || "").matchAll(/\{(\w+)\}/g)].map((x) => x[1]))] : [];
       return `<tr class="click" data-tpl="${a.type}"><td class="dotc"><span class="dot ${direct ? "" : w ? (w.active ? "ok" : "warn") : ""}"></span></td><td class="ico"><span class="glyph">${ico(REC_LEVEL.has(a.type) ? "rec" : "cam", 19)}</span></td><td class="main-c">${esc(a.title)}</td><td class="${direct ? "t-mute" : w ? (w.active ? "t-ok" : "t-warn") : "t-mute"}">${direct ? "Direct send" : w ? (w.active ? "On" : "Switched off") : "Not set up"}</td><td>${direct || !w ? "—" : `<span class="sc">${esc(w.name)}</span>`}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${used.length ? used.map((v) => `<span class="sc">{${v}}</span>`).join(" ") : "—"}</td><td class="num">${w ? w.sent : "—"}</td><td class="num ${w && w.failed ? "t-crit" : ""}">${w ? w.failed : "—"}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  }
+  if (S.setup === "keep") {
+    if (!can("keep")) return lock("Data kept");
+    const k = await api.get("/admin/v1/maintenance/keep"), days = S.keepDays || k.days, prev = await api.get(`/admin/v1/maintenance/keep/preview?days=${days}`), last = k.last_run;
+    const n = (x) => (x ?? 0).toLocaleString("en-IN");
+    return `<div class="rise"><div class="title"><h1>Data kept</h1></div><div class="form"><div class="note">One setting for every customer. Everything older than this is removed automatically (the clean-up runs every few hours): alerts and their messages, people counts, plate reads, and pictures and clips. Pictures and clips are kept for the same time, so a longer time uses more disk space.</div>
+    <div class="f f-narrow"><label for="kd">Keep data for<small>Not shorter than 7 days</small></label><select class="in time" id="kd" data-keepdays>${[7, 14, 30, 60, 90, 180, 365].map((d) => `<option value="${d}" ${d === days ? "selected" : ""}>${d} days</option>`).join("")}</select></div>
+    <div class="pn"><h3>${days === k.days ? `If you keep ${days} days, this is what is older right now` : `If you save ${days} days, this much would be removed at the next clean-up`}</h3><table class="tbl"><tbody>${[["Alerts", prev.alerts], ["Messages", prev.messages], ["People counts", prev.people_counts], ["Plate reads", prev.plate_reads], ["Pictures and clips", prev.pictures_and_clips]].map(([l, v]) => `<tr><td>${l}</td><td class="num">${n(v)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="actions"><button class="btn pri" type="button" data-keepsave ${days === k.days ? "disabled" : ""}>Save</button><button class="btn" type="button" data-keepclear>Clear now</button></div>
+    <div class="sub">${k.updated_by ? `Set by ${esc(k.updated_by)} on ${esc(fmtTime(k.updated_at))}. ` : ""}${last ? `Last clean-up: ${esc(fmtTime(last.ran_at))}${last.ok ? "" : " (some steps failed)"}.` : "No clean-up has run yet."}</div></div></div>`;
   }
   if (S.setup === "team") {
     if (!can("team")) return lock("Console users");
@@ -644,7 +676,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-next],[data-prev],[data-create],[data-lang],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -655,12 +687,15 @@ document.addEventListener("click", async (ev) => {
     if (t.id === "signout") { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); return location.replace("/"); }
     if ("close" in d) return closeModal();
     if ("retry" in d) return render();
+    if (d.go || d.cust || d.sec || d.setup) S.logData = null;
     if (d.go) { if (d.go === "new") { S.form = blankForm(); S.step = "shop"; } if (d.go === "customers") await loadCustomers(); if (d.go === "customer") S.cur = null; return go(d.go); }
     if (d.cust) { S.cid = d.cust; S.cur = null; S.section = "cams"; return go("customer"); }
     if (d.view) { S.view = d.view; return render(true); }
     if ("pop" in d) { S.pop = !S.pop; return render(true); }
     if (d.filter) { S.filter = d.filter; S.pop = false; return render(true); }
     if (d.lchip) { S.logChip = d.lchip; return render(true); }
+    if (d.lrange) { S.logRange = d.lrange; return render(true); }
+    if ("lmore" in d) { const where = S.route === "customer" ? S.cid : null; await loadLog(where, true); return render(true); }
     if (d.step) { S.step = d.step; return render(); }
     if (d.sec) { S.section = d.sec; if (d.sec !== "log") S.cur = null; return render(); }
     if (d.setup) { S.setup = d.setup; return go("setup"); }
@@ -683,12 +718,15 @@ document.addEventListener("click", async (ev) => {
     if (d.confirm === "extend") { const v = $("#nd").value; if (!v) return toast("Choose a date.", true); const c = cust(d.id); await api.patch(`/admin/v1/tenants/${c.id}`, { ends_on: v }); if (c.status === "suspended" && c.reason.startsWith("Service ended")) await api.post(`/admin/v1/tenants/${c.id}/reactivate`, { reason: "End date changed from the Control Center" }); await loadCustomers(); S.cur = null; closeModal(); toast("End date changed"); return render(true); }
     if ("delc" in d) return modal(`${mh("Delete " + esc(cust(S.cid).name) + "?")}<div class="note warn">This removes the customer, its cameras and all history. It cannot be undone.</div><label class="bold" for="dn">Type the shop name to confirm</label><input class="in" id="dn" placeholder="${esc(cust(S.cid).name)}" autocomplete="off"><div class="row"><button class="btn danger" type="button" data-confirm="delete">Delete forever</button><button class="btn" type="button" data-close>Keep</button></div>`);
     if (d.confirm === "delete") { if ($("#dn").value.trim() !== cust(S.cid).name) return toast("The name does not match.", true); await api.del(`/admin/v1/tenants/${S.cid}?reason=${encodeURIComponent("Deleted from the Control Center")}`); await loadCustomers(); closeModal(); toast("Customer deleted"); return go("customers"); }
-    if (d.resend) { await api.post(`/admin/v1/webhooks/deliveries/${d.resend}/resend`); toast("Sent again"); return render(true); }
+    if (d.resend) { S.logData = null; await api.post(`/admin/v1/webhooks/deliveries/${d.resend}/resend`); toast("Sent again"); return render(true); }
     if ("invite" in d) return modal(`${mh("Add a person")}<label class="bold" for="in1">Name</label><input class="in" id="in1" autocomplete="off"><label class="bold" for="in2">Email</label><input class="in" id="in2" type="email" autocomplete="off"><label class="bold" for="in3">Role</label><select class="in" id="in3">${S.role === "owner" ? '<option value="owner">Owner</option>' : ""}<option value="admin">Admin</option><option value="onboarding">Onboarding</option><option value="support">Support</option></select><button class="btn pri wide" type="button" data-confirm="invite">Create sign-in link</button>`);
     if (d.confirm === "invite") { const r = await api.post("/admin/v1/staff", { name: $("#in1").value.trim(), email: $("#in2").value.trim(), role: $("#in3").value }); modal(`${mh("Sign-in link")}<p class="sub nm">Send this link to ${esc(r.email)}. It works once and lets them choose a password.</p><input class="in full" readonly value="${esc(r.link)}" id="lk"><button class="btn pri wide" type="button" data-close>Done</button>`); $("#lk").select(); return; }
     if (d.disable || d.enable) { await api.post(`/admin/v1/staff/${d.disable || d.enable}/${d.disable ? "disable" : "enable"}?reason=${encodeURIComponent("Changed from the Control Center")}`); toast("Done"); return render(true); }
     if (d.resetlink) { const r = await api.post(`/admin/v1/staff/${d.resetlink}/reset-link?reason=${encodeURIComponent("New link from the Control Center")}`); modal(`${mh("Sign-in link")}<p class="sub nm">This link works once.</p><input class="in full" readonly value="${esc(r.link)}" id="lk"><button class="btn pri wide" type="button" data-close>Done</button>`); $("#lk").select(); return; }
     if ("testwa" in d) { await api.post("/admin/v1/summaries/test", {}); return toast("Test sent to your number"); }
+    if ("keepsave" in d) { await api.put("/admin/v1/maintenance/keep", { days: +S.keepDays }); S.keepDays = null; toast("Saved. Everything older is removed at the next clean-up."); return render(true); }
+    if ("keepclear" in d) { const k = await api.get("/admin/v1/maintenance/keep"), p = await api.get(`/admin/v1/maintenance/keep/preview?days=${k.days}`); return modal(`${mh("Clear now?")}<p class="nm">Everything older than ${k.days} days is removed for every customer. This cannot be undone.</p><div class="creds">${[["Alerts", p.alerts], ["Messages", p.messages], ["People counts", p.people_counts], ["Plate reads", p.plate_reads], ["Pictures and clips", p.pictures_and_clips]].map(([l, v]) => `<div class="kv"><span>${l}</span><span class="num">${(v ?? 0).toLocaleString("en-IN")}</span></div>`).join("")}</div><div class="row"><button class="btn danger" type="button" data-confirm="keepclear">Clear now</button><button class="btn" type="button" data-close>Cancel</button></div>`); }
+    if (d.confirm === "keepclear") { const r = await api.post("/admin/v1/maintenance/retention/run"); closeModal(); toast("Done"); return render(true); }
     if ("wasave" in d) { const url = document.querySelector("[data-wa=url]").value.trim(), key = document.querySelector("[data-wakey]").value.trim(); await api.put("/admin/v1/summaries", { config: { url } }); if (key) await api.put("/admin/v1/summaries/key", { key }); toast("Saved"); return render(true); }
     /* recorder and cameras */
     if ("addrec" in d) return modal(`${mh("Add a recorder")}<label class="bold" for="rn">Recorder name</label><input class="in" id="rn" placeholder="For example, Main shop" autocomplete="off"><p class="sub nm">Dahua recorders connect to our server by themselves. You get the details to type into the recorder next.</p><button class="btn pri wide" type="button" data-confirm="addrec">Add recorder</button>`);
@@ -748,7 +786,7 @@ document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "evq") { S.evQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#evq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
-  if (t.id === "lq") { S.logQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
+  if (t.id === "lq") { S.logQ = t.value; clearTimeout(S.lqTimer); S.lqTimer = setTimeout(() => { const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }, 350); return; }
   if (t.id === "tq") { S.tq = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#tq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (S.edit && (t.dataset.xv || t.dataset.xto || t.id === "x-name" || t.dataset.act === "xclip" || t.dataset.act === "xon" || t.dataset.ev)) { const E = S.edit, d = t.dataset;
     if (d.xv) { E.v[d.xv] = t.value; if (["when", "target"].includes(d.xv)) drawEdit(); } else if (d.ev) { E.v[d.ev] = t.value; if (["when", "target"].includes(d.ev)) drawEdit(); }
@@ -774,6 +812,8 @@ document.addEventListener("change", async (ev) => {
       const body = plate ? { use_anpr: t.checked, ...(t.checked ? { stream: "main" } : {}) } : { use_footfall: t.checked };
       await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${id}`, body); toast("Saved"); const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; return render(true); }
     if (d.act?.startsWith("camon:")) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.act.slice(6)}`, { enabled: t.checked }); toast("Saved"); return loadCurrent(S.cid).then(() => render(true)); }
+    if ("keepdays" in d) { S.keepDays = +t.value; return render(true); }
+    if (t.id === "lfrom" || t.id === "lto") { if (t.id === "lfrom") S.logFrom = t.value; else S.logTo = t.value; return render(true); }
     if (d.camName) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.camName}`, { name: t.value.trim() }); toast("Saved"); }
   } catch (e) { toast(e.code === "use_required" ? "A camera needs at least one use. Turn Watching off to stop it instead." : errText(e), true); render(true); }
 });

@@ -1,4 +1,5 @@
 """The Jas iVision Control Center: four staff roles, the service end date, and setting up a shop (hours, people, events, areas) from the staff side."""
+import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -188,3 +189,54 @@ async def test_every_picture_taken_from_a_camera_is_logged_with_how_long_it_took
     msgs = [r.getMessage() for r in caplog.records]
     assert any(m.startswith(f"snapshot {cam} took ") and m.endswith(" s") for m in msgs)
     assert any("failed after" in m and "snapshot_timeout" in m for m in msgs)
+
+
+async def test_the_message_log_can_be_read_for_a_range_of_days_and_searched(client, make, su):
+    t = await make.tenant(name="Kavin Super Market")
+    staff, support = await make.staff("support"), await make.staff("support")
+    rows = [("+919876543210", "sent", "0 days"), ("+919876543211", "failed", "2 days"), ("+919876543212", "suppressed", "10 days"), ("+919876543213", "queued", "40 days")]
+    for phone, status, ago in rows:
+        await su.execute("INSERT INTO app.notifications (tenant_id, channel, recipient, status, created_at, error) VALUES ($1,'whatsapp',$2,$3::app.delivery_status, now() - $4::interval, $5)", t, phone, status, timedelta(days=int(ago.split()[0])), "No webhook" if status == "suppressed" else None)
+    get = lambda **p: client.get("/admin/v1/messaging/log", params={"tenant_id": str(t), **p}, headers=staff["headers"])
+    assert (await get()).json()["total"] == 4
+    last7 = (await get(**{"from": (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")})).json()
+    assert last7["total"] == 2 and [m["status"] for m in last7["items"]] == ["sent", "failed"]                      # newest first
+    window = (await get(**{"from": (datetime.now() - timedelta(days=12)).strftime("%Y-%m-%d"), "to": (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")})).json()
+    assert window["total"] == 1 and window["items"][0]["status"] == "suppressed"
+    assert (await get(group="Held back")).json()["total"] == 1 and (await get(group="Waiting")).json()["total"] == 1 and (await get(group="Sent")).json()["total"] == 1
+    assert (await get(q="webhook")).json()["total"] == 1 and (await get(q="Kavin")).json()["total"] == 4 and (await get(q="9876543212")).json()["total"] == 1
+    assert (await get(q="100%")).json()["total"] == 0                                                              # a % in the search is a plain character, not "everything"
+    page = (await get(limit=2, offset=2)).json()
+    assert page["total"] == 4 and len(page["items"]) == 2
+
+
+async def test_one_setting_says_how_long_everything_is_kept_and_applies_to_every_customer(client, make, su):
+    owner, admin, support = await make.staff("owner"), await make.staff("admin"), await make.staff("support")
+    a, b = await make.tenant(), await make.tenant()
+    assert (await client.get("/admin/v1/maintenance/keep", headers=owner["headers"])).json()["days"] == 30
+    r = await client.put("/admin/v1/maintenance/keep", json={"days": 90}, headers=admin["headers"])
+    assert r.status_code == 200 and r.json()["days"] == 90
+    for t in (a, b):
+        row = await su.fetchrow("SELECT retention_events_days, retention_snapshots_days FROM app.tenants WHERE id=$1", t)
+        assert (row["retention_events_days"], row["retention_snapshots_days"]) == (90, 90)
+    new = (await client.post("/admin/v1/tenants", json={"name": "Fresh Shop", "plan_id": "full"}, headers=owner["headers"])).json()["id"]
+    assert await su.fetchval("SELECT retention_events_days FROM app.tenants WHERE id=$1", uuid.UUID(new)) == 90         # a customer added later starts with the same
+    assert (await client.put("/admin/v1/maintenance/keep", json={"days": 3}, headers=owner["headers"])).status_code == 422       # not shorter than a week
+    assert (await client.put("/admin/v1/maintenance/keep", json={"days": 30}, headers=support["headers"])).status_code == 403
+    await su.execute("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, created_at) VALUES ($1,'camera_offline','warning','Old','x', now() - interval '40 days'), ($1,'camera_offline','warning','New','x', now())", a)
+    p = (await client.get("/admin/v1/maintenance/keep/preview", params={"days": 30}, headers=owner["headers"])).json()
+    assert p["alerts"] >= 1 and set(p) == {"alerts", "messages", "people_counts", "plate_reads", "pictures_and_clips"}
+    await client.put("/admin/v1/maintenance/keep", json={"days": 30}, headers=owner["headers"])
+
+
+async def test_an_alert_that_is_still_being_sent_is_never_cleaned_up(client, make, su):
+    from app.services import retention
+    t = await make.tenant()
+    await su.execute("UPDATE app.tenants SET retention_events_days=7 WHERE id=$1", t)
+    old = await su.fetchval("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, created_at) VALUES ($1,'camera_offline','warning','Old','x', now() - interval '20 days') RETURNING id", t)
+    waiting = await su.fetchval("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, created_at) VALUES ($1,'camera_offline','warning','Waiting','x', now() - interval '20 days') RETURNING id", t)
+    await su.execute("INSERT INTO app.notifications (tenant_id, alert_id, channel, recipient, status) VALUES ($1,$2,'whatsapp','+919876543210','queued')", t, waiting)
+    import time
+    await retention.purge_alerts(time.monotonic() + 30)
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE id=$1", old) == 0
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE id=$1", waiting) == 1
