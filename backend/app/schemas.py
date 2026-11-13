@@ -25,7 +25,6 @@ class TenantOut(BaseModel):
     state: str | None
     status: str
     plan_id: str
-    partner_id: UUID | None
     camera_limit: int
     price_override_paise: int | None = None
     trial_ends_at: datetime | None
@@ -53,7 +52,6 @@ class TenantCreate(Strict):
     owner_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")] | None = None
     city: Name
     plan_id: str
-    partner_id: UUID | None = None
     camera_limit: int = Field(5, ge=0, le=5000)
     ends_on: date | None = None
     msg_language: Literal["en", "ta", "en+ta"] = "en+ta"
@@ -65,7 +63,6 @@ class TenantPatch(Strict):
     owner_name: Name | None = None
     owner_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120, pattern=r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$")] | None = None
     owner_phones: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=30)]] | None = Field(None, min_length=1, max_length=3)
-    partner_id: UUID | None = None
     camera_limit: int | None = Field(None, ge=0, le=5000)
     retention_events_days: int | None = Field(None, ge=1, le=730)
     retention_snapshots_days: int | None = Field(None, ge=1, le=90)

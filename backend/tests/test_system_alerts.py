@@ -113,14 +113,6 @@ async def fake_messages(su, t, n):
         await su.execute("INSERT INTO app.notifications (tenant_id, channel, recipient, status) VALUES ($1,'whatsapp','+919876543210','sent')", t)
 
 
-async def invoice(su, t, due_in_days, status="issued"):
-    number = "INV-" + uuid.uuid4().hex[:6].upper()
-    await su.execute(
-        """INSERT INTO app.invoices (tenant_id, period_month, number, status, subtotal_paise, total_paise, tax_rate, issued_at, due_at)
-           VALUES ($1, date_trunc('month', now() - make_interval(days => $4))::date, $2, $5, 1000, 1180, 18, now(), now() + make_interval(days => $3))""", t, number, due_in_days, abs(due_in_days) * 40, status)
-    return number
-
-
 async def test_the_daily_summary_comes_once_a_day_at_the_chosen_hour_and_only_when_asked_for(client, make, su):
     t, u, _, _ = await setup_cameras(client, make)
     other, _, _, _ = await setup_cameras(client, make)                                                # never asked for it

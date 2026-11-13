@@ -14,7 +14,7 @@ from ..schemas import ReasonIn, TenantCreate, TenantOut, TenantPatch
 router = APIRouter(prefix="/admin/v1", tags=["admin: tenants"])
 
 TENANT_SELECT = """
-SELECT t.id, t.name, t.slug::text AS slug, t.city, t.state, t.status::text AS status, t.plan_id, t.partner_id, t.camera_limit,
+SELECT t.id, t.name, t.slug::text AS slug, t.city, t.state, t.status::text AS status, t.plan_id, t.camera_limit,
        t.price_override_paise, t.trial_ends_at, t.ends_on, t.msg_language, t.owner_name, t.owner_email, coalesce((SELECT array_agg(o.phone ORDER BY o.position) FROM platform.tenant_owner_phones o WHERE o.tenant_id=t.id), '{}') AS owner_phones, t.retention_events_days, t.retention_snapshots_days, t.suspended_at, t.suspended_reason, t.created_at,
        (SELECT string_agg(r.name, ', ' ORDER BY r.name) FROM app.recipients r WHERE r.tenant_id=t.id AND r.active) AS people,
        (SELECT max(n.created_at) FROM app.notifications n WHERE n.tenant_id=t.id) AS last_message_at,
@@ -39,7 +39,6 @@ async def _get(ctx: AdminCtx, tenant_id: UUID) -> dict:
 @router.get("/tenants")
 async def list_tenants(
     status: str | None = Query(None, pattern="^(trial|active|past_due|suspended|cancelled)$"),
-    partner_id: UUID | None = None,
     q: str | None = Query(None, max_length=80),
     limit: int = Query(50, ge=1, le=200),
     cursor: str | None = None,
@@ -53,8 +52,6 @@ async def list_tenants(
 
     if status:
         add("t.status = ?::app.tenant_status", status)
-    if partner_id:
-        add("t.partner_id = ?", partner_id)
     if q:
         add("(t.name ILIKE ? OR t.city ILIKE ?)", f"%{q}%")   # both ? become the same parameter
     c = decode_cursor(cursor)
@@ -98,8 +95,6 @@ def _masked(phones) -> list[str]:
 async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("owner", "onboarding"))):
     if not await ctx.conn.fetchval("SELECT 1 FROM platform.plans WHERE id=$1 AND active", body.plan_id):
         raise ApiError(422, "unknown_plan", "That plan does not exist or is not active.")
-    if body.partner_id and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1 AND status='active'", body.partner_id):
-        raise ApiError(422, "unknown_partner", "That partner does not exist or is paused.")
     phones = _owner_phones(body.owner_phones)
     for p in phones:                                        # a clear refusal before anything is made
         other = await ctx.conn.fetchval("SELECT t.name FROM platform.tenant_owner_phones o JOIN app.tenants t ON t.id=o.tenant_id WHERE o.phone=$1", p)
@@ -112,10 +107,10 @@ async def create_tenant(body: TenantCreate, ctx: AdminCtx = Depends(admin_ctx("o
         try:
             async with ctx.conn.transaction():
                 tenant_id = await ctx.conn.fetchval(
-                    """INSERT INTO app.tenants (name, slug, city, plan_id, partner_id, camera_limit, status, trial_ends_at, ends_on, msg_language, retention_events_days, retention_snapshots_days,
+                    """INSERT INTO app.tenants (name, slug, city, plan_id, camera_limit, status, trial_ends_at, ends_on, msg_language, retention_events_days, retention_snapshots_days,
                                                owner_name, owner_email)
-                       VALUES ($1,$2,$3,$4,$5,$6,'trial', now() + interval '14 days', $7, $8, $9, $9, $10, $11) RETURNING id""",
-                    body.name, slug, body.city, body.plan_id, body.partner_id, body.camera_limit, body.ends_on, body.msg_language,
+                       VALUES ($1,$2,$3,$4,$5,'trial', now() + interval '14 days', $6, $7, $8, $8, $9, $10) RETURNING id""",
+                    body.name, slug, body.city, body.plan_id, body.camera_limit, body.ends_on, body.msg_language,
                     await ctx.conn.fetchval("SELECT coalesce((SELECT keep_days FROM platform.data_retention WHERE id), 30)"), body.owner_name, body.owner_email or None,
                 )
                 await _set_owner_phones(ctx.conn, tenant_id, phones)
@@ -152,8 +147,6 @@ async def patch_tenant(tenant_id: UUID, body: TenantPatch, ctx: AdminCtx = Depen
         raise ApiError(422, "owner_name_required", "The owner needs a name.")
     if "camera_limit" in changes and changes["camera_limit"] < before["cameras_in_use"]:
         raise ApiError(409, "limit_below_usage", f"{before['cameras_in_use']} cameras are already in use. Remove some first.")
-    if changes.get("partner_id") and not await ctx.conn.fetchval("SELECT 1 FROM platform.partners WHERE id=$1", changes["partner_id"]):
-        raise ApiError(422, "unknown_partner", "That partner does not exist.")
     cols = list(changes)                                   # keys are validated by the model, never by the client
     async with ctx.conn.transaction():
         if cols:

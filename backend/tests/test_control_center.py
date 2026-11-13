@@ -333,16 +333,6 @@ async def test_console_users_can_be_edited_given_a_new_role_and_deleted_with_car
     assert (await client.delete(url, params={"reason": "Left the company"}, headers=admin["headers"])).status_code == 404
 
 
-async def test_deleting_a_console_user_keeps_the_record_of_what_they_viewed(client, make, su):
-    owner, support = await make.staff("owner"), await make.staff("support")
-    t = await make.tenant()
-    await su.execute("INSERT INTO platform.impersonation_sessions (staff_id, staff_name, tenant_id, reason, expires_at) VALUES ($1,'Staff support',$2,'Checking a complaint', now() + interval '15 minutes')", support["id"], t)     # an old record, from before the feature was removed
-    d = await client.delete(f"/admin/v1/staff/{support['id']}", params={"reason": "Left the company"}, headers=owner["headers"])
-    assert d.status_code == 204, d.text
-    row = await su.fetchrow("SELECT staff_id, staff_name, reason FROM platform.impersonation_sessions WHERE tenant_id=$1", t)
-    assert row["staff_id"] is None and row["staff_name"] == "Staff support" and row["reason"] == "Checking a complaint"
-
-
 async def test_a_plate_camera_keeps_the_in_direction_staff_set_and_the_worker_is_told_about_it(client, make, su):
     t, u, (cam,), rec = await setup_cameras(client, make, plan="full", anpr=1)
     onboarding = await make.staff("onboarding")

@@ -1,6 +1,6 @@
 -- Jas iVision: PostgreSQL 16 schema (multi-tenant, shared database, row-level security)
 -- Two schemas:
---   platform : things only you (the platform owner) manage: staff, partners, plans, audit log
+--   platform : things only you (the platform owner) manage: staff, plans, audit log
 --   app      : everything that belongs to a customer (tenant). Every table carries tenant_id and is protected by RLS.
 --
 -- Database roles (create these with real passwords in your migration tool, not here):
@@ -55,25 +55,6 @@ CREATE TABLE platform.staff_users (
   totp_last_step         bigint NOT NULL DEFAULT 0, -- the last 30-second step accepted, so a code cannot be used twice
   failed_logins          integer NOT NULL DEFAULT 0,
   locked_until           timestamptz
-);
-
-CREATE TABLE platform.partners (
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name             text NOT NULL,
-  city             text,
-  commission_rate  numeric(5,4) NOT NULL DEFAULT 0 CHECK (commission_rate BETWEEN 0 AND 1),
-  status           text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused')),
-  created_at       timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE platform.partner_users (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  partner_id    uuid NOT NULL REFERENCES platform.partners(id) ON DELETE CASCADE,
-  email         citext NOT NULL UNIQUE,
-  name          text NOT NULL,
-  status        text NOT NULL DEFAULT 'active',
-  auth_subject  text UNIQUE,
-  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE platform.plans (
@@ -209,25 +190,6 @@ CREATE TABLE platform.webhook_settings (
   link_hours                integer NOT NULL DEFAULT 4 CHECK (link_hours BETWEEN 1 AND 4)
 );
 
--- The company issuing invoices, tax and payment terms, and the unit costs used to estimate margin. One row.
-CREATE TABLE platform.billing_settings (
-  id                   boolean PRIMARY KEY DEFAULT true CHECK (id),
-  legal_name           text NOT NULL DEFAULT '',
-  address              text NOT NULL DEFAULT '',
-  gstin                text NOT NULL DEFAULT '',
-  state_code           text NOT NULL DEFAULT '',        -- the seller's state (first two digits of the GSTIN)
-  sac_code             text NOT NULL DEFAULT '',        -- service accounting code shown on invoices; confirm with your accountant
-  bank_details         text NOT NULL DEFAULT '',
-  invoice_prefix       text NOT NULL DEFAULT 'GI',
-  gst_rate_percent     numeric(5,2) NOT NULL DEFAULT 18 CHECK (gst_rate_percent BETWEEN 0 AND 40),
-  due_days             integer NOT NULL DEFAULT 15 CHECK (due_days BETWEEN 0 AND 120),
-  auto_suspend_days    integer CHECK (auto_suspend_days IS NULL OR auto_suspend_days BETWEEN 1 AND 365),   -- NULL: never suspend automatically
-  cost_per_million_frames_paise bigint NOT NULL DEFAULT 15000 CHECK (cost_per_million_frames_paise >= 0),
-  cost_per_gb_month_paise       integer NOT NULL DEFAULT 200 CHECK (cost_per_gb_month_paise >= 0)
-);
-INSERT INTO platform.billing_settings DEFAULT VALUES;
-CREATE TABLE platform.invoice_counters (fy text PRIMARY KEY, last integer NOT NULL DEFAULT 0);
-
 -- What the background jobs did and when (retention cleanup and similar), so an administrator can see it ran.
 CREATE TABLE platform.job_runs (
   id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -281,7 +243,6 @@ CREATE TABLE app.tenants (
   status                   app.tenant_status NOT NULL DEFAULT 'trial',
   plan_id                  text NOT NULL REFERENCES platform.plans(id),
   price_override_paise     integer CHECK (price_override_paise >= 0),   -- a price this customer keeps after the plan price changed; NULL = follow the plan
-  partner_id               uuid REFERENCES platform.partners(id),
   camera_limit             integer NOT NULL DEFAULT 5 CHECK (camera_limit >= 0),
   trial_ends_at            timestamptz,
   retention_events_days    integer NOT NULL DEFAULT 30,
@@ -317,7 +278,6 @@ CREATE TABLE app.tenants (
   billing_customer_id      text,                      -- Razorpay / Stripe customer
   created_at               timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX tenants_partner_idx ON app.tenants (partner_id);
 CREATE INDEX tenants_status_idx  ON app.tenants (status);
 
 CREATE TABLE app.tenant_users (
@@ -608,23 +568,6 @@ CREATE TABLE app.ai_view_frames (
   jpeg      bytea NOT NULL
 );
 
--- Live view and AI view from the customer app. A session is one person watching one camera for a limited time (see services/live.py).
-CREATE TABLE app.live_sessions (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id  uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  camera_id  uuid NOT NULL REFERENCES app.cameras(id) ON DELETE CASCADE,
-  user_id    uuid NOT NULL,
-  mode       text NOT NULL CHECK (mode IN ('live','ai')),
-  started_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz NOT NULL,                      -- closes by itself at this time unless extended
-  max_end_at timestamptz NOT NULL,                      -- the hard limit, however many times it is extended
-  extensions integer NOT NULL DEFAULT 0,
-  ended_at   timestamptz,
-  ended_why  text
-);
-CREATE INDEX live_sessions_tenant_idx ON app.live_sessions (tenant_id, started_at DESC);
-CREATE INDEX live_sessions_active_idx ON app.live_sessions (tenant_id) WHERE ended_at IS NULL;
-
 -- Phones and browsers that have signed in to the customer app and agreed to notifications. One row per device (the token is the device's address at Google/Apple).
 CREATE TABLE app.push_devices (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -757,76 +700,6 @@ CREATE INDEX reports_queue_idx  ON app.reports (created_at) WHERE status = 'queu
 
 ALTER TABLE app.notifications ADD FOREIGN KEY (report_id) REFERENCES app.reports(id) ON DELETE CASCADE;
 
--- Invoices. Amounts are whole paise. Numbers are issued gaplessly per financial year when an invoice is issued, never for a draft.
-CREATE TABLE app.invoices (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id       uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  period_month    date NOT NULL CHECK (period_month = date_trunc('month', period_month)::date),
-  number          text UNIQUE,
-  status          text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','paid','void')),
-  subtotal_paise  bigint NOT NULL CHECK (subtotal_paise >= 0),
-  cgst_paise      bigint NOT NULL DEFAULT 0,
-  sgst_paise      bigint NOT NULL DEFAULT 0,
-  igst_paise      bigint NOT NULL DEFAULT 0,
-  total_paise     bigint NOT NULL,
-  tax_rate        numeric(5,2) NOT NULL,
-  seller          jsonb,                                -- seller and buyer details frozen when issued, so a later change never rewrites an old invoice
-  buyer           jsonb,
-  issued_at       timestamptz,
-  due_at          timestamptz,
-  paid_at         timestamptz,
-  payment_method  text,
-  payment_reference text,
-  void_reason     text,
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  CHECK (status = 'draft' OR number IS NOT NULL OR status = 'void')
-);
-CREATE UNIQUE INDEX invoices_one_per_month ON app.invoices (tenant_id, period_month) WHERE status <> 'void';
-CREATE INDEX invoices_due_idx ON app.invoices (due_at) WHERE status = 'issued';
-
-CREATE TABLE app.invoice_lines (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_id   uuid NOT NULL REFERENCES app.invoices(id) ON DELETE CASCADE,
-  tenant_id    uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  description  text NOT NULL,
-  camera_days  integer NOT NULL,
-  unit_paise   bigint NOT NULL,                         -- price per camera per month
-  amount_paise bigint NOT NULL
-);
-CREATE INDEX invoice_lines_idx ON app.invoice_lines (invoice_id);
-
--- Daily metering. Feeds the admin billing page (revenue, cost, margin per tenant).
-CREATE TABLE app.usage_daily (
-  tenant_id           uuid NOT NULL REFERENCES app.tenants(id) ON DELETE CASCADE,
-  day                 date NOT NULL,
-  active_cameras      integer NOT NULL DEFAULT 0,
-  frames_analysed     bigint  NOT NULL DEFAULT 0,
-  alerts_whatsapp     integer NOT NULL DEFAULT 0,
-  alerts_email        integer NOT NULL DEFAULT 0,
-  storage_bytes       bigint  NOT NULL DEFAULT 0,
-  compute_cost_paise  bigint  NOT NULL DEFAULT 0,
-  billable_cameras    integer NOT NULL DEFAULT 0,       -- active cameras on a day the account was paying (trial and suspended days bill nothing)
-  plan_id             text,                              -- the plan that day, so a mid-month change is billed fairly
-  messaging_cost_paise bigint NOT NULL DEFAULT 0,
-  PRIMARY KEY (tenant_id, day)
-);
-
--- Staff access to a tenant ("view as customer"). Tokens issued from this row are read-only and short-lived.
-CREATE TABLE platform.impersonation_sessions (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id    uuid REFERENCES platform.staff_users(id) ON DELETE SET NULL,     -- empty once that person is deleted; staff_name keeps who it was
-  staff_name  text,
-  tenant_id   uuid NOT NULL REFERENCES app.tenants(id),
-  reason      text NOT NULL CHECK (length(trim(reason)) >= 5),
-  read_only   boolean NOT NULL DEFAULT true,
-  notified    boolean NOT NULL DEFAULT false,
-  started_at  timestamptz NOT NULL DEFAULT now(),
-  expires_at  timestamptz NOT NULL,
-  ended_at    timestamptz,
-  CHECK (expires_at > started_at AND expires_at <= started_at + interval '60 minutes')
-);
-CREATE INDEX imp_tenant_idx ON platform.impersonation_sessions (tenant_id, started_at DESC);
-
 -- Refresh tokens, invitations and password resets. Only a hash of each token is stored, so a copy of the database cannot be used to sign in.
 CREATE TABLE platform.auth_tokens (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -922,8 +795,6 @@ REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker,
 GRANT SELECT ON platform.audit_log TO platform_admin;
 GRANT INSERT ON platform.audit_log TO platform_admin, service_worker;
 GRANT INSERT ON platform.job_runs TO service_worker;
-GRANT SELECT ON platform.billing_settings TO service_worker;
-GRANT SELECT, INSERT, UPDATE ON platform.invoice_counters TO service_worker, platform_admin;
 GRANT SELECT ON platform.job_runs TO platform_admin;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA platform TO platform_admin, service_worker;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO app_user, platform_admin, service_worker;
