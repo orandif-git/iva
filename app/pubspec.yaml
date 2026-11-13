@@ -43,6 +43,8 @@ dependencies:
   firebase_core: ^5.1.0
   firebase_messaging: ^17.0.1
   url_launcher: ^6.3.3
+  # The refresh token is a password in all but name: keep it in the platform's protected store, never a preferences file.
+  flutter_secure_storage: ^11.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

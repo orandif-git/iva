@@ -11,6 +11,21 @@ from tests.test_registrar_flow import env  # noqa: F401  (the fixture that start
 DATA = bytes(random.Random(1).randrange(256) for _ in range(30_000))                # stands in for program-stream bytes
 
 
+def _loopback_alias_available() -> bool:
+    """Linux routes all of 127.0.0.0/8 to the loopback; macOS has only 127.0.0.1 unless an alias is added by hand. The two spoofing
+    tests below need a *different* source address on this machine, so they are skipped where the alias does not exist."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(("127.0.0.2", 0))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+requires_loopback_alias = pytest.mark.skipif(not _loopback_alias_available(), reason="this machine has no 127.0.0.2 loopback alias")
+
+
 async def ready(env, cred, dev):
     env.cfg.probe_retries = 0                                       # no automatic check: the viewer's own request starts the stream
     assert await dev.register() == 200
@@ -277,6 +292,7 @@ async def test_a_slow_viewer_is_disconnected_and_the_others_are_unharmed(env):
 
 
 # ------------------------------------------------------------ untrusted media
+@requires_loopback_alias
 async def test_only_the_recorders_own_address_may_send_media(env, http):
     env.cfg.relay_stall_seconds = 5.0
     t, u, cred, dev = await env.onboard(send_rtp=False)
@@ -314,6 +330,7 @@ async def test_a_different_stream_id_and_garbage_are_ignored(env):
     env.reg.relay.release(stream, sub)
 
 
+@requires_loopback_alias
 async def test_a_stranger_cannot_connect_to_the_tcp_media_port(env):
     env.cfg.relay_media_transport = "tcp"
     env.cfg.relay_stall_seconds = 5.0

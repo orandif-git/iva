@@ -160,7 +160,7 @@ class _LiveViewState extends State<LiveView> with WidgetsBindingObserver {
       PictureSize.enlarge => SizedBox(height: h * 0.72, width: double.infinity, child: Center(child: RotatedBox(quarterTurns: 1, child: AspectRatio(aspectRatio: 16 / 9, child: scene)))),
     };
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(20), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
+      SelectionContainer.disabled(child: ClipRRect(borderRadius: BorderRadius.circular(Radii.tile), child: ColoredBox(color: const Color(0xFF243449), child: picture))),
       if (widget.compact) ...[
         const SizedBox(height: 10),
         Segments<PictureSize>(
@@ -249,12 +249,12 @@ class _ModeCard extends StatelessWidget {
       button: true,
       selected: on,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Radii.button),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: on ? (ai ? t.aiSoft : t.brandSoft) : t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? c : t.line, width: on ? 2 : 1.5)),
+          decoration: BoxDecoration(color: on ? (ai ? t.aiSoft : t.brandSoft) : t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: on ? c : t.line, width: on ? 2 : 1.5)),
           child: Row(children: [
             icon,
             const SizedBox(width: 10),
@@ -283,7 +283,7 @@ class _LiveTagState extends State<_LiveTag> with SingleTickerProviderStateMixin 
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.fromLTRB(9, 4, 11, 4),
-      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .55), borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .55), borderRadius: BorderRadius.circular(Radii.pill)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         FadeTransition(opacity: Tween(begin: .35, end: 1.0).animate(_c), child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFFFF4D3D), shape: BoxShape.circle))),
         const SizedBox(width: 6),
@@ -313,7 +313,7 @@ class _AiTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.fromLTRB(6, 3, 10, 3),
-      decoration: BoxDecoration(gradient: aiGradient, borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(gradient: aiGradient, borderRadius: BorderRadius.circular(Radii.pill)),
       child: const Row(mainAxisSize: MainAxisSize.min, children: [AiSpark(size: 15, color: Colors.white), SizedBox(width: 4), Text('AI view', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))]));
 }
 

@@ -147,34 +147,35 @@ class _AlertWizardState extends State<AlertWizard> {
 
   void _to(int s) => setState(() { forward = s > step; step = s; });
 
+  /// The steps this alert actually has, in order. A system alert has no camera step; an alert with no numbers has no settings step,
+  /// so the count shown to the person matches the steps they will really see.
+  List<int> get _path => [1, 2, if (hasWhere) 3, if (hasSettings) 4, 5];
+
   void next() {
-    if (step == 2) {
-      _to(hasWhere ? 3 : (hasSettings ? 4 : 5));
-    } else if (step == 3) {
+    final p = _path;
+    final i = p.indexOf(step);
+    if (i < 0 || i == p.length - 1) return;
+    if (step == 3) {
       picture = null;
       _loadPicture();
-      _to(4);
-    } else {
-      _to(step + 1);
     }
+    _to(p[i + 1]);
   }
 
-  bool get canGoBack {
-    if (widget.edit == null) return step > 1;
-    return step == 5 || (step == 4 && hasWhere);
-  }
+  /// Back always works while there is an earlier step; it never traps the person on the first step of an edit.
+  bool get canGoBack => !saving && !saved && _path.indexOf(step) > 0;
 
   void back() {
-    if (step == 5) {
-      _to(hasSettings ? 4 : 2);
-    } else if (step == 4) {
-      _to(hasWhere ? 3 : 2);
-    } else {
-      _to(step - 1);
-    }
+    final p = _path, i = p.indexOf(step);
+    if (i > 0) _to(p[i - 1]);
   }
 
-  int get stepNo => step == 6 ? 5 : step;
+  int get stepNo {
+    final i = _path.indexOf(step);
+    return i < 0 ? 1 : i + 1;
+  }
+
+  int get stepCount => _path.length;
 
   Future<void> _save() async {
     setState(() { saving = true; error = null; });
@@ -215,7 +216,7 @@ class _AlertWizardState extends State<AlertWizard> {
                     key: ValueKey(step),
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                     children: [
-                      if (step < 6) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('Step $stepNo of 5 · ${_stages[stepNo - 1]}', style: TextStyle(color: t.fg2, fontWeight: FontWeight.w600, fontSize: 13))),
+                      if (step < 6) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('Step $stepNo of $stepCount · ${_stages[step - 1]}', style: TextStyle(color: t.fg2, fontWeight: FontWeight.w600, fontSize: 13))),
                       if (loading) const SkeletonRows() else ...switch (step) { 1 => _kind(t), 2 => _alert(t), 3 => _where(t), 4 => _settings(t), 5 => _who(t), _ => _done(t) },
                       if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: t.crit, fontWeight: FontWeight.w600))),
                     ],
@@ -225,7 +226,7 @@ class _AlertWizardState extends State<AlertWizard> {
             ),
           ),
         ),
-        if (!loading && step > 1 && step < 6) _ActionBar(summary: def == null ? null : [def!.title, if (hasWhere && camera != null) camera!.name].join(' · '), canBack: canGoBack, onBack: back, last: step == 5, canGo: step < 5 ? canContinue : (who.values.any((v) => v) && !saving), busy: saving, onGo: step < 5 ? next : _save),
+        if (!loading && step > 1 && step < 6) _ActionBar(summary: def == null ? null : [def!.title, if (hasWhere && camera != null) camera!.name].join(' · '), canBack: canGoBack, onBack: back, last: step == _path.last, canGo: step != _path.last ? canContinue : (who.values.any((v) => v) && !saving), busy: saving, onGo: step == _path.last ? _save : next),
       ]),
     );
   }
@@ -313,7 +314,7 @@ class _AlertWizardState extends State<AlertWizard> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
                 child: Row(children: [
-                  Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.bedtime_outlined, color: t.brand, size: 21)),
+                  Container(width: 40, height: 40, decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.chip)), child: Icon(Icons.bedtime_outlined, color: t.brand, size: 21)),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     const Text('Do not message me at night', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
@@ -437,14 +438,14 @@ class _KindCard extends StatelessWidget {
       button: true,
       label: title,
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(Radii.card),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: ai ? LinearGradient(colors: [t.aiSoft, t.surface], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
             color: ai ? null : t.surface,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(Radii.card),
             border: Border.all(color: ai ? t.ai.withValues(alpha: .45) : t.line, width: 1.5),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -477,12 +478,12 @@ class _AlertChoice extends StatelessWidget {
       button: true,
       selected: on,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(Radii.tile),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
+          decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(Radii.tile), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Badge2(iconFor(def), def.smart ? Level.ai : Level.ok, ai: def.smart, size: 44),
@@ -516,7 +517,7 @@ class _Bubble extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 320),
         padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-        decoration: BoxDecoration(color: dark ? const Color(0xFF1F3B2D) : const Color(0xFFDCF8C6), borderRadius: const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(14), bottomLeft: Radius.circular(14), bottomRight: Radius.circular(14))),
+        decoration: BoxDecoration(color: dark ? const Color(0xFF1F3B2D) : const Color(0xFFDCF8C6), borderRadius: const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(Radii.control), bottomLeft: Radius.circular(Radii.control), bottomRight: Radius.circular(Radii.control))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text('Jas iVision', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: dark ? const Color(0xFF7FD6A0) : const Color(0xFF0B6B3A))),
           const SizedBox(height: 2),
@@ -540,12 +541,12 @@ class _CameraTile extends StatelessWidget {
       selected: on,
       label: '${c.name}, ${c.working ? 'working' : 'offline'}',
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(Radii.tile),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: on ? t.accent : t.line, width: on ? 2.5 : 1.5)),
+          decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.tile), border: Border.all(color: on ? t.accent : t.line, width: on ? 2.5 : 1.5)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: Stack(children: [
@@ -573,7 +574,7 @@ class _Sentence extends StatelessWidget {
     final t = Tok.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(Radii.button)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.notes_rounded, color: t.brand, size: 22), const SizedBox(width: 12), Expanded(child: Text(text, style: TextStyle(fontSize: 15.5, height: 1.45, fontWeight: FontWeight.w600, color: t.fg)))]),
     );
   }
@@ -592,12 +593,12 @@ class _Pick2 extends StatelessWidget {
       checked: on,
       button: true,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Radii.button),
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
+          decoration: BoxDecoration(color: on ? t.brandSoft : t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: on ? t.accent : t.line, width: on ? 2 : 1.5)),
           child: Row(children: [
             if (avatar != null) ...[Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(gradient: brandGradient, shape: BoxShape.circle), child: Text(avatar!.isEmpty ? '?' : avatar![0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))), const SizedBox(width: 14)],
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700)), if (sub.isNotEmpty) Text(sub, style: TextStyle(color: t.fg2, fontSize: 13))])),
@@ -644,7 +645,7 @@ class _Stepper extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: t.line, width: 1.5)),
+      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(Radii.button), border: Border.all(color: t.line, width: 1.5)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)), Text(unit, style: TextStyle(color: t.fg2, fontSize: 13))])),

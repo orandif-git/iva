@@ -69,7 +69,7 @@ void main() {
 
   Future<(ApiRepository, ApiClient, Fake)> signedIn() async {
     final f = Fake();
-    final c = ApiClient(base: 'http://x', client: MockClient((r) async => f.handle(r)));
+    final c = ApiClient(base: 'http://x', client: MockClient((r) async => f.handle(r)), tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await c.restore();
     await c.signIn('a@b.test', 'pw');
     return (ApiRepository(c), c, f);
@@ -84,7 +84,7 @@ void main() {
   });
 
   test('a staff account is handed to the staff console, not signed in here', () async {
-    final c = ApiClient(base: 'http://x', client: MockClient((r) async => http.Response('{"kind":"staff","access_token":"s","refresh_token":"t"}', 200)));
+    final c = ApiClient(base: 'http://x', client: MockClient((r) async => http.Response('{"kind":"staff","access_token":"s","refresh_token":"t"}', 200)), tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await c.restore();
     expect(await c.signIn('s@b.test', 'pw'), 'staff');
     expect(c.takeStaffToken(), 't', reason: 'handed to the console, once');
@@ -192,7 +192,7 @@ void main() {
       }
       return http.Response(jsonEncode(r.headers['Authorization'] == 'Bearer a1' ? {'ok': true} : {'error': {'code': 'x', 'message': 'no'}}), r.headers['Authorization'] == 'Bearer a1' ? 200 : 401);
     });
-    final api = ApiClient(base: 'https://x.test', client: client);
+    final api = ApiClient(base: 'https://x.test', client: client, tokens: PrefsTokenStore(await SharedPreferences.getInstance()));
     await api.restore();
     expect(api.signedIn, true);
     final out = await Future.wait([api.call('GET', '/v1/me'), api.call('GET', '/v1/health-summary'), api.call('GET', '/v1/cameras'), api.call('GET', '/v1/push')]);

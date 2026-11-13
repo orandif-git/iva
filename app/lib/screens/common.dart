@@ -25,7 +25,7 @@ class Pill extends StatelessWidget {
     final (bg, fg) = levelColors(Tok.of(context), level);
     return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.pill)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (dot) ...[Container(width: 7, height: 7, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)), const SizedBox(width: 6)],
           if (icon != null) ...[Icon(icon, size: 13, color: fg), const SizedBox(width: 4)],
@@ -209,7 +209,7 @@ class StatusPill extends StatelessWidget {
     final (bg, fg) = levelColors(Tok.of(context), level);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.button)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 8, height: 8, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)),
         const SizedBox(width: 8),
@@ -238,7 +238,7 @@ class StatStrip extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(items[i].$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.fg2, fontSize: 12.5)),
                   const SizedBox(height: 4),
-                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(items[i].$2, style: display(26))),
+                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(items[i].$2, style: figure(26))),
                 ]),
               ),
             ),
@@ -274,7 +274,7 @@ class Segments<T> extends StatelessWidget {
                   height: 44,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  decoration: BoxDecoration(color: v == value ? t.surface : Colors.transparent, borderRadius: BorderRadius.circular(12), boxShadow: v == value ? [BoxShadow(color: t.shadow.withValues(alpha: .08), blurRadius: 4, offset: const Offset(0, 1))] : null),
+                  decoration: BoxDecoration(color: v == value ? t.surface : Colors.transparent, borderRadius: BorderRadius.circular(Radii.chip), boxShadow: v == value ? [BoxShadow(color: t.shadow.withValues(alpha: .08), blurRadius: 4, offset: const Offset(0, 1))] : null),
                   child: FittedBox(fit: BoxFit.scaleDown, child: Text(label, maxLines: 1, style: TextStyle(fontSize: 13.5, fontWeight: v == value ? FontWeight.w700 : FontWeight.w500, color: t.fg))),
                 ),
               ),

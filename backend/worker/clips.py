@@ -86,8 +86,9 @@ async def encode_mp4(jpegs: list[bytes], *, fps: int = OUT_FPS, ffmpeg: str = "f
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "clip.mp4"
             cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-",
-                   "-vf", f"scale='trunc(min({width},iw)/2)*2':-2,format=yuv420p", "-c:v", "libx264", "-profile:v", "main", "-preset", "veryfast", "-crf", str(crf),
-                   "-r", str(fps), "-movflags", "+faststart", "-an", str(out)]
+                   # JPEG frames are full-range; out_range=tv converts them so the H.264 clip is ordinary yuv420p, which phones and browsers play.
+                   "-vf", f"scale='trunc(min({width},iw)/2)*2':-2:out_range=tv,format=yuv420p", "-c:v", "libx264", "-profile:v", "main", "-pix_fmt", "yuv420p",
+                   "-preset", "veryfast", "-crf", str(crf), "-r", str(fps), "-movflags", "+faststart", "-an", str(out)]
             try:
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
                 _, err = await asyncio.wait_for(proc.communicate(b"".join(jpegs)), timeout)

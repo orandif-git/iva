@@ -161,6 +161,8 @@ Roles: `O` Owner, `S` Support, `T` Technician, `F` Finance, `N` read-only analys
 | GET | `/admin/v1/overview/attention` | all | Offline recorders, overdue payments, trials ending, recorders never connected |
 | GET | `/admin/v1/health` | all | Registrar, media relay, workers, queue, database, WhatsApp status |
 | GET | `/admin/v1/metrics/frames` | all | Frames analysed per hour |
+| GET | `/admin/v1/search` | all | `?q&limit` (1–20, default 6): customers and recorders by name, city, device id or customer. Pages are matched in the console itself from `routes.js`. |
+| GET | `/admin/v1/events` | all | Server-sent events, one connection per console tab. `event: counts` with `{kind, alerts_open, recorders_offline, recorders_never, trials, customers}` whenever a number changes; keep-alive comments otherwise. Read with `fetch` (the token is a header, never a URL); the browser reconnects every 5 s. A proxy must not buffer this response (`X-Accel-Buffering: no`). |
 
 ### Tenants
 | Method | Route | Role | Purpose |

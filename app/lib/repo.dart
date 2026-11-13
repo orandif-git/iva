@@ -53,6 +53,7 @@ abstract class Repository {
   Future<void> deletePerson(String id);
   Future<List<AlertDef>> alertDefs();
   Future<List<Person>> people();
+
   Future<OpeningHours> openingHours();
   Future<void> saveOpeningHours(OpeningHours h);
   Future<Uint8List?> snapshot(String cameraId);
@@ -230,9 +231,9 @@ class ApiRepository implements Repository {
 
   @override
   Future<Footfall> today() async {
-    final n = DateTime.now();
-    final from = DateTime(n.year, n.month, n.day);
-    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': from.toUtc().toIso8601String(), 'to': n.add(const Duration(hours: 1)).toUtc().toIso8601String()}) as Map<String, dynamic>);
+    // The server cuts days at midnight in India, so "today" must be the same day there as the other ranges,
+    // not midnight on whatever timezone this phone happens to use.
+    return Footfall.fromJson(await api.call('GET', '/v1/footfall/summary', query: {'from': _istDay(0), 'to': _istDay(1), 'tz': 'Asia/Kolkata'}) as Map<String, dynamic>);
   }
 
   @override
@@ -647,6 +648,7 @@ class MockRepository implements Repository {
   Future<List<AlertDef>> alertDefs() async => _defs;
   @override
   Future<List<Person>> people() async => List.of(_people);
+
   OpeningHours hours = const OpeningHours();
   @override
   Future<OpeningHours> openingHours() async => hours;

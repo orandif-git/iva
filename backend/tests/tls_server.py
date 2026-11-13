@@ -18,9 +18,15 @@ def make_cert(dirpath: str, names=("localhost",)):
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0])])
     now = datetime.datetime.now(datetime.timezone.utc)
+    sans = []
+    for n in names:
+        try:
+            sans.append(x509.IPAddress(ipaddress.ip_address(n)))
+        except ValueError:
+            sans.append(x509.DNSName(n))
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(x509.random_serial_number())
             .not_valid_before(now - datetime.timedelta(minutes=5)).not_valid_after(now + datetime.timedelta(days=2))
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(n) for n in names]), critical=False)
+            .add_extension(x509.SubjectAlternativeName(sans), critical=False)
             .sign(key, hashes.SHA256()))
     cert_path, key_path = f"{dirpath}/cert.pem", f"{dirpath}/key.pem"
     open(cert_path, "wb").write(cert.public_bytes(serialization.Encoding.PEM))
@@ -31,7 +37,9 @@ def make_cert(dirpath: str, names=("localhost",)):
 class TlsServer:
     def __init__(self, app, host="127.0.0.1"):
         self.dir = tempfile.mkdtemp()
-        self.cert, key = make_cert(self.dir)
+        # cert names both spellings so the URL can stay 127.0.0.1; "localhost" resolves to ::1 on macOS while uvicorn binds IPv4 only.
+        self.cert, key = make_cert(self.dir, names=("localhost", "127.0.0.1"))
+        self.host = host
         cfg = uvicorn.Config(app, host=host, port=0, ssl_certfile=self.cert, ssl_keyfile=key, log_level="error", lifespan="off")
         self.server = uvicorn.Server(cfg)
         self.thread = threading.Thread(target=lambda: asyncio.run(self.server.serve()), daemon=True)
@@ -53,4 +61,4 @@ class TlsServer:
         return ssl.create_default_context(cafile=self.cert)
 
     def url(self, path="/"):
-        return f"https://localhost:{self.port}{path}"
+        return f"https://{self.host}:{self.port}{path}"

@@ -88,13 +88,13 @@ async def world(client, make, su, bsp_server, smtp_server):
     owner = await make.staff("owner")
     h = owner["headers"]
     secret = (await client.post("/admin/v1/webhooks/settings/secret", headers=h)).json()["secret"]
-    std = await client.post("/admin/v1/webhooks/standard", json={"url": f"https://localhost:{srv.port}/hook/wa", "headers": {"Authorization": TOKEN}}, headers=h)
+    std = await client.post("/admin/v1/webhooks/standard", json={"url": srv.url("/hook/wa"), "headers": {"Authorization": TOKEN}}, headers=h)
     assert std.status_code == 200, std.text
     r = await client.post("/admin/v1/messaging/providers", json={"channel": "email", "name": "Mail", "kind": "smtp", "secrets": {}, "reason": "test setup",
                           "config": {"host": "127.0.0.1", "port": smtp_port, "security": "none", "from_email": "alerts@gi.test", "from_name": "Jas iVision"}}, headers=h)
     assert r.status_code == 201, r.text
     assert (await client.post(f"/admin/v1/messaging/providers/{r.json()['id']}/activate", params={"reason": "test setup"}, headers=h)).status_code == 200
-    return {"admin": h, "hook": rx, "smtp": smtp, "srv": srv, "secret": secret, "url": f"https://localhost:{srv.port}/hook/wa"}
+    return {"admin": h, "hook": rx, "smtp": smtp, "srv": srv, "secret": secret, "url": srv.url("/hook/wa")}
 
 
 async def endpoint_of(client, world, alert_type):
