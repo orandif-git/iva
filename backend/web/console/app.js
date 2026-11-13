@@ -72,7 +72,7 @@ const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate
 
 /* ------------------------------------------------------------------------------------------------ state */
 const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", logRange: "7", logFrom: "", logTo: "", logData: null, evQ: "", keepDays: null, evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
-  customers: [], form: null, ev: null, cur: null, data: {}, plans: [], cnt: { range: "today", cam: "all", data: null }, veh: { range: "7", dir: "all", st: "all", q: "", items: [], total: 0, tz: "" } };
+  customers: [], form: null, ev: null, cur: null, viewsByCust: {}, data: {}, plans: [], cnt: { range: "today", cam: "all", data: null }, veh: { range: "7", dir: "all", st: "all", q: "", items: [], total: 0, tz: "" } };
 const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], keep: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"], recs: ["owner", "admin", "onboarding"], editc: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
 const PERMS = [["See all customers and the message log", "oaos"], ["Add a new customer and set it up", "oao-"], ["Edit people, hours and cameras", "oaos"], ["Add and change events", "oao-"], ["Pause or resume a customer", "oa-s"], ["Change the end date", "oa--"], ["Delete a customer", "o---"],
@@ -124,7 +124,7 @@ function side() {
   const el = $("#side"); let h = "";
   if (S.route === "new") h = `<h3>New customer</h3>` + NSTEPS.map((s, i) => `<button class="si" type="button" data-step="${s[0]}" aria-current="${S.step === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.form.done[s[0]] ? "done" : ""}">${S.form.done[s[0]] ? "✓" : i + 1}</span></button>`).join("");
   else if (S.route === "event") { const o = eorder(); h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = !!S.ev.key && !o.includes(s[0]); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join(""); }
-  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ...(S.cur?.id === S.cid && S.cur.views?.people.show ? [["count", "head", "People count"]] : []), ...(S.cur?.id === S.cid && S.cur.views?.vehicles.show ? [["vehicles", "car", "Vehicles"]] : []), ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
+  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ...(S.viewsByCust[S.cid]?.people.show ? [["count", "head", "People count"]] : []), ...(S.viewsByCust[S.cid]?.vehicles.show ? [["vehicles", "car", "Vehicles"]] : []), ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
   else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["keep", "log", "Data kept", can("keep")], ["wa", "wa", "WhatsApp connection", can("wa")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
   if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
   el.hidden = !h; el.innerHTML = h;
@@ -261,9 +261,21 @@ async function createCustomer() {
 const credRows = (c) => Object.entries(c).filter(([k, v]) => v && typeof v !== "object" && !["recorder_id", "protocol"].includes(k)).map(([k, v]) => `<div class="kv"><span>${humanize(k)}</span><span class="sc">${esc(v)}</span></div>`).join("");
 
 /* ------------------------------------------------------------------------------------------------ one customer */
-async function loadCurrent(id) {
-  const base = `/admin/v1/tenants/${id}`, shop = base + "/shop";
+/* What the customer page shows is loaded once and kept. The light part (people, hours, events, cameras, recorders, which pages exist) comes first; the marked areas and
+   plate/line data of every camera are only fetched when the Events list needs them. Opening another section reuses what is loaded and refreshes it quietly. */
+async function fetchCore(id) {
+  const shop = `/admin/v1/tenants/${id}/shop`;
   const [people, hours, events, cams, recs, views] = await Promise.all([api.get(shop + "/people"), api.get(shop + "/hours"), api.get(shop + "/events"), api.get(shop + "/cameras"), api.get(`/admin/v1/recorders?tenant_id=${id}`), api.get(shop + "/views").catch(() => null)]);
+  return { people, hours, events, cams, recs, views };
+}
+async function fetchGeo(id, cams) {
+  const shop = `/admin/v1/tenants/${id}/shop`;
+  const [areas, zones] = await Promise.all([Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/areas`).catch(() => [])])), Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/zones`).catch(() => [])]))]);
+  return { areas: Object.fromEntries(areas), zones: Object.fromEntries(zones) };
+}
+async function loadCurrent(id) {
+  const wantGeo = !!(S.cur && S.cur.id === id && S.cur.geo);                      // a reload after a change keeps what was already loaded
+  const { people, hours, events, cams, recs, views } = await fetchCore(id);
   const c = cust(id);
   const rules = events.filter((e) => e.saved);
   const alertRules = rules.filter((e) => e.enabled && !["daily_summary", "weekly_summary"].includes(e.type)), sumRules = rules.filter((e) => ["daily_summary", "weekly_summary"].includes(e.type));
@@ -271,12 +283,36 @@ async function loadCurrent(id) {
   const daily = events.find((e) => e.type === "daily_summary"), weekly = events.find((e) => e.type === "weekly_summary");
   const f = { _id: id, name: c.name, place: c.place, lang: c.lang, people: people.map((p) => ({ id: p.id, n: p.name, m: p.phone || "", a: inAlerts(p.id), s: inSummary(p.id) })),
     hmode: hours.set ? "set" : "always", hours: hours.days.map((d) => ({ open: d.open, from: d.from, to: d.to })), daily: daily ? daily.enabled : true, dailyAt: String(daily?.params?.hour ?? 8).padStart(2, "0") + ":00", weekly: weekly ? weekly.enabled : true, expiry: c.endsOn || "", done: {} };
-  const areas = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/areas`).catch(() => [])])));
-  const zones = Object.fromEntries(await Promise.all(cams.map(async (c) => [c.id, await api.get(`${shop}/cameras/${c.id}/zones`).catch(() => [])])));
-  S.cur = { id, f, people, events, cams, recs, areas, zones, views, channels: {} };
+  const g = wantGeo ? await fetchGeo(id, cams) : { areas: {}, zones: {} };
+  S.viewsByCust[id] = views;
+  S.cur = { id, f, people, events, cams, recs, areas: g.areas, zones: g.zones, geo: wantGeo, views, channels: {}, at: Date.now() };
+}
+async function ensureGeo() {
+  const C = S.cur; if (!C || C.geo) return;
+  const g = await fetchGeo(C.id, C.cams);
+  if (S.cur === C) { C.areas = g.areas; C.zones = g.zones; C.geo = true; }
+}
+/* Fetch again in the background and update the page only when something it shows has changed (never while a window is open) */
+let skipRefresh = false;
+const sigOf = (o, g) => JSON.stringify([o.events.map((e) => [e.type, e.enabled, e.saved, e.label, e.params, e.recipient_ids]), o.cams.map((c) => [c.id, c.name, c.enabled, c.use_footfall, c.use_anpr, c.use_areas, c.recorder_id]), o.recs.map((r) => [r.id, r.name, r.status, r.device_id]), o.views, g ? [g.areas, g.zones] : null]);
+async function refreshCurrent() {
+  const C = S.cur; if (!C || C.refreshing || Date.now() - (C.at || 0) < 8000) return;
+  C.refreshing = true;
+  try {
+    const core = await fetchCore(C.id), g = C.geo ? await fetchGeo(C.id, core.cams) : null;
+    if (S.cur !== C) return;
+    C.at = Date.now();
+    if (sigOf(core, g) === sigOf(C, C.geo ? { areas: C.areas, zones: C.zones } : null)) return;
+    Object.assign(C, { events: core.events, cams: core.cams, recs: core.recs, views: core.views, people: core.people }); if (g) { C.areas = g.areas; C.zones = g.zones; }
+    S.viewsByCust[C.id] = core.views;
+    if (S.route === "customer" && ["events", "cams", "count", "vehicles"].includes(S.section) && !$("#layer").innerHTML.trim()) { skipRefresh = true; render(true); } else side();
+  } catch { /* the page keeps what it has */ } finally { C.refreshing = false; }
 }
 async function pageCustomer() {
   if (!S.cur || S.cur.id !== S.cid) await loadCurrent(S.cid);
+  else if (skipRefresh) skipRefresh = false;
+  else refreshCurrent();                                                         // the page below uses what is already loaded
+  if (S.section === "events") await ensureGeo();
   const c = cust(S.cid), st = statusOf(c), f = S.cur.f;
   const titles = { people: "Who gets messages", hours: "Business hours", cams: "Recorder and cameras", events: "Events", log: "Messages sent", count: "People count", vehicles: "Vehicles" };
   if (S.section === "count" && !S.cur.views?.people.show || S.section === "vehicles" && !S.cur.views?.vehicles.show) S.section = "events";          // nothing counts people (or reads plates) and nothing is left to show
@@ -813,7 +849,7 @@ document.addEventListener("click", async (ev) => {
     if (d.lrange) { S.logRange = d.lrange; return render(true); }
     if ("lmore" in d) { const where = S.route === "customer" ? S.cid : null; await loadLog(where, true); return render(true); }
     if (d.step) { S.step = d.step; return render(); }
-    if (d.sec) { S.section = d.sec; if (d.sec !== "log") S.cur = null; return render(); }
+    if (d.sec) { S.section = d.sec; return render(); }
     if (d.setup) { S.setup = d.setup; return go("setup"); }
     if ("next" in d) { if (S.step === "shop") { const bad = ownerProblem(S.form); if (bad) return pointAt(...bad); const f = S.form, one = f.people[0]; if (one && ((!one.n && !one.m) || (one.n === f._pn && one.m === f._pm))) { one.n = f.ownerName.trim(); one.m = f.ownerPhones[0].trim(); f._pn = one.n; f._pm = one.m; } }   /* the owner starts as the first person who gets messages */
       S.form.done[S.step] = true; S.step = ORDER[ORDER.indexOf(S.step) + 1]; return render(); }
@@ -876,7 +912,7 @@ document.addEventListener("click", async (ev) => {
     if (d.chall) { const [rid, on] = d.chall.split("|"); S.cur.channels[rid].forEach((c) => { if (!c.enabled_as_camera) c.on = on === "1"; }); return render(true); }
     if (d.addcams) { const rid = d.addcams; let n = 0; for (const ch of S.cur.channels[rid]) { if (ch.enabled_as_camera || !ch.on) continue; await api.post(`/admin/v1/tenants/${S.cid}/shop/cameras`, { recorder_id: rid, channel_no: ch.channel_no, name: ch.name.trim() || "Camera " + ch.channel_no, use_footfall: true }); n++; } delete S.cur.channels[rid]; const keep = S.cur.channels; await loadCurrent(S.cid); S.cur.channels = keep; await loadCustomers(); toast(n ? `${n} camera${n === 1 ? "" : "s"} added` : "Nothing was ticked"); return render(true); }
     /* event wizard */
-    if ("addev" in d) { S.ev = newEv(); S.estep = "event"; return go("event"); }
+    if ("addev" in d) { await ensureGeo(); S.ev = newEv(); S.estep = "event"; return go("event"); }
     if (d.estep) { S.estep = d.estep; if (d.estep === "area" && S.ev.target) return wizardPicture(); return render(); }
     if (d.erec) { S.ev.rec = { id: d.erec }; S.ev.target = null; S.ev.snap = null; return render(true); }
     if (d.ecam && t.classList.contains("offl")) return toast("This camera cannot send a picture right now, so it cannot be marked. Choose it when it is back online.", true);

@@ -118,3 +118,7 @@ Two read-only pages under each customer, in the menu after Events. A page shows 
 - **Vehicles**: plate reads newest first with the picture (vehicle and plate boxed), plate search, range, in or out, "Blocked list" and "Needs review". An entry shows how long the vehicle stayed once an exit of the same plate was read at any of the shop's plate cameras; with no exit it shows "Inside now?" (it may have left unseen). Click a row for a larger picture. "Load more" pages through the list.
 - **Export to Excel** on both pages, with the same builders as the scheduled reports (vehicles: the gate register; people: the footfall summary).
 - Endpoints (staff, all roles can view): `GET /admin/v1/tenants/{id}/shop/views`, `/people-count`, `/people-count/export`, `/vehicles`, `/vehicles/export`. Pictures are short signed links (1 hour) and are offered only while the picture is kept.
+
+## Opening a customer's sections is quick
+
+What a customer's page shows is loaded once and kept. Opening another section reuses it and refreshes it quietly in the background (at most every 8 seconds), updating the page only when something it shows has changed and never while a window is open. The marked areas and plate/line data of every camera are fetched only when the Events list (or the event wizard) needs them. The menu remembers whether People count and Vehicles apply to the customer, so it no longer flickers. Saving a change still reloads the customer's data.
