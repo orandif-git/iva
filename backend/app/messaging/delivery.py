@@ -54,6 +54,28 @@ def endpoint_headers(ep) -> dict[str, str]:
     return json.loads(vault().decrypt(bytes(ep["headers_ciphertext"]), str(ep["id"]))) if ep["headers_ciphertext"] else {}
 
 
+ALERT_AAD = "alert_connection"
+
+
+async def shared(conn) -> dict:
+    """The shared alert connection: its address and key (the key is decrypted here, for sending only)."""
+    r = await conn.fetchrow("SELECT url, key_ciphertext, key_hint FROM platform.alert_connection WHERE id")
+    key = vault().decrypt(bytes(r["key_ciphertext"]), ALERT_AAD) if r and r["key_ciphertext"] else None
+    return {"url": r["url"] if r else None, "key": key, "hint": r["key_hint"] if r else None}
+
+
+async def resolve(conn, ep) -> tuple[str, dict[str, str]]:
+    """Where an endpoint sends and with which headers. An alert that uses the shared connection takes its address and key from there (its other headers are kept)."""
+    headers = endpoint_headers(ep)
+    if ep["use_shared"]:
+        sh = await shared(conn)
+        if sh["url"]:
+            if sh["key"]:
+                headers = {**headers, "Authorization": "Bearer " + sh["key"]}
+            return sh["url"], headers
+    return ep["url"], headers
+
+
 async def claim(n: int):
     async with db.service_tx() as conn:
         return await conn.fetch(
@@ -124,7 +146,7 @@ async def process(n) -> str:
             if not rep or rep["status"] != "ready":
                 return await _finish(n, webhook.Result(False, permanent=False, error="The report is not ready yet."))
             cfg = await webhook_settings(conn)
-            headers = endpoint_headers(ep)
+            url, headers = await resolve(conn, ep)
         elif n["channel"] != "whatsapp" or c["rule_type"] not in cat.CATALOG:
             await conn.execute("UPDATE app.notifications SET status='cancelled', error='Alerts are sent by WhatsApp only.', locked_until=NULL WHERE id=$1", n["id"])
             return "cancelled"
@@ -140,7 +162,7 @@ async def process(n) -> str:
                 await conn.execute("UPDATE app.notifications SET status='cancelled', error='No active webhook for this alert.', locked_until=NULL WHERE id=$1", n["id"])
                 return "cancelled"
             cfg = await webhook_settings(conn)
-            headers = endpoint_headers(ep)
+            url, headers = await resolve(conn, ep)
     if direct_send is not None:
         scfg, skey, text = direct_send
         res = await direct.send(scfg, skey, n["recipient"], text, allow_private=s.messaging_allow_private_hosts, ssl_context=_ssl_context)
@@ -154,7 +176,7 @@ async def process(n) -> str:
         json.loads(body)
     except ValueError:
         return await _finish(n, webhook.Result(False, permanent=True, error="The payload is not valid JSON. Fix the template of this webhook."), event=event, endpoint=ep["id"])
-    res = await webhook.send(ep["url"], headers, body, event=event, delivery_id=str(n["id"]), secret=cfg["secret"], allow_private=s.messaging_allow_private_hosts, ssl_context=_ssl_context)
+    res = await webhook.send(url, headers, body, event=event, delivery_id=str(n["id"]), secret=cfg["secret"], allow_private=s.messaging_allow_private_hosts, ssl_context=_ssl_context)
     return await _finish(n, res, event=event, endpoint=ep["id"])
 
 

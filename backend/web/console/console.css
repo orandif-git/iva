@@ -380,3 +380,4 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .si-pw{position:relative;display:flex}.si-pw .in{padding-right:42px}
 .si-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;background:none;color:var(--fg2);border-radius:8px}
 .si-eye:hover{background:var(--hover);color:var(--head)}.si-eye[aria-pressed="true"]{color:var(--brand)}
+.mb12{margin-bottom:12px}

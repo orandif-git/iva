@@ -149,3 +149,11 @@ storage and the biggest database tables, a rough "more cameras fit" estimate, an
 Each alert (Setup, WhatsApp templates) sends to its own address and needs the provider's key. Open the alert, then "Access key": paste the key, or press "Use the WhatsApp connection key" (Owner) when it is the same key as the summaries use. Ticked "Use it for every alert with this address", it is saved on all alerts that send to the same address in one go. The key goes out as `Authorization: Bearer <key>`; other headers set earlier are kept.
 
 - Endpoint: `POST /admin/v1/webhooks/key` (`endpoint_id`, `key` or `use_connection`, `all_on_address`). The screen only ever learns the last 4 characters (`key_hint`), never the key; the old `headers` field of the alert list was replaced by `header_names` and `key_hint`.
+
+## Shared WhatsApp connection for alerts
+
+Setup, WhatsApp connection has two tabs (Owner only): **Summaries** (the direct-send address and key) and **Alerts** (one address and key for every alert). An alert that "uses the shared connection" sends to the shared address with `Authorization: Bearer <shared key>`, so a changed key is saved once. On the Alerts tab: Save (address, key, or "Use the same key as the summaries"), "Use for all alerts" (switches every alert over; their own address and key are kept but no longer used), and "Send a test" (pick an alert and a number). In an alert's own window, "Use its own address and key" and "Use the shared connection" switch that one alert. "Set up all alerts" needs no address once the shared one is set.
+
+- Endpoints: `GET/PUT /admin/v1/webhooks/connection`, `POST /admin/v1/webhooks/connection/apply`, `POST /admin/v1/webhooks/connection/test` (all Owner only), `use_shared` on `PUT /admin/v1/webhooks/{id}`. Migration 029 (`platform.alert_connection`, `webhook_endpoints.use_shared`).
+- Sending resolves the address and headers in `messaging/delivery.py` (`resolve`), also for the platform-fault alert. The key is stored encrypted and only its last four characters are ever returned.
+- The earlier per-alert "Access key" box (`POST /admin/v1/webhooks/key`) stays for an alert that uses its own address.

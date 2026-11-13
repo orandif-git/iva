@@ -58,14 +58,15 @@ async def track(conn, cameras_affected: int, silent: list[int]) -> tuple[str, di
 
 async def tell_staff(what: str, fault: dict) -> int:
     """Sends the platform_fault webhook event to each person chosen in Platform Admin. Returns how many were sent. Never raises."""
-    from ..messaging.delivery import endpoint_headers, webhook_settings, ssl_context
+    from ..messaging.delivery import resolve, webhook_settings, ssl_context
     try:
         async with db.service_tx() as conn:
             cfg = await settings(conn)
             ep = await conn.fetchrow("SELECT * FROM platform.webhook_endpoints WHERE alert_type='platform_fault'")
             if not cfg["enabled"] or not cfg["people"] or not ep or not ep["active"]:
                 return 0
-            hook, headers = await webhook_settings(conn), endpoint_headers(ep)
+            hook = await webhook_settings(conn)
+            url, headers = await resolve(conn, ep)
         started = what == "started"
         title = "Video analysis stopped" if started else "Video analysis restored"
         mins = int(((fault.get("ended_at") or datetime.now(timezone.utc)) - fault["started_at"]).total_seconds() // 60)
@@ -76,7 +77,7 @@ async def tell_staff(what: str, fault: dict) -> int:
             values = webhook.values_for(tenant_name="Jas iVision", alert_id=fault["id"], title=title, event=cat.event_name("platform_fault"),
                                         details={"location": "Platform", "time": datetime.now(timezone.utc).strftime("%d %b, %H:%M UTC"), "details": detail, "cameras": fault["cameras"]},
                                         person_name=p.get("name", ""), phone=p.get("phone", ""))
-            res = await webhook.send(ep["url"], headers, webhook.render(ep["payload_template"], values).encode(), event=cat.event_name("platform_fault"), delivery_id=str(uuid.uuid4()),
+            res = await webhook.send(url, headers, webhook.render(ep["payload_template"], values).encode(), event=cat.event_name("platform_fault"), delivery_id=str(uuid.uuid4()),
                                      secret=hook["secret"], allow_private=get_settings().messaging_allow_private_hosts, ssl_context=ssl_context())
             sent += 1 if res.ok else 0
         return sent

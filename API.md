@@ -144,6 +144,11 @@ Generated from the code. All `/admin/v1` routes need a staff token (`Authorizati
 - `POST /admin/v1/webhooks/settings/secret`
 - `GET /admin/v1/webhooks/deliveries`
 - `POST /admin/v1/webhooks/deliveries/{notification_id}/resend`
+- `GET /admin/v1/webhooks/connection`
+- `PUT /admin/v1/webhooks/connection`
+- `POST /admin/v1/webhooks/connection/apply`
+- `POST /admin/v1/webhooks/connection/test`
+- `POST /admin/v1/webhooks/key`
 - `PUT /admin/v1/webhooks/{endpoint_id}`
 - `DELETE /admin/v1/webhooks/{endpoint_id}`
 - `POST /admin/v1/webhooks/{endpoint_id}/send-now`

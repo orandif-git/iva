@@ -59,6 +59,7 @@ async def world(client, make, su, bsp_server):
     rx.calls.clear(); rx.script.clear()
     evidence.set_store(None)
     await su.execute("UPDATE app.notifications SET status='cancelled' WHERE status='queued'")
+    await su.execute("UPDATE platform.alert_connection SET url=NULL, key_ciphertext=NULL, key_hint=NULL")
     await su.execute("DELETE FROM platform.webhook_endpoints; DELETE FROM platform.messaging_providers; DELETE FROM platform.alert_switches; DELETE FROM platform.webhook_settings")
     delivery.set_ssl_context(srv.ssl_context())
     owner = await make.staff("owner")
@@ -621,3 +622,66 @@ async def test_the_whatsapp_connection_key_can_be_reused_by_the_owner_only(clien
     ok = await client.post("/admin/v1/webhooks/key", json={"endpoint_id": ep["id"], "use_connection": True, "all_on_address": False}, headers=owner["headers"])
     assert ok.status_code == 200 and ok.json()["key_hint"] == "5555"
     assert (await client.post("/admin/v1/webhooks/key", json={"endpoint_id": ep["id"], "use_connection": True}, headers=admin["headers"])).status_code == 403
+
+
+# ---------------------------------------------------------------------------------- the shared connection for alerts
+async def test_the_shared_alert_connection_is_saved_once_and_the_key_is_never_shown(client, make, world):
+    owner, admin = await make.staff("owner"), await make.staff("admin")
+    h = owner["headers"]
+    assert (await client.get("/admin/v1/webhooks/connection", headers=h)).json()["url"] is None
+    r = await client.put("/admin/v1/webhooks/connection", json={"url": world["srv"].url("/hook/shared"), "key": "SHARED-KEY-123456"}, headers=h)
+    assert r.status_code == 200 and r.json()["key"] == {"set": True, "hint": "3456"} and "SHARED-KEY" not in r.text
+    assert r.json()["alerts"] > 0 and r.json()["using"] == 0
+    only_key = await client.put("/admin/v1/webhooks/connection", json={"key": "OTHER-KEY-98765432"}, headers=h)
+    assert only_key.json()["url"] == world["srv"].url("/hook/shared") and only_key.json()["key"]["hint"] == "5432", "changing the key keeps the address"
+    assert (await client.put("/admin/v1/webhooks/connection", json={}, headers=h)).status_code == 422
+    assert (await client.put("/admin/v1/webhooks/connection", json={"url": "http://insecure.example.com/x"}, headers=h)).status_code == 422
+    for call in (client.get("/admin/v1/webhooks/connection", headers=admin["headers"]), client.put("/admin/v1/webhooks/connection", json={"key": "ADMIN-KEY-12345678"}, headers=admin["headers"])):
+        assert (await call).status_code == 403, "only the Owner reaches the connection"
+
+
+async def test_alerts_that_use_the_shared_connection_send_to_it_with_its_key(client, make, world):
+    h = (await make.staff("owner"))["headers"]
+    rx = world["hook"]
+    await client.put("/admin/v1/webhooks/connection", json={"url": world["srv"].url("/hook/shared"), "key": "SHARED-KEY-123456"}, headers=h)
+    ep = await endpoint_of(client, world, "recorder_offline")
+    own = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    assert own.json()["ok"] and rx.calls[-1]["path"] == "/hook/wa" and rx.calls[-1]["headers"]["authorization"] == TOKEN, "before switching, the alert's own address and key are used"
+    done = await client.post("/admin/v1/webhooks/connection/apply", headers=h)
+    assert done.status_code == 200 and done.json()["switched"] > 0 and done.json()["using"] == done.json()["alerts"]
+    after = await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    assert after.json()["ok"] and rx.calls[-1]["path"] == "/hook/shared" and rx.calls[-1]["headers"]["authorization"] == "Bearer SHARED-KEY-123456"
+    await client.put("/admin/v1/webhooks/connection", json={"key": "ROTATED-KEY-00001111"}, headers=h)
+    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    assert rx.calls[-1]["headers"]["authorization"] == "Bearer ROTATED-KEY-00001111", "a changed key reaches every alert at once"
+    back = await client.put(f"/admin/v1/webhooks/{ep['id']}", json={"use_shared": False}, headers=h)
+    assert back.status_code == 200 and back.json()["use_shared"] is False
+    await client.post(f"/admin/v1/webhooks/{ep['id']}/send-now", headers=h)
+    assert rx.calls[-1]["path"] == "/hook/wa" and rx.calls[-1]["headers"]["authorization"] == TOKEN, "one alert can go back to its own address"
+
+
+async def test_the_shared_connection_can_reuse_the_summaries_key_and_be_tested(client, make, world):
+    h = (await make.staff("owner"))["headers"]
+    rx = world["hook"]
+    assert (await client.put("/admin/v1/webhooks/connection", json={"use_summary_key": True}, headers=h)).status_code in (409, 200)
+    await client.put("/admin/v1/summaries/key", json={"key": "SUMMARY-KEY-77778888"}, headers=h)
+    r = await client.put("/admin/v1/webhooks/connection", json={"url": world["srv"].url("/hook/shared"), "use_summary_key": True}, headers=h)
+    assert r.status_code == 200 and r.json()["key"]["hint"] == "8888"
+    await client.post("/admin/v1/webhooks/connection/apply", headers=h)
+    t = await client.post("/admin/v1/webhooks/connection/test", json={"alert_type": "camera_offline", "to_phone": "+91 98765 43210"}, headers=h)
+    assert t.status_code == 200 and t.json()["ok"], t.text
+    last = rx.calls[-1]
+    assert last["path"] == "/hook/shared" and last["headers"]["authorization"] == "Bearer SUMMARY-KEY-77778888" and last["headers"]["x-test"] == "true" and "919876543210" in last["raw"].decode()
+    assert (await client.post("/admin/v1/webhooks/connection/test", json={"alert_type": "nope", "to_phone": "9876543210"}, headers=h)).status_code == 404
+
+
+async def test_setting_up_every_alert_without_an_address_uses_the_shared_connection(client, make, world, su):
+    h = (await make.staff("owner"))["headers"]
+    await su.execute("DELETE FROM platform.webhook_endpoints")
+    no = await client.post("/admin/v1/webhooks/standard", json={}, headers=h)
+    assert no.status_code == 409 and no.json()["error"]["code"] == "no_shared_connection"
+    await client.put("/admin/v1/webhooks/connection", json={"url": world["srv"].url("/hook/shared"), "key": "SHARED-KEY-123456"}, headers=h)
+    ok = await client.post("/admin/v1/webhooks/standard", json={}, headers=h)
+    assert ok.status_code == 200 and ok.json()["created"]
+    items = (await client.get("/admin/v1/webhooks", headers=h)).json()["items"]
+    assert items and all(e["use_shared"] for e in items)

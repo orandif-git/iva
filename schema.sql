@@ -179,9 +179,21 @@ CREATE TABLE platform.webhook_endpoints (
   headers_ciphertext bytea,                              -- encrypted JSON object of header name -> value
   payload_template   text NOT NULL,                      -- JSON text with {shortcodes}
   active             boolean NOT NULL DEFAULT true,
+  use_shared         boolean NOT NULL DEFAULT false,     -- send through the shared alert connection (address and key) instead of this endpoint's own
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
+
+-- The shared WhatsApp connection for alerts: one row, set in the Control Center (WhatsApp connection, Alerts tab).
+CREATE TABLE platform.alert_connection (
+  id             boolean PRIMARY KEY DEFAULT true CHECK (id),
+  url            text,
+  key_ciphertext bytea,
+  key_hint       text,
+  updated_at     timestamptz,
+  updated_by     text
+);
+INSERT INTO platform.alert_connection (id) VALUES (true);
 
 -- One row. The signing secret lets the receiver check an event came from us. link_hours is how long picture and clip links in a payload work (at most 4).
 CREATE TABLE platform.webhook_settings (
@@ -789,6 +801,8 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA platform TO platform_admin;
 GRANT DELETE ON platform.plans, platform.messaging_providers, platform.webhook_endpoints, platform.alert_checks, platform.staff_users TO platform_admin;
 GRANT SELECT ON platform.alert_checks, platform.fault_notify, platform.summary_settings TO service_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON platform.worker_seen TO service_worker;
+GRANT SELECT ON platform.alert_connection TO service_worker;
+GRANT SELECT, INSERT, UPDATE ON platform.alert_connection TO platform_admin;
 GRANT SELECT, INSERT, UPDATE ON platform.faults TO service_worker;
 GRANT SELECT ON platform.faults TO app_user;
 REVOKE UPDATE, DELETE ON platform.audit_log FROM platform_admin, service_worker, app_user;

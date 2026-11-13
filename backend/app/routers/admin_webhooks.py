@@ -40,6 +40,7 @@ class EndpointPatch(Strict):
     headers: dict[str, str] | None = None
     payload_template: str | None = Field(None, max_length=webhook.MAX_TEMPLATE)
     active: bool | None = None
+    use_shared: bool | None = None
     reason: str | None = Reason
 
 
@@ -71,7 +72,7 @@ def _public(r, stats: dict | None = None) -> dict:
     st = (stats or {}).get(r["id"], {})
     return {"id": r["id"], "name": r["name"], "alert_type": r["alert_type"], "event": cat.event_name(r["alert_type"]), "alert_title": meta["title"], "ai": meta["family"] == cat.SMART,
             "url": r["url"], **_key_info(r), "payload_template": r["payload_template"], "preview": webhook.preview(r["payload_template"]),
-            "shortcodes": cat.shortcodes_for(r["alert_type"]), "active": r["active"], "updated_at": r["updated_at"],
+            "shortcodes": cat.shortcodes_for(r["alert_type"]), "active": r["active"], "use_shared": r["use_shared"], "updated_at": r["updated_at"],
             "deliveries": st.get("n", 0), "sent": st.get("sent", 0), "failed": st.get("failed", 0)}
 
 
@@ -97,7 +98,8 @@ async def _settings(ctx: AdminCtx) -> dict:
 async def list_endpoints(ctx: AdminCtx = Depends(admin_ctx("owner"))):
     stats = await _stats(ctx)
     rows = await ctx.conn.fetch("SELECT * FROM platform.webhook_endpoints ORDER BY created_at")
-    return {"items": [_public(r, stats) for r in rows], "settings": await _settings(ctx), "sample": webhook.SAMPLE}
+    sh = await delivery.shared(ctx.conn)
+    return {"items": [_public(r, stats) for r in rows], "settings": await _settings(ctx), "sample": webhook.SAMPLE, "connection": {"url": sh["url"], "key_set": bool(sh["key"])}}
 
 
 @router.post("", status_code=201)
@@ -121,7 +123,7 @@ async def create_endpoint(body: EndpointIn, ctx: AdminCtx = Depends(admin_ctx("o
 
 
 class Standard(Strict):
-    url: str = Field(min_length=10, max_length=2000)
+    url: str | None = Field(None, min_length=10, max_length=2000)        # left out: the alerts use the shared connection
     headers: dict[str, str] = Field(default_factory=dict)
     reason: str | None = Reason
 
@@ -131,6 +133,11 @@ async def create_standard(body: Standard, ctx: AdminCtx = Depends(admin_ctx("own
     """One endpoint for every alert that is built and has none yet, all with the same address and headers and each with its standard payload.
     Alerts that already have an endpoint are left alone, so this can be run again after a new alert is built."""
     headers = _check(None, body.url, body.headers, None)
+    sh = await delivery.shared(ctx.conn)
+    use_shared = body.url is None
+    if use_shared and not sh["url"]:
+        raise ApiError(409, "no_shared_connection", "Set the shared address first, under WhatsApp connection, Alerts, or give an address here.")
+    url = sh["url"] if use_shared else body.url
     have = {r["alert_type"] for r in await ctx.conn.fetch("SELECT alert_type FROM platform.webhook_endpoints")}
     made, skipped = [], []
     for k in cat.WEBHOOK_TYPES:
@@ -138,10 +145,10 @@ async def create_standard(body: Standard, ctx: AdminCtx = Depends(admin_ctx("own
             skipped.append(k)
             continue
         eid = await ctx.conn.fetchval("SELECT gen_random_uuid()")
-        await ctx.conn.execute("INSERT INTO platform.webhook_endpoints (id, name, alert_type, url, headers_ciphertext, payload_template, active) VALUES ($1,$2,$3,$4,$5,$6,true)",
-                               eid, cat.CATALOG[k]["title"], k, body.url, _seal(eid, headers), webhook.default_template(k))
+        await ctx.conn.execute("INSERT INTO platform.webhook_endpoints (id, name, alert_type, url, headers_ciphertext, payload_template, active, use_shared) VALUES ($1,$2,$3,$4,$5,$6,true,$7)",
+                               eid, cat.CATALOG[k]["title"], k, url, _seal(eid, headers), webhook.default_template(k), use_shared)
         made.append(k)
-    await ctx.audit("webhook.create_standard", target_type="webhook", reason=body.reason, after={"created": made, "skipped": skipped, "url": body.url, "header_names": sorted(headers)})
+    await ctx.audit("webhook.create_standard", target_type="webhook", reason=body.reason, after={"created": made, "skipped": skipped, "url": url, "shared": use_shared, "header_names": sorted(headers)})
     return {"created": made, "skipped": skipped}
 
 
@@ -201,6 +208,80 @@ async def resend(notification_id: UUID, ctx: AdminCtx = Depends(admin_ctx("owner
     return {"queued": True}
 
 
+class ConnectionIn(Strict):
+    url: str | None = Field(None, min_length=10, max_length=2000)
+    key: str | None = Field(None, min_length=8, max_length=500)
+    use_summary_key: bool = False               # take the key from the summaries connection instead of typing it
+    reason: str | None = Reason
+
+
+async def _connection_view(conn) -> dict:
+    sh = await delivery.shared(conn)
+    n = await conn.fetchrow("SELECT count(*)::int AS total, count(*) FILTER (WHERE use_shared)::int AS shared FROM platform.webhook_endpoints")
+    meta = await conn.fetchrow("SELECT updated_at, updated_by FROM platform.alert_connection WHERE id")
+    return {"url": sh["url"], "key": {"set": bool(sh["key"]), "hint": sh["hint"]}, "alerts": n["total"], "using": n["shared"],
+            "updated_at": meta["updated_at"] if meta else None, "updated_by": meta["updated_by"] if meta else None}
+
+
+@router.get("/connection")
+async def get_connection(ctx: AdminCtx = Depends(admin_ctx("owner!"))):
+    return await _connection_view(ctx.conn)
+
+
+@router.put("/connection")
+async def put_connection(body: ConnectionIn, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
+    """The shared address and key for alerts. Only what is sent changes; the key is never sent back, only its last four characters."""
+    _check(None, body.url, None, None)
+    if body.key and body.use_summary_key:
+        raise ApiError(422, "one_key", "Paste a key, or reuse the summaries key, not both.")
+    key = None
+    if body.use_summary_key:
+        key = await sc.key(ctx.conn)
+        if not key:
+            raise ApiError(409, "no_summary_key", "The summaries connection has no key saved yet.")
+    elif body.key:
+        key = body.key.strip()
+    if key:
+        key = key[7:].strip() if key.lower().startswith("bearer ") else key
+        try:
+            webhook.validate_headers({"Authorization": "Bearer " + key})
+        except ValueError as e:
+            raise ApiError(422, "invalid_key", str(e))
+    if body.url is None and key is None:
+        raise ApiError(422, "nothing_to_save", "Enter the address or the key.")
+    await ctx.conn.execute(
+        """UPDATE platform.alert_connection SET url = coalesce($1, url), key_ciphertext = coalesce($2, key_ciphertext), key_hint = coalesce($3, key_hint),
+                  updated_at = now(), updated_by = $4 WHERE id""",
+        body.url, vault().encrypt(key, delivery.ALERT_AAD) if key else None, key[-4:] if key else None, ctx.staff.name)
+    await ctx.audit("webhook.connection", target_type="webhook", reason=body.reason, after={"url": body.url, "key_changed": bool(key), "from_summaries": body.use_summary_key})
+    return await _connection_view(ctx.conn)
+
+
+@router.post("/connection/apply")
+async def apply_connection(ctx: AdminCtx = Depends(admin_ctx("owner!"))):
+    """Every alert sends through the shared connection from now on. Their own addresses and keys are no longer used (they are kept, so this can be undone per alert)."""
+    sh = await delivery.shared(ctx.conn)
+    if not sh["url"]:
+        raise ApiError(409, "no_shared_connection", "Set the shared address first.")
+    n = await ctx.conn.fetchval("WITH u AS (UPDATE platform.webhook_endpoints SET use_shared=true, updated_at=now() WHERE NOT use_shared RETURNING 1) SELECT count(*) FROM u")
+    await ctx.audit("webhook.connection_apply", target_type="webhook", after={"switched": n})
+    return {"switched": n, **await _connection_view(ctx.conn)}
+
+
+class ConnectionTest(Strict):
+    alert_type: str = "camera_offline"
+    to_phone: str = Field(pattern=r"^\+?[0-9 ]{8,16}$")
+
+
+@router.post("/connection/test")
+async def test_connection(body: ConnectionTest, ctx: AdminCtx = Depends(admin_ctx("owner!"))):
+    """Sends one test alert (sample values, marked as a test) to the number given, through whichever address that alert uses."""
+    ep = await ctx.conn.fetchrow("SELECT * FROM platform.webhook_endpoints WHERE alert_type=$1", body.alert_type)
+    if not ep:
+        raise ApiError(404, "webhook_not_found", "That alert has no message set up yet.")
+    return await _test_send(ctx, ep, body.to_phone.replace(" ", ""))
+
+
 class KeyIn(Strict):
     endpoint_id: UUID | None = None            # the alert being edited; empty means every alert
     key: str | None = Field(None, min_length=8, max_length=500)
@@ -250,9 +331,12 @@ async def update_endpoint(endpoint_id: UUID, body: EndpointPatch, ctx: AdminCtx 
     template = body.payload_template if body.payload_template is not None else cur["payload_template"]
     sealed = _seal(endpoint_id, headers) if headers is not None else cur["headers_ciphertext"]
     active = cur["active"] if body.active is None else body.active
+    use_shared = cur["use_shared"] if body.use_shared is None else body.use_shared
+    if use_shared and not (await delivery.shared(ctx.conn))["url"]:
+        raise ApiError(409, "no_shared_connection", "Set the shared address first, under WhatsApp connection, Alerts.")
     row = await ctx.conn.fetchrow(
-        "UPDATE platform.webhook_endpoints SET name=$2, url=$3, headers_ciphertext=$4, payload_template=$5, active=$6, updated_at=now() WHERE id=$1 RETURNING *",
-        endpoint_id, body.name or cur["name"], body.url or cur["url"], sealed, template, active)
+        "UPDATE platform.webhook_endpoints SET name=$2, url=$3, headers_ciphertext=$4, payload_template=$5, active=$6, use_shared=$7, updated_at=now() WHERE id=$1 RETURNING *",
+        endpoint_id, body.name or cur["name"], body.url or cur["url"], sealed, template, active, use_shared)
     action = "webhook.toggle" if set(body.model_fields_set) <= {"active", "reason"} else "webhook.update"
     await ctx.audit(action, target_type="webhook", target_id=endpoint_id, reason=body.reason, before={"active": cur["active"]},
                     after={"active": active, "changed": sorted(body.model_fields_set - {"reason"})})
@@ -270,17 +354,21 @@ class SendNow(Strict):
     to_phone: str | None = Field(None, pattern=r"^\+?[0-9]{8,15}$")        # the number the test event is about; a sample number if left out
 
 
+async def _test_send(ctx: AdminCtx, ep, to_phone: str | None) -> dict:
+    s = get_settings()
+    values = {**webhook.SAMPLE, "event_type": cat.event_name(ep["alert_type"]), "title": cat.CATALOG[ep["alert_type"]]["title"]}
+    if to_phone:
+        values["to_phone"] = to_phone.lstrip("+")
+    payload = webhook.render(ep["payload_template"], values).encode()
+    cfg = await delivery.webhook_settings(ctx.conn)
+    url, headers = await delivery.resolve(ctx.conn, ep)
+    res = await webhook.send(url, headers, payload, event=cat.event_name(ep["alert_type"]), delivery_id="test-" + _secrets.token_hex(8), secret=cfg["secret"], test=True,
+                             allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
+    await ctx.audit("webhook.test", target_type="webhook", target_id=ep["id"], after={"ok": res.ok, "status": res.status})
+    return {"ok": res.ok, "status": res.status, "error": res.error, "sent": json.loads(payload) if payload else None}
+
+
 @router.post("/{endpoint_id}/send-now")
 async def send_now(endpoint_id: UUID, body: SendNow | None = None, ctx: AdminCtx = Depends(admin_ctx("owner"))):
     """Sends one test event with sample values to the endpoint, marked X-Test: true. Nothing is recorded for any customer."""
-    ep = await _get(ctx, endpoint_id)
-    s = get_settings()
-    values = {**webhook.SAMPLE, "event_type": cat.event_name(ep["alert_type"]), "title": cat.CATALOG[ep["alert_type"]]["title"]}
-    if body and body.to_phone:
-        values["to_phone"] = body.to_phone.lstrip("+")
-    payload = webhook.render(ep["payload_template"], values).encode()
-    cfg = await delivery.webhook_settings(ctx.conn)
-    res = await webhook.send(ep["url"], delivery.endpoint_headers(ep), payload, event=cat.event_name(ep["alert_type"]), delivery_id="test-" + _secrets.token_hex(8), secret=cfg["secret"], test=True,
-                             allow_private=s.messaging_allow_private_hosts, ssl_context=delivery.ssl_context())
-    await ctx.audit("webhook.test", target_type="webhook", target_id=endpoint_id, after={"ok": res.ok, "status": res.status})
-    return {"ok": res.ok, "status": res.status, "error": res.error, "sent": json.loads(payload) if payload else None}
+    return await _test_send(ctx, await _get(ctx, endpoint_id), body.to_phone if body else None)
