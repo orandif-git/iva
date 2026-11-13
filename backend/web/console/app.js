@@ -62,7 +62,7 @@ const AREA_FIELDS = { area_count: [["limit", "More than", "people", 5], ["minute
 const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate", "minutes", "recorder", "image_url", "clip_url"];
 
 /* ------------------------------------------------------------------------------------------------ state */
-const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
+const S = { route: "overview", me: null, role: "", cid: null, section: "cams", step: "shop", q: "", filter: "all", view: "list", logChip: "all", logQ: "", evQ: "", evOpen: { cam: true, area: true, alert: true, default: false }, setup: "tpl", tq: "", pop: false, estep: "event",
   customers: [], form: null, ev: null, cur: null, data: {}, plans: [] };
 const can = (k) => ({ newCustomer: ["owner", "admin", "onboarding"], expiry: ["owner", "admin"], del: ["owner"], pause: ["owner", "admin", "support"], templates: ["owner", "admin"], team: ["owner", "admin"], wa: ["owner"], events: ["owner", "admin", "onboarding"] }[k] || []).includes(S.role);
 const ROLES = { owner: ["Owner", "Everything, including the WhatsApp connection and console users"], admin: ["Admin", "Everything except the WhatsApp key and making Owners"], onboarding: ["Onboarding", "Adds new customers and sets them up"], support: ["Support", "Looks after live customers: pause, fix people and hours"] };
@@ -444,13 +444,15 @@ const rowType = (r) => r.k === "data" ? r.t : r.k === "area" ? (evMeta(r.type)?.
 const rowWhere = (r) => r.k === "rule" ? (REC_LEVEL.has(r.type) ? "Every recorder" : NEEDS_COUNT.has(r.type) ? "Counting cameras" : NEEDS_PLATES.has(r.type) ? "Plate cameras" : "Every camera") : r.cam.name;
 const rowSends = (r) => MEDIA[carries(r.k === "data" ? (r.flag === "use_footfall" ? "__count" : "__plates") : r.type)];
 function secEvents() {
-  const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length;
+  const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length, k = S.evQ.trim().toLowerCase();
+  const list = rows.filter((r) => !k || `${rowName(r)} ${rowType(r)} ${rowWhere(r)} ${r.k === "data" ? "" : namesOf(r.rule?.recipient_ids)}`.toLowerCase().includes(k));
   const line = (r) => {
     const i = rows.indexOf(r), m = rowSends(r), warn = r.k === "data" && r.flag === "use_footfall" && !r.marked, goes = r.k === "data" ? "—" : namesOf(r.rule?.recipient_ids);
-    return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="nm"><b>${esc(rowName(r))}</b>${warn ? ' <span class="tag warn">No line marked</span>' : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}${rowType(r) !== rowName(r) ? `<span class="ty">${esc(rowType(r))}</span>` : ""}</td><td>${esc(rowWhere(r))}</td><td>${esc(goes)}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
+    return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="dotc"><span class="dot ${r.on ? (warn ? "warn" : "ok") : ""}"></span></td><td class="main-c">${esc(rowName(r))}${warn ? ' <span class="tag warn">No line marked</span>' : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(rowType(r))}</td><td>${esc(rowWhere(r))}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(goes)}</td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
   };
   return `<div class="stack"><div class="bar flush"><span class="sub">${on} on of ${rows.length}. Click an event to see it, change it or delete it.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
-  ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th>Event</th><th>Where</th><th>Goes to</th><th>Sends</th><th class="sw-c">On</th></tr></thead>${EV_GROUPS.map(([g, label]) => { const list = rows.filter((r) => r.g === g); if (!list.length) return ""; const open = S.evOpen[g]; return `<tbody><tr class="grp"><td colspan="5"><button type="button" class="gb" data-evgrp="${g}" aria-expanded="${open}"><span class="car">${open ? "▾" : "▸"}</span> ${label} <span class="cnt">${list.length}</span>${g === "default" && !open ? '<span class="sub light"> · on for every shop unless turned off</span>' : ""}</button></td></tr>${open ? list.map(line).join("") : ""}</tbody>`; }).join("")}</table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
+  <div class="bar flush"><label class="search">${ico("search")}<span class="sr">Search events</span><input id="evq" placeholder="Search events" value="${esc(S.evQ)}" autocomplete="off"></label>${k ? `<span class="sub">${list.length} found</span>` : ""}</div>
+  ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Where</th><th>Sends</th><th>Goes to</th><th class="sw-c">On</th></tr></thead><tbody>${list.length ? list.map(line).join("") : '<tr><td colspan="7" class="empty">No events match your search.</td></tr>'}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
 }
 /* Switch an event on or off straight from the list */
 async function toggleRow(i, checked) {
@@ -706,6 +708,7 @@ document.addEventListener("click", async (ev) => {
 document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
+  if (t.id === "evq") { S.evQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#evq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "lq") { S.logQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#lq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "tq") { S.tq = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#tq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (S.edit && (t.dataset.xv || t.dataset.xto || t.id === "x-name" || t.dataset.act === "xclip" || t.dataset.act === "xon" || t.dataset.ev)) { const E = S.edit, d = t.dataset;

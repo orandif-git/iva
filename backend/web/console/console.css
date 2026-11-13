@@ -281,3 +281,6 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .dbody{padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:14px;flex:1}
 .df{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--line);align-items:center}
 .rowsw{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.ev-tbl td{white-space:normal}
+.ev-tbl td.sw-c,.ev-tbl th.sw-c,.ev-tbl .tag{white-space:nowrap}
+.ev-tbl td.dotc{white-space:nowrap}
