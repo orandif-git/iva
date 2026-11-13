@@ -284,3 +284,6 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .ev-tbl td{white-space:normal}
 .ev-tbl td.sw-c,.ev-tbl th.sw-c,.ev-tbl .tag{white-space:nowrap}
 .ev-tbl td.dotc{white-space:nowrap}
+.cam.offl{opacity:.65;cursor:not-allowed}
+.cam.offl .pic{filter:grayscale(1)}
+.cam .cb .tag{align-self:flex-start}
