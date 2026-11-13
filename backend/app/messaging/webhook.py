@@ -60,6 +60,8 @@ def default_template(alert_type: str) -> str:
              '"time": "{time}"', '"details": "{details}"']
     for k in cat.MEDIA_SHORTCODES.get(meta["media"], []):
         lines.append(f'"{k}": "{{{k}}}"')
+    if meta["media"] == "image_clip":
+        lines.append('"clip_time": "{clip_time}"')           # which minutes to look at on the recorder
     return "{\n  " + ",\n  ".join(lines) + "\n}"
 
 
