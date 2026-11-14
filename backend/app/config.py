@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
     vapid_public_key: str = ""                           # notifications on console users' phones (Web Push); off while these are empty. Make a pair: python -m app.services.staff_push keygen
     vapid_private_key: str = ""
+    push_extra_hosts: list[str] = []                     # more notification services to allow, as host names (the usual ones are built in; see services/staff_push.py)
     vapid_subject: str = ""                              # who the push services can contact: a mailto: address or an https address (default: the public address)
     fcm_project_id: str = ""                             # Firebase project for push notifications; push is off while this is empty
     fcm_service_account_file: str = ""                   # path to that project's service-account key (JSON). Never stored in the database.

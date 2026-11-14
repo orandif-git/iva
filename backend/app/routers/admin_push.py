@@ -64,6 +64,10 @@ async def set_preferences(body: PrefsIn, ctx: AdminCtx = Depends(admin_ctx())):
 async def subscribe(body: SubscribeIn, ctx: AdminCtx = Depends(admin_ctx())):
     if not staff_push.enabled():
         raise ApiError(503, "push_off", "Notifications are not set up on the server yet.")
+    try:
+        staff_push.check_endpoint(body.endpoint)
+    except ValueError as e:
+        raise ApiError(422, "push_address_not_allowed", str(e))
     await ctx.conn.execute(
         """INSERT INTO platform.push_subscriptions (staff_id, endpoint, p256dh, auth, device) VALUES ($1,$2,$3,$4,$5)
            ON CONFLICT (endpoint) DO UPDATE SET staff_id=EXCLUDED.staff_id, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth, device=EXCLUDED.device, failures=0""",

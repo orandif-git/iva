@@ -38,7 +38,7 @@ class Phone:
     def __init__(self, n=1):
         self.key = ec.generate_private_key(ec.SECP256R1())
         self.auth = b"a" * 16
-        self.endpoint = f"https://push.example.test/send/{n}-{id(self)}" + "x" * 10
+        self.endpoint = f"https://fcm.googleapis.com/fcm/send/{n}-{id(self)}" + "x" * 10
         self.got = []
         self.status = 201
 
@@ -143,7 +143,7 @@ async def test_a_phone_turns_notifications_on_gets_a_test_and_turns_them_off(cli
     assert req.headers["content-encoding"] == "aes128gcm" and req.headers["ttl"] == "86400"
     auth = req.headers["authorization"]                                    # the sender's proof: a signed note that names the push service and us
     token, key = auth[len("vapid t="):].split(", k=")
-    claims = jwt.decode(token, ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), b64d(key)), algorithms=["ES256"], audience="https://push.example.test")
+    claims = jwt.decode(token, ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), b64d(key)), algorithms=["ES256"], audience="https://fcm.googleapis.com")
     assert key == push.public and claims["sub"]
     await client.post("/admin/v1/push/unsubscribe", json={"endpoint": phone.endpoint}, headers=owner["headers"])
     assert (await client.get("/admin/v1/push", headers=owner["headers"])).json()["devices"] == 0
@@ -278,3 +278,42 @@ async def test_messages_that_fail_are_announced_but_not_more_than_every_half_hou
     async with db.admin_tx() as conn:
         await staff_push.check_failed(conn)
     assert len(phone.got) == 1 and "1 more message" in phone.got[0][1]["body"]
+
+
+# ---------------------------------------------------------------- only real push services may be called
+import pytest
+from app.services import staff_push
+
+
+@pytest.mark.parametrize("url", ["https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://web.push.apple.com/QWxv",
+                                 "https://wns2-par02p.notify.windows.com/w/?token=abc", "https://eu.push.apple.com/x"])
+def test_the_push_services_of_the_phone_makers_are_accepted(url):
+    staff_push.check_endpoint(url)
+
+
+@pytest.mark.parametrize("url", ["https://127.0.0.1/x", "https://localhost/x", "https://169.254.169.254/latest/meta-data", "https://10.0.0.5:6379/", "https://internal.example.com/hook",
+                                 "http://fcm.googleapis.com/fcm/send/abc", "https://fcm.googleapis.com:8443/x", "https://user:pw@fcm.googleapis.com/x",
+                                 "https://fcm.googleapis.com.evil.test/x", "https://evilpush.apple.com.evil.test/x", "https://notify.windows.com.evil.test/x", "ftp://fcm.googleapis.com/x"])
+def test_any_other_address_is_refused(url):
+    with pytest.raises(ValueError):
+        staff_push.check_endpoint(url)
+
+
+async def test_a_phone_cannot_register_an_address_that_is_not_a_push_service(client, make, push):
+    staff = await make.staff("support")
+    r = await client.post("/admin/v1/push/subscribe", json={"endpoint": "https://10.0.0.5:6379/internal-service-path", "keys": {"p256dh": "x" * 20, "auth": "y" * 20}}, headers=staff["headers"])
+    assert r.status_code == 422 and r.json()["error"]["code"] == "push_address_not_allowed"
+
+
+async def test_a_saved_address_that_is_not_allowed_is_never_called_and_is_forgotten(su, push):
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        return httpx.Response(201)
+    staff_push.transport = httpx.MockTransport(handler)
+    try:
+        res = await staff_push.send_one({"endpoint": "https://10.0.0.5/x" + "x" * 10, "p256dh": "x", "auth": "y"}, {"title": "t"})
+    finally:
+        staff_push.transport = None
+    assert res == "gone" and calls == []

@@ -101,8 +101,33 @@ def vapid_header(endpoint: str) -> str:
     return f"vapid t={token}, k={s.vapid_public_key}"
 
 
+# The only places a phone's notifications may be sent to: the push services of the phone and browser makers. A phone gives us its address when it turns notifications on,
+# so without this check a signed-in person could make the server call any web address, inside our network included.
+PUSH_HOSTS = ("fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com")
+PUSH_SUFFIXES = (".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com")
+
+
+def check_endpoint(url: str) -> None:
+    """Raises ValueError (with a sentence for the person) unless the address is a real push service on the ordinary secure port."""
+    try:
+        u = urlsplit(url)
+        port = u.port
+    except ValueError:
+        raise ValueError("That notification address is not valid.")
+    host = (u.hostname or "").lower().rstrip(".")
+    extra = tuple(h.strip().lower() for h in get_settings().push_extra_hosts if h.strip())
+    ok = host in PUSH_HOSTS or host in extra or host.endswith(PUSH_SUFFIXES)
+    if u.scheme != "https" or u.username or u.password or port not in (None, 443) or not ok or any(c in url for c in " \r\n\t\x00"):
+        raise ValueError("This phone's notification service is not one we can send to.")
+
+
 async def send_one(sub: dict, message: dict) -> str:
     """'ok', 'gone' (the phone no longer wants these, so forget it) or 'error'."""
+    try:
+        check_endpoint(sub["endpoint"])
+    except ValueError:                                           # an address saved before this check existed: never call it, and forget it
+        log.warning("push address refused and removed")
+        return "gone"
     try:
         body = encrypt(json.dumps(message).encode(), sub["p256dh"], sub["auth"])
         async with httpx.AsyncClient(timeout=10, transport=transport) as c:
