@@ -163,3 +163,7 @@ Setup, WhatsApp connection has two tabs (Owner only): **Summaries** (the direct-
 - **Send a test** in an alert's window (Setup, WhatsApp templates) and on the Alerts tab always asks for a mobile number (`to_phone` is required on `POST /admin/v1/webhooks/{id}/send-now`), so a test can never go to a placeholder number. It shows the provider's answer in plain words.
 - A test message (from there, or the Test button on a customer's page) is complete: sample values for everything the message uses (people, limit, place, time) and our own sample picture and video, `web/img/sample-alert.jpg` and `sample-alert.mp4` (public, 17 KB and 13 KB), so a video alert arrives as a finished message.
 - In any message sent to the provider, a text value with nothing to show is sent as a dash, because WhatsApp refuses an empty text parameter. Link values (`image_url`, `clip_url`, `document_url`) are never replaced; a real alert waits for its clip before it is sent.
+
+## Oldest recording probe (Dahua)
+
+`python -m dahua.probe --oldest IP PORT USER PASSWORD [CHANNELS]` (read-only) asks one recorder for its recordings over very wide periods (since 2000, last 365, 90 and 30 days) on its first channels and prints exactly what the kit returns: the shape of the answer, how many recordings, and the first and last one with their start and end times. It shows whether the exact start of the oldest recording can be read, and how wide a period the recorder accepts, before the gateway and the customer Health page are built to show "Recordings from <date>".

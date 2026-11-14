@@ -5,6 +5,7 @@ Run it from a folder that is not the wrapper's own, with the same Python the gat
     ... -m dahua.probe --detail          (also the exact calls, structure fields and state types)
     ... -m dahua.probe --codes           (the number codes and structure layouts for alarm listening, the device log and hardware status)\n    ... -m dahua.probe --events          (what the kit offers for alarms, restarts, heat and the state of each camera)
     cd /tmp && /opt/gateinsight/backend/.venv/bin/python -m dahua.probe IP PORT USER PASSWORD     (also asks one recorder, if it can be reached directly)
+    ... -m dahua.probe --oldest IP PORT USER PASSWORD [CHANNELS]     (asks one recorder for its oldest recording on its first channels: read-only)
 It changes nothing and prints no password. Send its whole output back."""
 import sys
 
@@ -13,12 +14,118 @@ def names(mod, *words):
     return sorted(n for n in dir(mod) if any(w.lower() in n.lower() for w in words) and not n.startswith("__"))
 
 
+def _time_text(t) -> str:
+    """A NET_TIME-like structure as 2026-11-14 03:12:09, or None when it has no year."""
+    try:
+        return f"{t.dwYear:04d}-{t.dwMonth:02d}-{t.dwDay:02d} {t.dwHour:02d}:{t.dwMinute:02d}:{t.dwSecond:02d}"
+    except Exception:
+        return None
+
+
+def describe_file(f) -> str:
+    """One recording as the kit returned it: every field that is about time, and its size and channel when it has them. Falls back to a short text for anything else."""
+    fields = getattr(f, "_fields_", None)
+    if not fields:
+        return repr(f)[:160]
+    out = []
+    for name, _typ in fields:
+        v = getattr(f, name, None)
+        low = name.lower()
+        if "time" in low or "start" in low or "end" in low:
+            text = _time_text(v) if hasattr(v, "dwYear") else (v if isinstance(v, (int, float, str)) else None)
+            if text is not None:
+                out.append(f"{name}={text}")
+        elif low in ("ch", "nchn", "channel", "size", "length", "driveno"):
+            out.append(f"{name}={v}")
+    return ", ".join(out) or repr(f)[:160]
+
+
+def describe_result(res) -> list[str]:
+    """What QueryRecordFile gave back, in words: the shape of the answer, how many recordings, and the first and last one."""
+    lines = [f"answer is a {type(res).__name__}" + (f" of {len(res)} parts" if isinstance(res, (tuple, list)) else "")]
+    if not isinstance(res, tuple):
+        return lines + [f"   value: {repr(res)[:160]}"]
+    for n, part in enumerate(res):
+        if isinstance(part, (list, tuple)):
+            lines.append(f"   part {n}: a list of {len(part)} recordings")
+            if part:
+                lines.append(f"      first: {describe_file(part[0])}")
+                if len(part) > 1:
+                    lines.append(f"      last:  {describe_file(part[-1])}")
+        else:
+            lines.append(f"   part {n}: {type(part).__name__} {repr(part)[:100]}")
+    return lines
+
+
+def _login(NetSDK, ip, port, user, pw):
+    c = NetSDK.NetClient()
+    c.InitEx(None)
+    from NetSDK.SDK_Struct import NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY, NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY
+    from ctypes import sizeof
+    i, o = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY(), NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY()
+    i.dwSize, o.dwSize = sizeof(i), sizeof(o)
+    i.szIP, i.nPort, i.szUserName, i.szPassword = ip.encode(), port, user.encode(), pw.encode()
+    lid, info, err = c.LoginWithHighLevelSecurity(i, o)
+    return c, lid, err
+
+
+def oldest(NetSDK, argv) -> int:
+    """Read-only. Asks one recorder for the recordings of a very wide period and shows exactly what comes back, so we can see whether the oldest recording's time can be read from it,
+    and how wide a period the recorder accepts. Nothing on the recorder is changed."""
+    import time
+    from datetime import datetime, timedelta
+    from NetSDK.SDK_Struct import NET_TIME
+    rest = [a for a in argv if a != "--oldest"][1:]
+    if len(rest) < 4:
+        print("Usage: -m dahua.probe --oldest IP PORT USER PASSWORD [CHANNELS]")
+        return 2
+    ip, port, user, pw = rest[0], int(rest[1]), rest[2], rest[3]
+    channels = int(rest[4]) if len(rest) > 4 else 2
+    c, lid, err = _login(NetSDK, ip, port, user, pw)
+    print("sign-in:", "ok" if lid else f"refused ({err})")
+    if not lid:
+        return 1
+    try:
+        t = NET_TIME()
+        if not c.QueryDeviceTimeEx(lid, t, 3000):
+            print("could not read the recorder's clock")
+            return 1
+        end = datetime(t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond)
+        print("recorder clock:", end.isoformat())
+
+        def stamp(d):
+            x = NET_TIME()
+            x.dwYear, x.dwMonth, x.dwDay, x.dwHour, x.dwMinute, x.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return x
+
+        for index in range(max(1, channels)):
+            print(f"\n== channel {index + 1}")
+            for label, start in (("since 2000", datetime(2000, 1, 1)), ("last 365 days", end - timedelta(days=365)), ("last 90 days", end - timedelta(days=90)), ("last 30 days", end - timedelta(days=30))):
+                t0 = time.monotonic()
+                try:
+                    res = c.QueryRecordFile(lid, index, 0, stamp(start), stamp(end), "", 5000, False)
+                except Exception as e:
+                    print(f"-- {label}: failed, {type(e).__name__}: {e}")
+                    continue
+                print(f"-- {label}: asked from {start.date()} to {end.date()}, answered in {time.monotonic() - t0:.1f} s")
+                for line in describe_result(res):
+                    print("  ", line)
+    finally:
+        try:
+            c.Logout(lid)
+        except Exception:
+            pass
+    return 0
+
+
 def main(argv) -> int:
     try:
         from NetSDK import NetSDK, SDK_Enum, SDK_Struct
     except ImportError as e:
         print("The Dahua NetSDK wrapper is not installed for this Python:", e)
         return 1
+    if "--oldest" in argv:
+        return oldest(NetSDK, argv)
     print("== Methods on NetClient that read device state, config or time")
     for n in names(NetSDK.NetClient, "QueryDev", "GetDevConfig", "GetNewDevConfig", "QueryDeviceTime", "GetDeviceTime", "QueryRecord", "QuerySystemInfo", "GetDevState", "QueryDevInfo", "StorageDevice", "HardDisk"):
         print("  ", n)
