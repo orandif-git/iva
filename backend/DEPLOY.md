@@ -22,7 +22,7 @@ Nothing here has been run on a real server or a real recorder yet. Where a step 
       ```bash
       cd /opt/gateinsight/backend
       python3 -m venv .venv && source .venv/bin/activate
-      pip install -r requirements.txt -r requirements-worker.txt
+      pip install -r requirements.lock -r requirements-worker.txt
       python -m scripts.fetch_models        # downloads the detector and plate models (needs internet, checks checksums)
       ```
 - [ ] Set the server clock: `timedatectl set-ntp true`.

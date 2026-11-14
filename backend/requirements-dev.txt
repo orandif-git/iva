@@ -1,0 +1,8 @@
+# For developing and testing only. Never installed on the production server.
+-r requirements.txt
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+moto[s3]==5.2.5          # fake S3
+aiosmtpd==1.4.6          # fake mail server
+pypdf==6.17.0            # reads invoice PDFs back
+pillow==12.3.0           # renders plates for the plate tests

@@ -1,9 +1,8 @@
-# The AI worker's own dependencies (the API and registrar do not need these).
-numpy>=1.26
-opencv-python-headless>=4.9
-onnxruntime>=1.17
-httpx>=0.27
-pydantic-settings>=2.3
-pillow>=10                   # tests only: renders plates
-fast-plate-ocr[onnx]>=1.1    # plate text reading (MIT)
-open-image-models>=0.6       # plate detection (MIT)
+# The AI worker's own dependencies (the API and registrar do not need these), pinned to the versions it was tested with.
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
+onnxruntime==1.29.0
+httpx==0.28.1
+pydantic-settings==2.16.2
+fast-plate-ocr[onnx]==1.1.0      # plate text reading (MIT)
+open-image-models==0.6.0         # plate detection (MIT)

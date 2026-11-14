@@ -14,7 +14,7 @@ Create the first staff account with `python -m scripts.create_staff`. Deployment
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # 1. Database: create it, apply ../schema.sql as a superuser, then create the login role the API uses.
 createdb gateinsight
@@ -153,7 +153,7 @@ Reads a video, finds people and vehicles, counts people crossing a line, reads p
 the backend's `/internal/v1/events/*` routes. It starts from a video file; the same pipeline will later be fed live streams.
 
 ```bash
-pip install -r requirements.txt -r requirements-worker.txt
+pip install -r requirements-dev.txt -r requirements-worker.txt
 python -m scripts.fetch_models                       # YOLOX detector (checksum-verified) and the plate models
 
 # Try it on a file, without a backend:
