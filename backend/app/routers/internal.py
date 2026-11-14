@@ -105,6 +105,7 @@ class HealthIn(Strict):
     recording: dict[str, ChannelRecordings] = Field(default_factory=dict, max_length=256)
     recording_now: dict[str, bool] = Field(default_factory=dict, max_length=256)       # for each channel, is the recorder saving its video this moment
     days_held: int | None = Field(None, ge=0, le=3650)             # about how many days of video the recorder holds (None: could not be found out)
+    oldest_recording: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")    # when its oldest recording begins, on the recorder's own clock
     uptime_seconds: int | None = Field(None, ge=0)                 # how long since the recorder last started
     channel_online: dict[str, bool] = Field(default_factory=dict, max_length=256)     # for each channel, does the recorder see its camera
     hardware: HardwareIn | None = None

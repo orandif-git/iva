@@ -193,3 +193,30 @@ def test_the_survey_reads_the_device_log_and_listens_for_alarms_writing_each_kin
     assert "device log -> result (True, 1), 1 entries" in text and "'szLogContext': 'Reboot'" in text and "'szOperator': 'System'" in text
     assert text.count("alarm from login 7: command 0x2103 seen 1 times, 4 bytes, first bytes 01000100") == 1 and "seen 2 times" not in text, "each kind of alarm is written the first time only"
     assert "listening for alarms: 1" in text
+
+
+def test_the_oldest_recording_is_read_from_the_recorders_own_list_and_gives_the_days(driver, monkeypatch):
+    class Time(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_uint) for n in ("dwYear", "dwMonth", "dwDay", "dwHour", "dwMinute", "dwSecond")]
+
+    class File(ctypes.Structure):
+        _fields_ = [("ch", ctypes.c_int), ("starttime", Time), ("endtime", Time)]
+    sys.modules["NetSDK.SDK_Struct"].NET_TIME = Time
+    block = (File * 5000)()
+    block[0].starttime, block[1].starttime = Time(2026, 10, 25, 20, 0, 0), Time(2026, 10, 26, 0, 0, 1)
+    asked = []
+
+    def query(login, index, kind, start, end, card, wait, by_time):
+        asked.append((index, start.dwYear))
+        return (1, 2, block)
+
+    driver._sdk.QueryRecordFile = query
+    driver._oldest = {}
+    clock = {"utc": None, "local": "2026-11-14T10:34:00"}
+    rec = {"1": {"recent": 3, "day": 20}, "2": {"recent": 2, "day": 20}}
+    assert driver._oldest_recording(5, clock, rec) == "2026-10-25T20:00:00", "the earliest start in the list: only the 2 real entries of the 5000 count"
+    assert asked[0][1] == 2000, "asked over a very wide period"
+    n = len(asked)
+    assert driver._oldest_recording(5, clock, rec) == "2026-10-25T20:00:00" and len(asked) == n, "remembered for hours"
+    assert driver._days_from("2026-10-25T20:00:00", clock) == 19
+    assert driver._oldest_recording(6, None, rec) is None and driver._oldest_recording(7, clock, {"1": {"recent": None, "day": None}}) is None

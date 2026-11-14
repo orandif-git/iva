@@ -137,3 +137,10 @@ async def test_a_disks_make_and_serial_number_are_kept_for_staff(client, make, s
     await report(client, make, dev, {"disks": [{**disk(0), "model": "WDCWD43PURZ", "serial": "WX72D43MN17T"}]})
     (r,) = (await client.get("/v1/recorders", headers=(await make.user(t))["headers"])).json()
     assert r["health"]["disks"][0]["model"] == "WDCWD43PURZ" and r["health"]["disks"][0]["serial"] == "WX72D43MN17T"
+
+
+async def test_the_exact_start_of_the_oldest_recording_is_stored_with_the_readings(client, make, su):
+    t, dev = await recorder(client, make, su)
+    await report(client, make, dev, {"oldest_recording": "2026-10-12T16:25:43", "days_held": 33})
+    row = await su.fetchrow("SELECT health->>'oldest_recording' AS o, health->>'days_held' AS d FROM app.recorders WHERE device_id=$1", dev)
+    assert row["o"] == "2026-10-12T16:25:43" and row["d"] == "33"

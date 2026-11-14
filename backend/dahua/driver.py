@@ -137,7 +137,11 @@ class NetSdkDriver:
         except Exception:
             log.exception("could not read the recording state of login %s", login_id)
         try:
-            out["days_held"] = self._days_held(login_id, out["clock"], out["recording"])
+            out["oldest_recording"] = self._oldest_recording(login_id, out["clock"], out["recording"])
+        except Exception:
+            log.exception("could not read the oldest recording of login %s", login_id)
+        try:
+            out["days_held"] = self._days_from(out.get("oldest_recording"), out["clock"]) if out.get("oldest_recording") else self._days_held(login_id, out["clock"], out["recording"])
         except Exception:
             log.exception("could not find out how many days of video login %s holds", login_id)
         if login_id not in self._reported:
@@ -205,6 +209,58 @@ class NetSdkDriver:
         if not self._sdk.QueryDeviceTimeEx(login_id, t, 3000):
             return None
         return {"utc": int(t.dwUTC) or None, "local": f"{t.dwYear:04d}-{t.dwMonth:02d}-{t.dwDay:02d}T{t.dwHour:02d}:{t.dwMinute:02d}:{t.dwSecond:02d}"}
+
+    OLDEST_EVERY = 6 * 3600
+
+    def _oldest_recording(self, login_id, clock, recording):
+        """When the oldest recording the recorder holds begins, as the recorder's own local time (2026-10-12T16:25:43), read from the start of the oldest file the recorder lists for
+        a search over a very wide period, on a couple of channels that really record (the earliest of them). None when it cannot be read: then the days held are worked out in steps.
+        Asked every six hours: a wide search takes the recorder 4 to 12 seconds."""
+        import time
+        from datetime import datetime
+        from NetSDK.SDK_Struct import NET_TIME
+        from .probe import _start_of
+        kept = getattr(self, "_oldest", {}).get(login_id)
+        if kept and time.monotonic() - kept[0] < self.OLDEST_EVERY:
+            return kept[1]
+        if not clock or not clock.get("local"):
+            return None
+        end = datetime.fromisoformat(clock["local"])
+        sample = [int(c) - 1 for c, v in (recording or {}).items() if (v.get("day") or 0) > 0][:2]
+        if not sample:
+            return None
+
+        def stamp(d):
+            t = NET_TIME()
+            t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return t
+
+        best = None
+        for index in sample:
+            res = self._sdk.QueryRecordFile(login_id, index, 0, stamp(datetime(2000, 1, 1)), stamp(end), "", 5000, False)
+            if not isinstance(res, tuple) or not res or not res[0]:
+                continue
+            counts = [p for p in res[1:] if isinstance(p, int) and not isinstance(p, bool)]
+            files = next((p for p in res[1:] if isinstance(p, (list, tuple)) or hasattr(p, "_length_")), None)
+            if files is None:
+                continue
+            real = min(len(files), max(counts)) if counts else len(files)
+            starts = [d for d in (_start_of(files[k]) for k in range(real)) if d]
+            if starts:
+                best = min(best, min(starts)) if best else min(starts)
+        iso = best.isoformat() if best else None
+        if iso:
+            if not hasattr(self, "_oldest"):
+                self._oldest = {}
+            self._oldest[login_id] = (time.monotonic(), iso)
+        return iso
+
+    @staticmethod
+    def _days_from(oldest_iso, clock):
+        from datetime import datetime
+        if not oldest_iso or not clock or not clock.get("local"):
+            return None
+        return max(0, (datetime.fromisoformat(clock["local"]) - datetime.fromisoformat(oldest_iso)).days)
 
     DAY_STEPS = (1, 3, 7, 14, 21, 30, 45, 60, 90, 120, 180)
     DAYS_EVERY = 6 * 3600
