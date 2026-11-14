@@ -17,12 +17,14 @@
       <button class="logo" id="home" type="button" aria-label="Jas iVision, go to Overview"><img src="/console/logo-compact.svg" alt="Jas iVision"></button>
       <nav class="areas" id="areas" aria-label="Areas"></nav>
     </div>
-    <div class="ttl">Jas iVision Control Center</div>
+    <div class="ttl" aria-label="Jas iVision Control Center"><b class="ttl-j">JAS</b> <i>iVision</i> Control Center</div>
     <div class="top-r">
+      <div class="lights" id="lights" role="group" aria-label="System status"></div>
       <button class="ibtn" id="theme" type="button" aria-label="Switch light or dark"></button>
       <div class="me"><button class="meb" id="meb" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="pop" aria-label="My profile"><span class="role" id="role"></span><span class="av" id="av"></span></button><div class="pfp" id="pop" role="dialog" aria-label="My profile" hidden></div></div>
     </div>
   </header>
+  <div class="lpop" id="lpop" role="dialog" aria-label="Status details" hidden></div>
   <div class="main">
     <nav class="rail" id="rail" aria-label="Sections"></nav>
     <aside class="side" id="side" hidden></aside>

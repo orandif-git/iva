@@ -116,16 +116,39 @@ async def cameras(conn) -> dict:
             "silent": [{"camera": r["camera"], "customer": r["customer"], "last_seen": _ago(r["stream_seen_at"])} for r in silent]}
 
 
+async def worker_state(conn) -> dict:
+    """The analysis worker as the server sees it: running when it asked for its cameras in the last two and a half minutes."""
+    w = await conn.fetchrow("SELECT max(seen_at) AS seen, extract(epoch FROM now() - max(seen_at)) AS age FROM platform.worker_seen")
+    if not w["seen"]:
+        return {"level": "crit", "text": "Has not reported yet", "last_seen": None}
+    age = float(w["age"])
+    return {"level": "ok" if age <= WORKER_OK_SECONDS else "warn" if age <= WORKER_SLOW_SECONDS else "crit",
+            "text": "Running" if age <= WORKER_OK_SECONDS else "Slow to report" if age <= WORKER_SLOW_SECONDS else "Not reporting", "last_seen": _ago(w["seen"])}
+
+
+async def status(conn) -> dict:
+    """The few numbers behind the status lights in the top bar and the server strip on the Overview. Cheap, and safe for every console user."""
+    h = host()
+    cams = await cameras(conn)
+    w = await worker_state(conn)
+    waiting = await conn.fetchrow("SELECT count(*)::int AS n, extract(epoch FROM now() - min(created_at))::float8 AS age FROM app.notifications WHERE status='queued' AND next_attempt_at < now() - interval '2 minutes'")
+    days = await disk_days_left(conn, h["disk_pct"])
+    load = h["load_pct"]
+    cam_level = "crit" if w["level"] == "crit" and cams["expected"] else "crit" if cams["silent"] else "warn" if cams["streaming"] != cams["expected"] else "ok"
+    stuck = int(waiting["age"] // 60) if waiting["age"] else 0
+    return {"generated_at": datetime.now(timezone.utc).isoformat(),
+            "cpu": {"pct": load, "level": level(load, "load") if load is not None else "ok", "cpus": h["cpus"]},
+            "memory": {"pct": h["mem_pct"], "level": level(h["mem_pct"], "mem") if h["mem_pct"] is not None else "ok", "total_gb": h["mem_total_gb"]},
+            "disk": {"pct": h["disk_pct"], "level": level(h["disk_pct"], "disk") if (days is None or days >= 7) else "warn" if days >= 2 else "crit", "days_left": days, "free_gb": h["disk_free_gb"]},
+            "worker": w,
+            "cameras": {"analysed": cams["streaming"], "expected": cams["expected"], "silent": len(cams["silent"]), "fps": cams["fps"], "level": cam_level},
+            "messages": {"waiting": waiting["n"], "oldest_minutes": stuck or None, "level": "crit" if stuck >= 10 else "warn" if waiting["n"] else "ok"}}
+
+
 async def services(conn) -> list[dict]:
     s = get_settings()
     out = [{"name": "Control Center and API", "level": "ok", "text": "Running", "last_seen": _ago(datetime.now(timezone.utc))}]
-    w = await conn.fetchrow("SELECT max(seen_at) AS seen, extract(epoch FROM now() - max(seen_at)) AS age FROM platform.worker_seen")
-    if not w["seen"]:
-        out.append({"name": "Analysis worker", "level": "crit", "text": "Has not reported yet", "last_seen": None})
-    else:
-        age = float(w["age"])
-        out.append({"name": "Analysis worker", "level": "ok" if age <= WORKER_OK_SECONDS else "warn" if age <= WORKER_SLOW_SECONDS else "crit",
-                    "text": "Running" if age <= WORKER_OK_SECONDS else "Slow to report" if age <= WORKER_SLOW_SECONDS else "Not reporting", "last_seen": _ago(w["seen"])})
+    out.append({"name": "Analysis worker", **await worker_state(conn)})
     for name, url, proto in (("Dahua gateway", s.dahua_relay_url, "auto_register"), ("Recorder registrar", s.gb_relay_url, "gb28181")):
         up = await _reachable(url)
         seen = await conn.fetchval("SELECT max(last_heartbeat_at) FROM app.recorders WHERE protocol=$1::app.recorder_protocol", proto)

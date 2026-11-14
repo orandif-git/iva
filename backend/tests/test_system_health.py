@@ -74,3 +74,21 @@ async def test_a_sample_is_saved_and_old_ones_are_removed(su):
     await sh.take_sample()
     rows = await su.fetch("SELECT disk_pct, ts FROM platform.health_samples")
     assert len(rows) == 1 and rows[0]["disk_pct"] > 0
+
+
+async def test_every_console_user_can_read_the_status_lights_and_they_follow_the_worker_and_the_cameras(client, make, su):
+    t, u, (cam,), rec = await setup_cameras(client, make, plan="full", footfall=1)
+    await su.execute("DELETE FROM platform.worker_seen")
+    for role in ("owner", "admin", "onboarding", "support"):
+        s = await make.staff(role)
+        r = await client.get("/admin/v1/system/status", headers=s["headers"])
+        assert r.status_code == 200, role
+    assert (await client.get("/admin/v1/system/status")).status_code == 401
+    owner = await make.staff("owner")
+    st = (await client.get("/admin/v1/system/status", headers=owner["headers"])).json()
+    assert st["worker"]["level"] == "crit" and st["cameras"]["level"] == "crit", "no worker has ever asked: the analysis is not running"
+    await su.execute("INSERT INTO platform.worker_seen (shard, of) VALUES (0,1) ON CONFLICT (shard, of) DO UPDATE SET seen_at=now()")
+    await su.execute("UPDATE app.cameras SET stream_state='streaming', stream_seen_at=now(), analysis_fps=4 WHERE id=$1", cam)
+    ok = (await client.get("/admin/v1/system/status", headers=owner["headers"])).json()
+    assert ok["worker"]["level"] == "ok" and ok["cameras"]["analysed"] >= 1 and {"cpu", "memory", "disk", "messages"} <= set(ok)
+    assert ok["cpu"]["level"] in ("ok", "warn", "crit") and "total_gb" in ok["memory"]

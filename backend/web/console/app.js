@@ -154,7 +154,50 @@ function videoFrame(title, pts, drawable, snap, mode, flip, pdir, camId) {
 }
 
 /* ------------------------------------------------------------------------------------------------ Overview */
+/* ---- the status lights in the top bar (CPU, worker, camera analysis) and the numbers behind them ---- */
+async function loadStatus() { try { S.sys = await api.get("/admin/v1/system/status"); } catch (e) { /* keep the last numbers; the lights stay as they were */ } renderLights(); }
+const lcls = (x) => (x === "crit" ? "crit" : x === "warn" ? "warn" : "");
+function renderLights() {
+  const d = S.sys, el = $("#lights"); if (!el) return;
+  if (!d) { el.innerHTML = ""; return; }
+  const items = [["cpu", "CPU", d.cpu.pct == null ? "" : Math.round(d.cpu.pct) + "%", d.cpu.level, "The processor"], ["worker", "Worker", d.worker.level === "ok" ? "" : "down", d.worker.level, "The analysis worker"], ["cams", "Analysis", `${d.cameras.analysed}/${d.cameras.expected}`, d.cameras.level, "Camera analysis"]];
+  el.innerHTML = items.map((i) => `<button class="sl" type="button" data-light="${i[0]}" aria-expanded="${S.lightOpen === i[0]}" aria-label="${i[4]}: ${i[3] === "ok" ? "fine" : i[3] === "warn" ? "needs a look" : "needs action"}"><span class="led ${lcls(i[3])}"></span><span class="lt">${i[1]}</span>${i[2] ? `<b>${esc(i[2])}</b>` : ""}</button>`).join("");
+  if (S.lightOpen) showLight(S.lightOpen);
+}
+function closeLight() { S.lightOpen = null; const p = $("#lpop"); if (p) p.hidden = true; document.querySelectorAll(".sl").forEach((b) => b.setAttribute("aria-expanded", "false")); }
+function showLight(k) {
+  const d = S.sys, p = $("#lpop"); if (!d || !p) return; S.lightOpen = k;
+  const ago = (iso) => { if (!iso) return "Never"; const sec = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return sec < 20 ? "Just now" : sec < 90 ? sec + " seconds ago" : sec < 5400 ? Math.round(sec / 60) + " minutes ago" : Math.round(sec / 3600) + " hours ago"; };
+  const row = (a) => a.map((x) => `<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join("");
+  const pct = (x) => (x == null ? "Not measured" : Math.round(x) + "%");
+  const html = { cpu: [d.cpu.level, "Processor", [["Busy", `${pct(d.cpu.pct)} of ${d.cpu.cpus} processor${d.cpu.cpus > 1 ? "s" : ""}`], ["Memory", pct(d.memory.pct) + " used"], ["Disk", pct(d.disk.pct) + " used"]]],
+    worker: [d.worker.level, "Analysis worker", [["State", esc(d.worker.text)], ["Last heard", ago(d.worker.last_seen)]]],
+    cams: [d.cameras.level, "Camera analysis", [["Analysed", `${d.cameras.analysed} of ${d.cameras.expected} cameras`], ["Speed", d.cameras.fps == null ? "-" : d.cameras.fps + " pictures a second"], ["Silent", d.cameras.silent ? d.cameras.silent + " for 10 minutes" : "None"], ["Messages waiting", d.messages.waiting]]] }[k];
+  p.innerHTML = `<h4><span class="led ${lcls(html[0])}"></span>${html[1]}</h4><dl class="kv">${row(html[2])}</dl>${can("sys") ? '<a class="lk-link" href="#setup/sys" data-opensys>Open System health</a>' : ""}`;
+  p.hidden = false;
+  document.querySelectorAll(".sl").forEach((b) => b.setAttribute("aria-expanded", b.dataset.light === k));
+}
+setInterval(() => { if (!document.hidden && api.signedIn()) loadStatus(); }, 30000);
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".sl"); if (b) { if (S.lightOpen === b.dataset.light) return closeLight(); return showLight(b.dataset.light); }
+  if (ev.target.closest("[data-opensys]")) { ev.preventDefault(); closeLight(); S.setup = "sys"; return go("setup"); }
+  if (!ev.target.closest("#lpop")) closeLight();
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeLight(); });
+
+function serverStrip() {
+  const d = S.sys; if (!d) return "";
+  const tile = (k, v, lvl, meter, hint) => `<div class="tile"><span class="k"><span class="dot ${lvl === "ok" ? "ok" : lcls(lvl)}"></span>${k}</span><span class="v ${lvl === "crit" ? "t-crit" : lvl === "warn" ? "t-warn" : ""}">${v}</span>${meter != null ? `<div class="mtb"><i class="${lcls(lvl)}" data-w="${Math.min(100, Math.round(meter))}"></i></div>` : ""}<span class="sub small">${hint}</span></div>`;
+  const lv = [d.cpu.level, d.disk.level, d.worker.level, d.cameras.level, d.messages.level], worst = lv.includes("crit") ? "crit" : lv.includes("warn") ? "warn" : "ok";
+  const pc = (x) => (x == null ? "-" : Math.round(x) + "%");
+  const days = d.disk.days_left == null ? `${d.disk.free_gb} GB free` : `about ${d.disk.days_left >= 100 ? "100+" : Math.round(d.disk.days_left)} days left`;
+  return `<div class="pn"><h3><span class="dot ${worst === "ok" ? "ok" : lcls(worst)}"></span>Server and analysis<span class="sp"></span>${can("sys") ? '<a class="lk-link" href="#setup/sys" data-opensys>Open System health</a>' : ""}</h3><div class="tiles">
+    ${tile("Processor", pc(d.cpu.pct), d.cpu.level, d.cpu.pct, `${d.cpu.cpus} processor${d.cpu.cpus > 1 ? "s" : ""}`)}${tile("Memory", pc(d.memory.pct), d.memory.level, d.memory.pct, d.memory.total_gb ? d.memory.total_gb + " GB in total" : "")}${tile("Disk", pc(d.disk.pct), d.disk.level, d.disk.pct, days)}
+    ${tile("Analysis worker", esc(d.worker.text), d.worker.level, null, d.worker.last_seen ? "last heard " + new Date(d.worker.last_seen).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }) : "never heard")}${tile("Cameras analysed", `${d.cameras.analysed} of ${d.cameras.expected}`, d.cameras.level, null, d.cameras.fps == null ? "" : d.cameras.fps + " pictures a second")}${tile("Messages waiting", d.messages.waiting, d.messages.level, null, d.messages.oldest_minutes ? `oldest ${d.messages.oldest_minutes} minutes` : "nothing stuck")}
+  </div></div>`;
+}
 async function pageOverview() {
+  await loadStatus();
   const [ov, msgs, sum] = await Promise.all([api.get("/admin/v1/overview"), api.get("/admin/v1/messaging/notifications?limit=200"), api.get("/admin/v1/messaging/summary")]);
   const cs = S.customers, cnt = (s) => cs.filter((c) => statusOf(c)[0] === s).length;
   const recs = Object.values(ov.recorders || {}).reduce((a, b) => a + b, 0);
@@ -166,6 +209,7 @@ async function pageOverview() {
   const max = Math.max(1, ...hours.map((h) => h.n));
   return `<div class="rise"><div class="title"><h1>Overview</h1><span class="sub">Everything across all customers, right now</span></div>
   <div class="stats"><button class="st" type="button" data-stat="customers|all"><b>${cs.length}</b><span>Customers</span></button><button class="st" type="button" data-stat="customers|Active"><b>${cnt("Active")}</b><span>Active</span></button><button class="st" type="button" data-stat="customers|Needs a look"><b class="t-warn">${cnt("Needs a look")}</b><span>Need a look</span></button><button class="st" type="button" data-stat="customers|all"><b>${ov.cameras_in_use}</b><span>Cameras</span></button><button class="st" type="button" data-stat="customers|all"><b>${recs}</b><span>Recorders</span></button><button class="st" type="button" data-stat="messages|Sent"><b>${all24.sent}</b><span>Sent in 24 hours</span></button><button class="st" type="button" data-stat="messages|Held back"><b class="${all24.held ? "t-warn" : ""}">${all24.held}</b><span>Held back</span></button><button class="st" type="button" data-stat="messages|Failed"><b class="${all24.failed ? "t-crit" : ""}">${all24.failed}</b><span>Failed to send</span></button></div>
+  ${serverStrip()}
   <div class="cc"><div>
    <div class="pn"><h3>Needs a look</h3>${needs.length ? `<table class="tbl"><thead><tr><th class="dotc"></th><th>Customer</th><th>What is wrong</th></tr></thead><tbody>${needs.map((c) => `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot warn"></span></td><td class="main-c">${esc(c.name)}</td><td>${esc(whyOf(c))}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing needs a look.</div>`}</div>
    <div class="pn"><h3>Ending soon <span class="sub light">next 30 days, plus ended in the last 30</span></h3>${ending.length ? `<table class="tbl"><thead><tr><th class="dotc"></th><th>Customer</th><th>Ends on</th><th>Days left</th><th></th></tr></thead><tbody>${ending.map((c) => `<tr><td class="dotc"><span class="dot ${c.days < 0 ? "crit" : c.days <= 7 ? "warn" : ""}"></span></td><td class="main-c"><button class="lnk dark" type="button" data-cust="${c.id}">${esc(c.name)}</button></td><td class="num">${fmtDate(c.endsOn)}</td><td class="num ${c.days < 0 ? "t-crit" : c.days <= 7 ? "t-warn" : ""}">${c.days < 0 ? "Ended" : c.days}</td><td><button class="btn sm" type="button" data-extendc="${c.id}" ${can("expiry") ? "" : "disabled"}>Extend</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty">No end dates in the next 30 days.</div>`}</div>
@@ -693,6 +737,17 @@ const rowName = (r) => r.k === "data" ? `${r.t} · ${r.cam.name}` : r.k === "are
 const rowType = (r) => r.k === "data" ? r.t : r.k === "area" ? (evMeta(r.type)?.title || r.type) + (r.type === "area_activity" ? ` · ${{ person: "people", vehicle: "vehicles" }[r.area.params?.target || "person"]}, ${{ closed: "when closed", between: `${r.area.params?.from}–${r.area.params?.to}`, always: "at any time" }[r.area.params?.when || "closed"]}` : "") : r.rule.title;
 const rowWhere = (r) => r.k === "rule" ? (REC_LEVEL.has(r.type) ? "Every recorder" : NEEDS_COUNT.has(r.type) ? "Counting cameras" : NEEDS_PLATES.has(r.type) ? "Plate cameras" : "Every camera") : r.cam.name;
 const rowSends = (r) => MEDIA[carries(r.k === "data" ? (r.flag === "use_footfall" ? "__count" : "__plates") : r.type)];
+/* The Events list in two groups: Smart events (counting, plates, marked areas and the alerts built on them; you add and delete these) and System events (the default checks) */
+const EV_GROUPS2 = [["smart", "Smart events", "you add and delete these"], ["system", "System events", "on by default for every shop, switch off to stop"]];
+const groupOf = (r) => (r.k === "data" || r.k === "area" ? "smart" : r.rule?.ai ? "smart" : "system");
+function groupsHtml(rows, list, line, searching) {
+  S.evOpen = S.evOpen || { smart: true, system: true };
+  return EV_GROUPS2.map(([key, label, note]) => {
+    const all = rows.filter((r) => groupOf(r) === key), mine = list.filter((r) => groupOf(r) === key); if (!mine.length) return "";
+    const open = searching || S.evOpen[key];
+    return `<tr class="grp"><td colspan="7"><button class="gbtn" type="button" data-evgrp="${key}" aria-expanded="${open}"><span class="chev ${open ? "" : "shut"}">${ico("chev", 14)}</span>${label}<span class="meta">${all.filter((r) => r.on).length} on of ${all.length} · ${note}</span></button></td></tr>${open ? mine.map(line).join("") : ""}`;
+  }).join("");
+}
 function secEvents() {
   const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length, k = S.evQ.trim().toLowerCase();
   const list = rows.filter((r) => !k || `${rowName(r)} ${rowType(r)} ${rowWhere(r)} ${r.k === "data" ? "" : namesOf(r.rule?.recipient_ids)}`.toLowerCase().includes(k));
@@ -702,7 +757,7 @@ function secEvents() {
   };
   return `<div class="stack"><div class="bar flush"><span class="sub">${on} on of ${rows.length}. Click an event to see it, change it or delete it.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
   <div class="bar flush"><label class="search">${ico("search")}<span class="sr">Search events</span><input id="evq" placeholder="Search events" value="${esc(S.evQ)}" autocomplete="off"></label>${k ? `<span class="sub">${list.length} found</span>` : ""}</div>
-  ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Where</th><th>Sends</th><th>Goes to</th><th class="sw-c">On</th></tr></thead><tbody>${list.length ? list.map(line).join("") : '<tr><td colspan="7" class="empty">No events match your search.</td></tr>'}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
+  ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Where</th><th>Sends</th><th>Goes to</th><th class="sw-c">On</th></tr></thead><tbody>${list.length ? groupsHtml(rows, list, line, !!k) : '<tr><td colspan="7" class="empty">No events match your search.</td></tr>'}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
 }
 /* Switch an event on or off straight from the list */
 async function toggleRow(i, checked) {
@@ -960,7 +1015,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -1048,6 +1103,7 @@ document.addEventListener("click", async (ev) => {
       const r = await api.post("/admin/v1/webhooks/connection/test", { alert_type, to_phone: to }); closeModal();
       return r.ok ? toast("Sent. The provider accepted it.") : toast("The provider did not accept it: " + (r.error || "status " + r.status), true);
     }
+    if (d.evgrp) { S.evOpen = S.evOpen || { smart: true, system: true }; S.evOpen[d.evgrp] = !S.evOpen[d.evgrp]; return render(true); }
     if (d.hrec !== undefined) return openRecorder(+d.hrec);
     if (d.rencam) { const c = S.cur.cams.find((x) => x.id === d.rencam); return modal(`${mh("Rename the camera")}<label class="bold" for="rn-n">Camera name</label><input class="in" id="rn-n" maxlength="80" value="${esc(c.name)}"><div class="actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn pri" type="button" data-confirm="dorencam" data-id="${c.id}">Save</button></div>`); }
     if (d.confirm === "dorencam") { const name = $("#rn-n").value.trim(); if (!name) return toast("Type a name for the camera.", true); await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${d.id}`, { name }); closeModal(); await loadCurrent(S.cid); toast("Camera renamed"); return render(true); }
@@ -1209,6 +1265,7 @@ async function boot() {
   if (!api.signedIn()) return location.replace("/");
   try { S.me = await api.get("/admin/v1/me"); } catch (e) { if (e.status === 401) return location.replace("/"); return void ($("#page").innerHTML = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`); }
   S.role = S.me.role;
+  loadStatus();
   try { await loadCustomers(); } catch (e) { toast(errText(e), true); }
   const [r, a, b] = location.hash.slice(1).split("/");
   if (["overview", "customers", "messages"].includes(r)) S.route = r;

@@ -393,3 +393,25 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .hev{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.hev time{width:78px;color:var(--fg2);flex:none;font-variant-numeric:tabular-nums}
 .tbl.mini td{height:34px}.note.crit{background:var(--crit-soft)}
 tr.click:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+
+/* Status lights in the top bar and the server strip on Overview */
+.lights{display:flex;gap:2px;align-items:center;padding-right:8px;margin-right:2px;border-right:1px solid var(--line)}
+.sl{display:flex;align-items:center;gap:6px;border:0;background:none;border-radius:999px;padding:4px 9px;font-size:12.5px;color:var(--fg)}
+.sl:hover,.sl[aria-expanded="true"]{background:var(--hover)}.sl b{font-weight:700;font-variant-numeric:tabular-nums}
+.led{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft);flex:none}
+.led.warn{background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}.led.crit{background:var(--crit);box-shadow:0 0 0 3px var(--crit-soft)}
+@media (max-width:760px){.sl .lt{display:none}}
+.lpop{position:fixed;top:48px;right:92px;width:300px;max-width:calc(100vw - 24px);background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(20,26,36,.16);padding:12px 14px;z-index:40}
+.lpop h4{margin:0 0 8px;font-size:14px;color:var(--head);display:flex;align-items:center;gap:8px}.lpop .kv{grid-template-columns:110px minmax(0,1fr);margin-bottom:10px}
+.lk-link{color:var(--brand);font-weight:700;cursor:pointer;text-decoration:none;font-size:13px}.lk-link:hover{text-decoration:underline}
+.pn>h3 .sp{flex:1}.pn>h3{gap:8px;justify-content:flex-start}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.tile{padding:12px 14px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:3px}.tile:first-child{border-left:0}
+.tile .k{color:var(--fg2);font-size:12.5px;display:flex;align-items:center;gap:6px}.tile .v{font-size:20px;font-weight:700;color:var(--head);font-variant-numeric:tabular-nums;line-height:1.2}.small{font-size:12.5px}
+.gbtn{border:0;background:none;display:flex;gap:8px;align-items:center;font-weight:700;color:var(--head);padding:0 12px;height:36px;width:100%;text-align:left}
+.gbtn .meta{font-weight:400;color:var(--fg2);font-size:12.5px;margin-left:6px}.gbtn .chev{display:inline-flex;transform:rotate(90deg);transition:transform .2s;color:var(--mute)}.gbtn .chev.shut{transform:none}
+.ev-tbl tr.grp td{padding:0}
+
+/* The name in the middle of the top bar: JAS in the brand colour, the rest in the normal text colour */
+.ttl{color:var(--head);font-weight:400}.ttl .ttl-j{color:var(--brand);font-weight:700}.ttl i{font-style:italic;color:var(--head)}
+.ttl i{margin-right:.2em}
