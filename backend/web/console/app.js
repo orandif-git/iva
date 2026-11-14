@@ -67,7 +67,7 @@ const MEDIA = { data: ["No message", "mute"], none: ["Text only", "mute"], image
 const carries = (t) => CARRIES[t] || "none";
 const PARAM = { people: ["More than", "people"], picture_minutes: ["Picture at most every", "min"], grace_minutes: ["Wait after closing", "min"], drops: ["Drops in a day", "times"], minutes_out: ["Clock is out by", "min"], temperature: ["Too hot above", "°C"],
   percent: ["Health left below", "%"], days: ["Days of video wanted", "days"], hours: ["For", "hours"], max_minutes: ["Stays longer than", "min"] };
-const AREA_FIELDS = { area_count: [["limit", "More than", "people", 5], ["minutes", "For", "min", 2]], queue_area: [["length", "Queue longer than", "people", 6], ["wait_minutes", "Or wait longer than", "min", 10], ["minutes", "For", "min", 2]], staff_area: [["seconds", "For more than", "sec", 20]], activity_area: [["minutes", "Present for at least", "min", 1]] };
+const AREA_FIELDS = { area_count: [["limit", "At least", "people", 5], ["minutes", "For", "min", 2]], queue_area: [["length", "Queue of at least", "people", 6], ["wait_minutes", "Or wait longer than", "min", 10], ["minutes", "For", "min", 2]], staff_area: [["seconds", "For more than", "sec", 20]], activity_area: [["minutes", "Present for at least", "min", 1]] };
 const SHORT = ["customer", "camera", "time", "details", "area", "people", "plate", "minutes", "recorder", "image_url", "clip_url"];
 
 /* ------------------------------------------------------------------------------------------------ state */
