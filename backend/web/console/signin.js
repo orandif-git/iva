@@ -73,8 +73,28 @@ function startSetPassword() {
   });
 }
 
+/* ---------------------------------------------------------------------------- sign in with Face ID or a fingerprint (a passkey set up under More) */
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+async function faceSignIn() {
+  clear(); $("#fid").disabled = true;
+  try {
+    const o = await post("/admin/v1/auth/passkey/options", {});
+    let cred;
+    try { cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, timeout: o.timeout, userVerification: "required" } }); }
+    catch (e) { throw new Error(e.name === "NotAllowedError" ? "Face ID was cancelled or this phone has no Face ID sign-in set up. Use your password, then set it up under More." : "Face ID could not start on this phone."); }
+    const r = cred.response, j = await post("/admin/v1/auth/passkey/login", { id: cred.id, clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) });
+    store.keep(false); store.set(j.refresh_token); location.replace("/console/");
+  } catch (e) { $("#fid").disabled = false; fail(null, e.message); }
+}
+async function showFaceButton() {
+  try { if (!window.PublicKeyCredential || !(await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())) return; } catch { return; }
+  $("#fid").hidden = false; $("#fid").addEventListener("click", faceSignIn);
+}
+
 /* ---------------------------------------------------------------------------- sign in */
 async function startSignIn() {
+  showFaceButton();
   const rt = store.get();
   if (rt) {                                                    // already signed in on this browser: go straight on
     try { const j = await post("/admin/v1/auth/refresh", { refresh_token: rt }); store.set(j.refresh_token); return location.replace("/console/"); } catch { store.set(null); }

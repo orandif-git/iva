@@ -11,7 +11,7 @@ from ..schemas import StaffCreateIn, StaffPatchIn
 from ..services import auth
 
 router = APIRouter(prefix="/admin/v1/staff", tags=["admin: staff"])
-COLS = "id, name, email::text AS email, role::text AS role, status, last_login_at, (password_hash IS NOT NULL) AS has_password, created_at"
+COLS = "id, name, email::text AS email, role::text AS role, status, last_login_at, (password_hash IS NOT NULL) AS has_password, created_at, (SELECT count(*)::int FROM platform.passkeys k WHERE k.staff_id = platform.staff_users.id) AS passkeys"
 
 
 async def _get(ctx: AdminCtx, sid: UUID):

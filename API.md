@@ -112,6 +112,14 @@ Generated from the code. All `/admin/v1` routes need a staff token (`Authorizati
 - `PUT /admin/v1/summaries/key`
 - `POST /admin/v1/summaries/test`
 
+## admin_passkeys
+
+- `GET /admin/v1/passkeys`
+- `POST /admin/v1/passkeys/options`
+- `POST /admin/v1/passkeys`
+- `DELETE /admin/v1/passkeys/{key_id}`
+- `DELETE /admin/v1/passkeys/for/{staff_id}`
+
 ## admin_push
 
 - `GET /admin/v1/push`
@@ -166,6 +174,8 @@ Generated from the code. All `/admin/v1` routes need a staff token (`Authorizati
 - `POST /admin/v1/auth/login`
 - `POST /admin/v1/auth/refresh`
 - `POST /admin/v1/auth/remember`
+- `POST /admin/v1/auth/passkey/options`
+- `POST /admin/v1/auth/passkey/login`
 - `POST /admin/v1/auth/logout`
 - `POST /admin/v1/auth/set-password`
 

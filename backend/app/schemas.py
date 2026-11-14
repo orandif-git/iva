@@ -382,6 +382,19 @@ class RefreshIn(Strict):
     refresh_token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
 
 
+class PasskeyLoginIn(Strict):
+    id: Annotated[str, StringConstraints(min_length=8, max_length=400)]
+    clientDataJSON: Annotated[str, StringConstraints(min_length=20, max_length=4000)]
+    authenticatorData: Annotated[str, StringConstraints(min_length=40, max_length=2000)]
+    signature: Annotated[str, StringConstraints(min_length=40, max_length=1000)]
+
+
+class PasskeyRegisterIn(Strict):
+    clientDataJSON: Annotated[str, StringConstraints(min_length=20, max_length=4000)]
+    attestationObject: Annotated[str, StringConstraints(min_length=40, max_length=8000)]
+    name: Annotated[str, StringConstraints(max_length=60)] = ""
+
+
 class RememberIn(RefreshIn):
     remember: bool
 

@@ -1,6 +1,7 @@
 """Notifications on a console user's phone: the message is encrypted so only that phone can read it, each person gets what their role (or their own switches) says, and the watcher tells once."""
 import base64
 import json
+import uuid
 from datetime import datetime
 
 import httpx
@@ -195,11 +196,12 @@ async def test_a_recorder_going_offline_is_announced_once_and_when_it_comes_back
     owner = await make.staff("owner")
     phone = push.phone()
     await subscribe(client, owner, phone)
-    t = await make.tenant("Lakshmi Jewellers")
+    shop = f"Lakshmi {uuid.uuid4().hex[:6]}"
+    t = await make.tenant(shop)
     rid = await su.fetchval("INSERT INTO app.recorders (tenant_id, device_id, brand, protocol, name, status) VALUES ($1,'DEV-PUSH','dahua','auto_register','Dr SMS','online') RETURNING id", t)
 
     def mine():                                                            # other tests may leave other customers' recorders behind; only this one is judged
-        return [m for _, m in phone.got if m["title"].startswith("Lakshmi Jewellers")]
+        return [m for _, m in phone.got if m["title"].startswith(shop)]
     async with db.admin_tx() as conn:
         await staff_push.check_recorders(conn)                              # first sight: quiet
     assert not phone.got
@@ -207,7 +209,7 @@ async def test_a_recorder_going_offline_is_announced_once_and_when_it_comes_back
     for _ in range(3):                                                     # a minute passes, three times: still only one note
         async with db.admin_tx() as conn:
             await staff_push.check_recorders(conn)
-    assert len(mine()) == 1 and mine()[0]["title"] == "Lakshmi Jewellers: recorder offline" and mine()[0]["url"] == f"/console/#customer/{t}/health"
+    assert len(mine()) == 1 and mine()[0]["title"] == f"{shop}: recorder offline" and mine()[0]["url"] == f"/console/#customer/{t}/health"
     await su.execute("UPDATE app.recorders SET status='online' WHERE id=$1", rid)
     async with db.admin_tx() as conn:
         await staff_push.check_recorders(conn)
@@ -241,7 +243,8 @@ async def test_customers_ending_soon_and_the_morning_summary_come_once_a_day_at_
     owner = await make.staff("owner")
     phone = push.phone()
     await subscribe(client, owner, phone)
-    t = await make.tenant("Sri Ganesh Bakery")
+    bakery = f"Bakery {uuid.uuid4().hex[:6]}"
+    t = await make.tenant(bakery)
     await su.execute("UPDATE app.tenants SET ends_on = (now() at time zone 'Asia/Kolkata')::date + 4 WHERE id=$1", t)
     from zoneinfo import ZoneInfo
     ist = ZoneInfo("Asia/Kolkata")
@@ -255,14 +258,14 @@ async def test_customers_ending_soon_and_the_morning_summary_come_once_a_day_at_
             await staff_push.check_daily(conn, datetime(today.year, today.month, today.day, hour, 45, tzinfo=ist))
     titles = [m["title"] for _, m in phone.got]
     assert titles.count("Good morning") == 1 and any("ending soon" in x for x in titles) and len(titles) == 2
-    assert any("Sri Ganesh Bakery (4 days)" in m["body"] for _, m in phone.got)
+    assert any(f"{bakery} (4 days)" in m["body"] for _, m in phone.got)
 
 
 async def test_messages_that_fail_are_announced_but_not_more_than_every_half_hour(client, make, push, su):
     owner = await make.staff("owner")
     phone = push.phone()
     await subscribe(client, owner, phone)
-    t = await make.tenant("Annai Medicals")
+    t = await make.tenant(f"Medicals {uuid.uuid4().hex[:6]}")
 
     async def fail_one():
         await su.execute("INSERT INTO app.notifications (tenant_id, channel, recipient, status, event) VALUES ($1,'whatsapp','+919800000000','failed','system.camera_offline')", t)

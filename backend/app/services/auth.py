@@ -87,6 +87,17 @@ async def staff_login(conn, email: str, password: str, ip: str | None, remember:
     return out
 
 
+async def passkey_login(conn, staff_id) -> dict:
+    """The sign-in after Face ID checked out (services/passkeys.py): the same tokens as a password sign-in."""
+    r = await conn.fetchrow("SELECT id, name, role::text AS role FROM platform.staff_users WHERE id=$1 AND status='active'", staff_id)
+    if not r:
+        raise ApiError(401, "invalid_token", "Sign in again.")
+    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
+    out = await _tokens(conn, r["id"])
+    out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
+    return out
+
+
 # -------------------------------------------------------------------------------- refresh and logout
 async def refresh(conn, raw: str, remember: bool | None = None) -> dict | ApiError:
     """Swap a refresh token for a new one. The sign-in keeps its length (12 hours, or 30 days when the person chose to stay signed in) and each use starts it again.
@@ -149,4 +160,5 @@ async def set_staff_password_with_token(conn, raw: str, password: str) -> None:
     if await conn.fetchval("UPDATE platform.auth_tokens SET used_at=now() WHERE id=$1 AND used_at IS NULL RETURNING id", row["id"]) is None:
         raise ApiError(400, "link_invalid", "This link has expired or was already used. Ask an owner for a new one.")
     await conn.execute("UPDATE platform.staff_users SET password_hash=$2, failed_logins=0, locked_until=NULL WHERE id=$1", u["id"], h)
+    await conn.execute("DELETE FROM platform.passkeys WHERE staff_id=$1", u["id"])          # a new password after a reset also ends every Face ID sign-in of that person
     await revoke_all(conn, u["id"])

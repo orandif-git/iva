@@ -942,6 +942,7 @@ function pageMore() {
    <div class="sec-h">This phone</div>
    ${standalone() ? "" : `<button class="card nodot" type="button" data-install>${ico("phone", 20)}<span class="ct"><b>Add to home screen</b><span class="sub small">Open it like an app, without the browser bar</span></span>${ico("chev", 16)}</button>`}
    <button class="card nodot" type="button" data-notif>${ico("bell", 20)}<span class="ct"><b>Notifications</b><span class="sub small">Choose what this phone tells you about</span></span>${ico("chev", 16)}</button>
+   ${faceOk() ? `<button class="card nodot" type="button" data-fid>${ico("head", 20)}<span class="ct"><b>Face ID</b><span class="sub small">Sign in with a look instead of a password</span></span>${ico("chev", 16)}</button>` : ""}
    <button class="card nodot" type="button" data-pwopen>${ico("lock", 20)}<span class="ct"><b>Change password</b></span>${ico("chev", 16)}</button>
    <button class="card nodot" type="button" id="theme2">${ico("moon", 20)}<span class="ct"><b>Dark or light</b><span class="sub small">Switch how it looks</span></span>${ico("chev", 16)}</button>
    <div class="card nodot">${ico("shield", 20)}<span class="ct"><b>Stay signed in on this phone</b><span class="sub small" id="keep-sub">${api.keep ? "For 30 days after you last open it" : "Off. You sign in again when the app closes"}</span></span>${sw("keep-on", api.keep, false, "staykeep")}</div>
@@ -974,7 +975,7 @@ async function pageSetup() {
     if (!can("team")) return lock("Console users");
     const st = await api.get("/admin/v1/staff"); S.team = st.items;
     return `<div class="rise"><div class="bar"><span class="sp"></span><button class="btn pri" type="button" data-invite>${ico("plus")}Add a person</button></div>
-    <div class="scroll mb22"><table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last sign-in</th><th></th></tr></thead><tbody>${st.items.map((m) => `<tr><td class="main-c">${esc(m.name)}</td><td>${esc(m.email)}</td><td><span class="tag brand">${ROLES[m.role]?.[0] || humanize(m.role)}</span></td><td class="num">${m.last_login_at ? fmtTime(m.last_login_at) : "Never"}</td><td>${m.role === "owner" && S.role !== "owner" ? "" : `<button class="btn sm" type="button" data-editstaff="${m.id}">Edit</button> `}${m.id === S.me.id ? "" : m.role === "owner" && S.role !== "owner" ? "" : `<button class="btn sm" type="button" data-${m.status === "active" ? "disable" : "enable"}="${m.id}">${m.status === "active" ? "Switch off" : "Switch on"}</button> <button class="btn sm" type="button" data-resetlink="${m.id}">New sign-in link</button>`}</td></tr>`).join("")}</tbody></table></div>
+    <div class="scroll mb22"><table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last sign-in</th><th></th></tr></thead><tbody>${st.items.map((m) => `<tr><td class="main-c">${esc(m.name)}</td><td>${esc(m.email)}</td><td><span class="tag brand">${ROLES[m.role]?.[0] || humanize(m.role)}</span></td><td class="num">${m.last_login_at ? fmtTime(m.last_login_at) : "Never"}</td><td>${m.role === "owner" && S.role !== "owner" ? "" : `<button class="btn sm" type="button" data-editstaff="${m.id}">Edit</button> `}${m.id === S.me.id ? "" : m.role === "owner" && S.role !== "owner" ? "" : `<button class="btn sm" type="button" data-${m.status === "active" ? "disable" : "enable"}="${m.id}">${m.status === "active" ? "Switch off" : "Switch on"}</button> <button class="btn sm" type="button" data-resetlink="${m.id}">New sign-in link</button>${m.passkeys ? ` <button class="btn sm" type="button" data-fidrm="${m.id}">Remove Face ID</button>` : ""}`}</td></tr>`).join("")}</tbody></table></div>
     <h2 class="h2">What each role can do</h2><div class="scroll"><table class="tbl matrix"><thead><tr><th></th>${Object.values(ROLES).map((r) => `<th>${r[0]}</th>`).join("")}</tr></thead><tbody>${PERMS.map((p) => `<tr><td>${p[0]}</td>${[0, 1, 2, 3].map((i) => `<td>${"oas".includes(p[1][i]) ? '<span class="tick">✓</span>' : '<span class="cross">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
   }
   if (S.setup === "wa") {
@@ -1138,7 +1139,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-tab],[data-install],[data-notif],[data-pnon],[data-pnoff],[data-pntest],[data-prec],[data-pcam],[data-pper],[data-paddp],[data-phr],[data-psave],[data-pdel],[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#theme2,#signout,[data-signout],[data-pwopen]");
+  const t = ev.target.closest("[data-tab],[data-fid],[data-fidadd],[data-fiddel],[data-fidrm],[data-install],[data-notif],[data-pnon],[data-pnoff],[data-pntest],[data-prec],[data-pcam],[data-pper],[data-paddp],[data-phr],[data-psave],[data-pdel],[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#theme2,#signout,[data-signout],[data-pwopen]");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -1155,6 +1156,11 @@ document.addEventListener("click", async (ev) => {
     if ("psave" in d) { closeModal(); return saveSection(); }
     if (d.pdel !== undefined) { S.cur.f.people.splice(+d.pdel, 1); closeModal(); return saveSection(); }
     if ("install" in d) return installApp();
+    if ("fid" in d) return openFaceId();
+    if ("fidadd" in d) return addFaceId();
+    if (d.fiddel) { try { await api.del(`/admin/v1/passkeys/${d.fiddel}`); toast("Removed"); return openFaceId(); } catch (e) { return toast(errText(e), true); } }
+    if (d.fidrm) { const m = S.team.find((x) => x.id === d.fidrm); return modal(`${mh("Remove Face ID")}<p class="nm">Remove Face ID sign-in for <b>${esc(m?.name || "this person")}</b> on every phone? They can still sign in with their password, and set it up again.</p><div class="row"><button class="btn danger" type="button" data-confirm="fidrm" data-id="${d.fidrm}">Remove</button><button class="btn" type="button" data-close>Cancel</button></div>`); }
+    if (d.confirm === "fidrm") { await api.del(`/admin/v1/passkeys/for/${d.id}`); closeModal(); toast("Face ID removed"); return render(true); }
     if ("notif" in d) return openNotifications();
     if ("pnon" in d) return pushOn();
     if ("pnoff" in d) return pushOff();
@@ -1454,6 +1460,28 @@ async function pushOn() {
 async function pushOff() {
   try { const sub = await mySub(); if (sub) { await api.post("/admin/v1/push/unsubscribe", { endpoint: sub.endpoint }); await sub.unsubscribe(); } toast("Notifications are off for this phone"); return openNotifications(); }
   catch (e) { toast(errText(e), true); }
+}
+
+/* ------------------------------------------------------------------------------------------------ Face ID or fingerprint sign-in */
+const bufB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const faceOk = () => !!window.PublicKeyCredential;
+async function openFaceId() {
+  let list;
+  try { list = (await api.get("/admin/v1/passkeys")).items; } catch (e) { return toast(errText(e), true); }
+  let here = false; try { here = faceOk() && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch { /* no */ }
+  modal(`${mh("Face ID")}<div class="sub">Sign in with Face ID or your fingerprint instead of typing your password. Your password still works.</div>
+  ${list.length ? `<div class="llist">${list.map((k) => `<div class="lrow nodot"><span class="ct"><b>${esc(k.name || "This phone")}</b><span class="sub small">Set up ${fmtTime(k.created_at)} · ${k.last_used_at ? "last used " + fmtTime(k.last_used_at) : "not used yet"}</span></span><button class="btn sm" type="button" data-fiddel="${k.id}">Remove</button></div>`).join("")}</div>` : '<div class="note">Face ID is not set up on any phone yet.</div>'}
+  ${here ? '<button class="btn pri" type="button" data-fidadd>Set up Face ID on this phone</button>' : '<div class="note">This phone cannot use Face ID or a fingerprint for sign-in here.</div>'}
+  <div class="sub small">Apple can keep this key in iCloud, so it may also work on your other Apple devices.</div>`);
+}
+async function addFaceId() {
+  try {
+    const o = await api.post("/admin/v1/passkeys/options");
+    const un = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+    const cred = await navigator.credentials.create({ publicKey: { ...o, challenge: un(o.challenge), user: { ...o.user, id: un(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: un(c.id) })) } });
+    await api.post("/admin/v1/passkeys", { clientDataJSON: bufB64(cred.response.clientDataJSON), attestationObject: bufB64(cred.response.attestationObject), name: `${onIPhone() ? "iPhone" : "This device"}` });
+    toast("Face ID is set up. Next time use Sign in with Face ID."); return openFaceId();
+  } catch (e) { toast(e.status ? errText(e) : e.name === "NotAllowedError" ? "Face ID was cancelled." : e.name === "InvalidStateError" ? "Face ID is already set up on this phone." : "Could not set up Face ID. Try again.", true); }
 }
 
 /* ------------------------------------------------------------------------------------------------ start */

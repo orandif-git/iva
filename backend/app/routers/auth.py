@@ -5,8 +5,8 @@ from ..config import get_settings
 from ..db import db
 from ..deps import client_ip
 from ..errors import ApiError
-from ..schemas import RefreshIn, RememberIn, SetPasswordIn, StaffLoginIn
-from ..services import auth
+from ..schemas import PasskeyLoginIn, RefreshIn, RememberIn, SetPasswordIn, StaffLoginIn
+from ..services import auth, passkeys
 from ..services.loginguard import guard
 
 staff = APIRouter(prefix="/admin/v1/auth", tags=["sign-in"])
@@ -45,6 +45,27 @@ async def staff_remember(body: RememberIn, response: Response):
     async with db.admin_tx() as conn:
         result = await auth.refresh(conn, body.refresh_token, body.remember)
     return _raise_if_error(result)
+
+
+@staff.post("/passkey/options")
+async def passkey_options(request: Request, response: Response):
+    """Start a Face ID sign-in: a one-time challenge for the phone to sign."""
+    _no_store(response)
+    s = get_settings()
+    guard.check(client_ip(request), "passkey-options", s.login_ip_limit, 10 ** 9, 1)
+    async with db.admin_tx() as conn:
+        return await passkeys.login_options(conn)
+
+
+@staff.post("/passkey/login")
+async def passkey_login(body: PasskeyLoginIn, request: Request, response: Response):
+    """Finish a Face ID sign-in. The answer is checked against the public key saved when the phone was set up."""
+    _no_store(response)
+    s = get_settings()
+    guard.check(client_ip(request), "passkey-login", s.login_ip_limit, 10 ** 9, 1)
+    async with db.admin_tx() as conn:
+        sid = await passkeys.check_login(conn, body.id, body.clientDataJSON, body.authenticatorData, body.signature)
+        return await auth.passkey_login(conn, sid)
 
 
 @staff.post("/logout", status_code=204)
