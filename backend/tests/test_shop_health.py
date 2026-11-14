@@ -57,3 +57,25 @@ async def test_a_picture_problem_and_stuck_messages_are_reported_and_test_alerts
     text = " | ".join(i["text"] for i in h["issues"])
     assert "is covered" in text and "waiting for more than 10 minutes" in text and h["overall"] == "warn"
     assert sum(d["problems"] for d in h["days"]) == 1, "a test alert is not a problem"
+
+
+async def test_the_recorders_window_has_the_disks_hardware_channels_and_the_last_days_connection_history(client, make, su):
+    t, cam, rec, staff = await shop(client, make, su)
+    health = {"disks": [{"num": 0, "total_mb": 4_000_000, "free_mb": 2_000_000, "status": 1, "state": 1, "life_percent": 12.0, "model": "WD Purple", "serial": "WCC7K3"}], "uptime_seconds": 3600,
+              "hardware": {"temperature_c": 41.5, "fan_ok": True, "poe_fault": False}, "clock": {"local": "2026-11-14T11:04:00"}, "recording_now": {"1": True}, "channel_online": {"1": True},
+              "oldest_recording": "2026-10-12T16:25:43", "days_held": 33}
+    await su.execute("UPDATE app.recorders SET status='online', firmware='V4.001', last_ip='157.51.122.232', health=$2 WHERE tenant_id=$1", t, json.dumps(health))
+    rid = await su.fetchval("SELECT id FROM app.recorders WHERE tenant_id=$1", t)
+    await su.execute("INSERT INTO app.recorder_channels (recorder_id, tenant_id, channel_no, name) VALUES ($1,$2,1,'Gate') ON CONFLICT (recorder_id, channel_no) DO UPDATE SET name='Gate'", rid, t)
+    now = datetime.now(timezone.utc)
+    await su.execute("DELETE FROM app.recorder_link_events WHERE recorder_id=$1", rid)           # the helper's own first connection
+    for status, ago in (("offline", 180), ("online", 177), ("offline", 40)):
+        await su.execute("INSERT INTO app.recorder_link_events (tenant_id, recorder_id, status, at) VALUES ($1,$2,$3,$4)", t, rid, status, now - timedelta(minutes=ago))
+    d = (await client.get(url(t), headers=staff["headers"])).json()["recorders"][0]["detail"]
+    assert d["firmware"] == "V4.001" and d["address"] == "157.51.122.232" and d["uptime_seconds"] == 3600 and d["temperature_c"] == 41.5 and d["fan_ok"] is True
+    assert d["disks"][0]["model"] == "WD Purple" and d["disks"][0]["state"] == "wearing" and d["disks"][0]["total_mb"] == 4_000_000
+    assert d["channels"][0]["online"] is True and d["channels"][0]["recording"] is True and d["channels"][0]["name"] == "Gate"
+    lines = [h["text"] for h in d["history"]]
+    assert lines == ["Went offline. Not back yet.", "Went offline, back online after 3 minutes."], lines
+    empty = (await client.get(url(await make.tenant()), headers=staff["headers"])).json()
+    assert empty["recorders"] == []

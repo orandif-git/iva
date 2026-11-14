@@ -387,3 +387,9 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .stats button.st{background:none;border:0;border-left:1px solid var(--line);text-align:left;cursor:pointer;color:inherit;font:inherit}.stats button.st:first-child{border-left:0}.stats button.st:hover{background:var(--hover)}.stats button.st:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .dlab{display:flex;gap:3px;margin-top:6px}.dlab span{flex:1;text-align:center;font-size:12px;color:var(--fg2)}.dlab b{display:block;color:var(--head)}
 .bars i.bad{background:var(--crit)}
+.mtb.sm{display:inline-block;width:64px;height:6px;vertical-align:middle;margin-left:8px}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:7px 12px;margin:0}.kv dt{color:var(--fg2)}.kv dd{margin:0;overflow-wrap:anywhere}
+.disk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.hev{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.hev time{width:78px;color:var(--fg2);flex:none;font-variant-numeric:tabular-nums}
+.tbl.mini td{height:34px}.note.crit{background:var(--crit-soft)}
+tr.click:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}

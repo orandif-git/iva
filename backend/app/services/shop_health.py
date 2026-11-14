@@ -34,17 +34,60 @@ def _disks(h: dict) -> dict:
     return {"state": "fault" if bad else "wearing" if worn else "ok", "count": len(disks), "percent_full": h.get("percent_full")}
 
 
+def _history(rows: list, now: datetime) -> list[dict]:
+    """The drops and returns of the last day as short lines, newest first: an offline followed by an online is one line ("went offline, back after 3 minutes")."""
+    out, down = [], None
+    for e in rows:
+        if e["status"] == "offline":
+            if down is not None:
+                out.append({"at": down, "text": "Went offline and was not seen coming back."})
+            down = e["at"]
+        elif down is not None:
+            mins = max(1, round((e["at"] - down).total_seconds() / 60))
+            out.append({"at": down, "text": f"Went offline, back online after {mins} minute{'s' if mins != 1 else ''}."})
+            down = None
+        else:
+            out.append({"at": e["at"], "text": "Came back online."})
+    if down is not None:
+        out.append({"at": down, "text": "Went offline. Not back yet."})
+    return sorted(out, key=lambda x: x["at"], reverse=True)[:12]
+
+
+def _detail(r, h: dict, link_rows: list, chans: list, cam_by_channel: dict, now: datetime) -> dict:
+    """Everything the recorder's window shows. A value the recorder did not report is None, never a guess."""
+    hw = h.get("hardware") or {}
+    now_rec, online = h.get("recording_now") or {}, h.get("channel_online") or {}
+    disks = [{"number": d.get("num"), "total_mb": d.get("total_mb"), "free_mb": d.get("free_mb"), "state": "fault" if d.get("state") == 2 else "wearing" if (d.get("life_percent") is not None and d["life_percent"] <= 20) else "ok",
+              "life_percent": d.get("life_percent"), "model": d.get("model"), "serial": d.get("serial")} for d in (h.get("disks") or [])]
+    clock = h.get("clock") or {}
+    return {"brand": r["brand"], "protocol": r["protocol"], "device_id": r["device_id"], "firmware": r["firmware"], "address": r["address"], "channel_count": r["channel_count"],
+            "uptime_seconds": h.get("uptime_seconds"), "disks": disks, "clock_local": clock.get("local"), "temperature_c": hw.get("temperature_c"), "fan_ok": hw.get("fan_ok"), "poe_fault": hw.get("poe_fault"),
+            "channels": [{"number": c["channel_no"], "name": c["name"], "camera": cam_by_channel.get((r["id"], c["channel_no"])),
+                          "online": online.get(str(c["channel_no"])), "recording": now_rec.get(str(c["channel_no"]))} for c in chans],
+            "history": _history(link_rows, now)}
+
+
 async def report(conn) -> dict:
     now = datetime.now(timezone.utc)
     tz = await conn.fetchval("SELECT timezone FROM app.tenants LIMIT 1") or "Asia/Kolkata"
     recs = await conn.fetch(
-        """SELECT r.id, coalesce(r.name, r.device_id) AS name, r.status::text AS status, r.last_heartbeat_at, r.health, r.health_at,
+        """SELECT r.id, coalesce(r.name, r.device_id) AS name, r.device_id, r.brand::text AS brand, r.protocol::text AS protocol, r.firmware, host(r.last_ip) AS address, r.channel_count,
+                  r.status::text AS status, r.last_heartbeat_at, r.health, r.health_at,
                   (SELECT count(*) FROM app.recorder_link_events e WHERE e.recorder_id=r.id AND e.status='offline' AND e.at > now() - interval '1 hour')::int AS drops
            FROM app.recorders r ORDER BY 2""")
+    events = {}
+    for e in await conn.fetch("SELECT recorder_id, status, at FROM app.recorder_link_events WHERE at > now() - interval '24 hours' ORDER BY at"):
+        events.setdefault(e["recorder_id"], []).append(e)
+    channels = {}
+    for ch in await conn.fetch("SELECT recorder_id, channel_no, name FROM app.recorder_channels WHERE active ORDER BY channel_no"):
+        channels.setdefault(ch["recorder_id"], []).append(ch)
+    cam_by_channel = {}
     cams = await conn.fetch(
         """SELECT c.id, c.name, c.channel_no, c.recorder_id, c.stream_state, c.stream_seen_at, c.last_frame_at, p.bad_view_kind, p.poor_kind
            FROM app.cameras c LEFT JOIN app.camera_picture_state p ON p.camera_id = c.id WHERE c.enabled ORDER BY c.name""")
     by_rec = {r["id"]: r for r in recs}
+    for k in cams:
+        cam_by_channel[(k["recorder_id"], k["channel_no"])] = k["name"]
     issues, recorders, cameras = [], [], []
 
     for r in recs:
@@ -56,7 +99,8 @@ async def report(conn) -> dict:
             level = "ok"
         recorders.append({"id": r["id"], "name": r["name"], "status": r["status"], "last_seen": r["last_heartbeat_at"], "level": level, "drops_last_hour": r["drops"],
                           "disks": disks, "clock_out_minutes": out, "oldest_recording": h.get("oldest_recording"), "days_held": h.get("days_held"),
-                          "restarts_today": len(h.get("restarts") or []), "temperature_c": (h.get("hardware") or {}).get("temperature_c"), "read_at": r["health_at"]})
+                          "restarts_today": len(h.get("restarts") or []), "temperature_c": (h.get("hardware") or {}).get("temperature_c"), "read_at": r["health_at"],
+                          "detail": _detail(r, h, events.get(r["id"], []), channels.get(r["id"], []), cam_by_channel, now)})
         if r["status"] == "offline":
             issues.append({"level": "crit", "text": f"{r['name']} is offline."})
         elif r["drops"] >= DROPS_IN_AN_HOUR:
