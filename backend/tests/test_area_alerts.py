@@ -377,3 +377,10 @@ async def test_a_customer_who_switched_videos_off_for_the_alert_gets_none(client
     (a,) = await draw(client, u, cam, area("area_count", "Billing counter", limit=5, minutes=2))
     assert (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()["clips"] is False
     assert (await report(client, make, cam, a["id"], steady(7)))["clips"] == []
+
+
+def test_saving_the_cameras_areas_again_sends_back_what_was_stored_without_an_error():
+    from app.services import areas
+    stored = {"seconds": 20, "notice_confirmed": True, "notice_confirmed_at": "2026-11-01T05:00:00+00:00", "notice_confirmed_by": "abc"}
+    out = areas.clean_params("staff_area", dict(stored), previous=dict(stored))
+    assert out["notice_confirmed_at"] == stored["notice_confirmed_at"] and out["notice_confirmed_by"] == "abc", "the first confirmation is kept"

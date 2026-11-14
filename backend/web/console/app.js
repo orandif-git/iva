@@ -150,7 +150,7 @@ function dirSvg(pts, dir) {
 function videoFrame(title, pts, drawable, snap, mode, flip, pdir) {
   const shape = mode === "line" ? lineSvg(pts, flip) : mode === "zone" ? `${pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : ""}${dirSvg(pts, pdir)}` : (pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : "");
   const poly = (pts && pts.length) || drawable ? `<svg class="draw" ${drawable ? 'id="draw"' : ""} viewBox="0 0 640 360" preserveAspectRatio="none">${shape}</svg>` : "";
-  return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk">Live</span><span class="sp"></span>${ico("photo", 20)}${ico("gear", 20)}</div><div class="vpic">${snap ? `<img class="snap" src="${snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
+  return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk">Picture</span><span class="sp"></span></div><div class="vpic">${snap ? `<img class="snap" src="${snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
 }
 
 /* ------------------------------------------------------------------------------------------------ Overview */
@@ -709,7 +709,7 @@ async function saveEdit() {
 async function toggleRowSilent(r, checked) { await api.patch(`/admin/v1/tenants/${S.cid}/shop/cameras/${r.cam.id}`, { [r.flag]: checked, ...(r.flag === "use_anpr" && checked ? { stream: "main" } : {}) }); }
 /* Redraw an area on the camera picture */
 async function openRedraw() {
-  const r = S.cur.rows[S.edit.i]; S.redraw = { pts: [], snap: null }; const tmp = { target: r.cam, snap: null };
+  const r = S.cur.rows[S.edit.i]; S.redraw = { pts: (S.edit.pts || []).map((p) => [p[0], p[1]]), snap: null, fresh: false }; const tmp = { target: r.cam, snap: null };      // starts with the area as it is now
   modal(`${mh("Redraw the area")}<div class="note" data-loading>Getting the picture from ${esc(r.cam.name)}… this can take up to 30 seconds.</div><div class="row"><button class="btn" type="button" data-close>Cancel</button></div>`);
   await loadSnap(tmp);
   if (!$("#layer [data-loading]")) return;                                  // closed while waiting
@@ -718,8 +718,8 @@ async function openRedraw() {
 }
 function drawRedraw() {
   const r = S.cur.rows[S.edit.i], R = S.redraw;
-  modal(`${mh("Redraw the area")}${videoFrame(r.cam.name + " · " + cname(), R.pts, true, R.snap)}<div class="vtool"><span class="sub">Click to add the corners of the new area. At least 3 corners.</span><span class="grow"></span><button class="btn sm" type="button" data-redrawclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-redrawsave ${R.pts.length >= 3 ? "" : "disabled"}>Use this area</button><button class="btn" type="button" data-redrawcancel>Cancel</button></div>`);
-  const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); R.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); drawRedraw(); });
+  modal(`${mh("Redraw the area")}${videoFrame(r.cam.name + " · " + cname(), R.pts, true, R.snap)}<div class="vtool"><span class="sub">${R.fresh || !R.pts.length ? "Click to add the corners of the new area. At least 3 corners." : "This is the area now. Click on the picture to draw a new one, or press Use this area to keep it."}</span><span class="grow"></span><button class="btn sm" type="button" data-redrawclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-redrawsave ${R.pts.length >= 3 ? "" : "disabled"}>Use this area</button><button class="btn" type="button" data-redrawcancel>Cancel</button></div>`);
+  const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); if (!R.fresh) { R.fresh = true; R.pts = []; } R.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); drawRedraw(); });
 }
 /* Delete, with the cautions */
 function confirmDelete(i) {
@@ -1022,7 +1022,7 @@ document.addEventListener("click", async (ev) => {
     if (d.confirm === "delev") return doDelete(+d.i);
     if ("esave" in d) return saveEdit();
     if ("redraw" in d) return openRedraw();
-    if ("redrawclear" in d) { S.redraw.pts = []; return drawRedraw(); }
+    if ("redrawclear" in d) { S.redraw.pts = []; S.redraw.fresh = true; return drawRedraw(); }
     if ("redrawcancel" in d) { drawEdit(); return; }
     if ("redrawsave" in d) { S.edit.pts = S.redraw.pts; drawEdit(); return; }
     if ("clearpts" in d) { S.ev.pts = []; S.ev.touched = true; S.ev.whole = false; return render(true); }

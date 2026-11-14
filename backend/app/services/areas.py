@@ -42,7 +42,7 @@ def clean_params(kind: str, params: dict, *, previous: dict | None = None, user_
     """The settings of one area, checked and with the defaults filled in. A staff area also needs the customer's confirmation that staff have been told."""
     spec = SPEC[kind]
     choices, times = CHOICES.get(kind, {}), TIMES.get(kind, ())
-    extra = set(params) - set(spec) - set(choices) - set(times) - {"notice_confirmed"}
+    extra = set(params) - set(spec) - set(choices) - set(times) - {"notice_confirmed", "notice_confirmed_at", "notice_confirmed_by"}   # the last two are what was stored; saving the camera's areas sends them back
     if extra:
         raise ApiError(422, "invalid_params", f"Unknown setting: {', '.join(sorted(extra))}.")
     out = {}
