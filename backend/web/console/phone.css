@@ -127,7 +127,7 @@ button.card:active,.card[data-evrow]:active{background:var(--hover);transform:sc
 .tbl tr>td.main-c:first-child{grid-column:1/-1}
 .tbl tr>td.end:not([data-l]),.tbl tr>td.acts:not([data-l]){text-align:left}
 /* two-column lists with no headings (storage, database sizes): name on the left, value on the right */
-.tbl.kv2 tr{display:flex;justify-content:space-between;align-items:baseline;gap:14px;border:0;border-top:1px solid var(--line);border-radius:0;margin:0;padding:11px 14px}
+.tbl.kv2 tr{display:flex;justify-content:space-between;align-items:baseline;gap:14px;border:0;border-top:1px solid var(--line);border-radius:0;margin:0;padding:8px 14px;min-height:0}
 .tbl.kv2 tr:first-child{border-top:0}
 .tbl.kv2 td{grid-column:auto;font-size:14px;color:var(--fg);text-align:right}
 .tbl.kv2 td:first-child{color:var(--fg2);text-align:left}
@@ -172,3 +172,18 @@ button.card:active,.card[data-evrow]:active{background:var(--hover);transform:sc
 .me{display:none!important}
 .rowsw{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
 .sec-h{display:flex;align-items:baseline;gap:8px}.sec-h>span{margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0}
+
+/* the side panels (recorder health, event settings) on a phone: tighter, and the settings rows line up */
+.dh{align-items:flex-start;padding:14px 18px 10px}.dh .tag{align-self:flex-start}.dh>div{min-width:0}.dh h2{overflow-wrap:anywhere}
+.dbody{gap:10px}.dbody .sec-h{margin:8px 2px -4px}
+.drawer .chk{min-height:36px}.drawer .stack{gap:2px}
+.disk{padding:9px 12px;gap:2px}.hev{padding:5px 0}
+.kv{padding:3px 0;font-size:14px}
+dl.kv{display:grid;grid-template-columns:132px minmax(0,1fr);gap:3px 10px;font-size:13.5px;margin:0;justify-content:stretch;align-items:baseline}dl.kv dt{color:var(--fg2)}dl.kv dd{margin:0;overflow-wrap:anywhere}
+.cfg{grid-template-columns:minmax(0,1fr) 88px 56px;gap:8px 10px;padding:8px 0;align-items:center}
+.cfg .in,.cfg .in.sm{width:100%;max-width:none;height:42px;text-align:center;padding:0 6px}
+.cfg select.in{text-align:left;padding:0 10px}
+.cfg>span:last-child{color:var(--fg2);font-size:13px;white-space:nowrap}
+.cfg:has(select),.cfg:has(.time){grid-template-columns:minmax(0,1fr) 210px}.cfg:has(select)>span:last-child,.cfg:has(.time)>span:last-child{display:none}
+.lpop .kv{display:grid}
+.tbl.kv2 td{height:auto;line-height:1.3}
