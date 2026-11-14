@@ -86,8 +86,8 @@ async function startSignIn() {
     if (!pw) return fail("pw", "Enter your password.");
     $("#go").disabled = true; $("#go").textContent = "Signing in…";
     try {
-      const j = await post("/admin/v1/auth/login", { email, password: pw, remember: $("#keep").checked });
-      store.keep(j.remember); store.set(j.refresh_token); location.replace("/console/");
+      const j = await post("/admin/v1/auth/login", { email, password: pw });
+      store.keep(false); store.set(j.refresh_token); location.replace("/console/");
     } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign in"; fail(null, e.message); $("#pw").value = ""; $("#pw").focus(); }
   });
 }
