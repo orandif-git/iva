@@ -24,6 +24,13 @@ Things we looked into and set aside on purpose, with what we already know, so th
 - Official WireGuard firmware for AX55 V1 (June 2023). Its "VPN Client" is built to send the shop's traffic out, so reaching a device inside the shop from our server is unproven: test by pinging the router's tunnel address, then the recorder's address, from the server. A small always-on device in the shop is the fallback.
 - Server side: `apt install wireguard` (Debian 13), keep encrypted DNS off while testing, open UDP 51820 in the Baota and hosting firewalls, allowed addresses only the tunnel range (not 0.0.0.0/0), one key per shop, unique private range per shop.
 
+**Second test recorder (DS-7632NXI-K2, firmware V4.84.100) - results, 14 Nov 2026**
+- Sign-in over the web works (digest). `ContentMgmt/Storage` works: it showed disk 1 as `notexist` with capacity 0 (no hard disk fitted in this unit), so a missing or failed disk is visible this way. `System/status` gives only uptime and memory (no disk, camera or CPU detail). `System/time` works (time comes from the platform, India time).
+- `subscribeEventCap` lists: diskfull, diskerror, illaccess, videoloss, IO, shelteralarm, VMD, recordException, hotSpare, line and field detection, region entrance and exit, loitering, parking, facedetection, faceCapture, ANPR, personDensityDetection, defocus, scenechangedetection and more. What actually fires depends on the cameras. No people-counting event is listed. Capabilities show face detect, face snap, human and vehicle target types; human recognition is false.
+- `httpHosts` slot 1 is empty, so way A (alert push) is possible on this model.
+- `alertStream` repeated `videoloss` `inactive` for channel 0 about every 9 seconds. No heartBeat parts, no `active` message yet (no camera was unplugged during the test). The repeating message works as a liveness signal.
+- Still to do: repeat the live-event test with a camera unplugged for about 30 seconds; read `ContentMgmt/InputProxy/channels/status` (which cameras are online).
+
 **Open items (to come from the owner)**
 1. The full `alertStream` output: the `active` video-loss message, any other `eventType` (disk full, disk error, network, illegal login), and which camera was unplugged.
 2. The output of `/ISAPI/Event/notification/subscribeEventCap` and the face, counting and human parts of `/ISAPI/System/capabilities` (people counting and face events depend on the cameras and recorder).
