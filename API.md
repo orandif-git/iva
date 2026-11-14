@@ -205,3 +205,14 @@ Generated from the code. All `/admin/v1` routes need a staff token (`Authorizati
 
 - `POST /internal/v1/evidence`
 - `POST /internal/v1/alerts/{alert_id}/clip`
+
+## admin_alert_links (Hikvision alerts)
+- `GET /admin/v1/tenants/{tenant_id}/alert-links`
+- `POST /admin/v1/tenants/{tenant_id}/alert-links` (Owner, Admin, Onboarding): `{name}`; the answer carries `code`, `address` and `command`, shown once
+- `POST /admin/v1/alert-links/{id}/new-code`
+- `DELETE /admin/v1/alert-links/{id}`
+- `GET /admin/v1/tenants/{tenant_id}/alert-links/messages?limit=`
+
+## hik_events (no sign-in: the secret code in the address is the proof)
+- `POST` or `PUT /hik/events/{code}`: a recorder's fault message (XML, JSON or multipart). Unknown code: 404. Over 6 MB: 413.
+- `GET /hik/events/{code}`: "Ready to receive alerts." (to check the address from the shop)

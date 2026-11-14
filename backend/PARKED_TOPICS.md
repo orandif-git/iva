@@ -4,7 +4,7 @@ Things we looked into and set aside on purpose, with what we already know, so th
 
 ## HIK-BACKUP: a backup path for Hikvision (and other brands') recorders
 
-**Status:** parked, waiting for more details from the owner. Nothing is built yet. Hikvision is still not a supported brand: Hikvision recorders stay on Hik-Connect (see README).
+**Status:** way A (alert push) is built (migration 033; see CONTROL_CENTER.md, "Hikvision alerts"); B and C stay parked. Still to verify on a recorder with cameras: a real camera-lost message and HTTPS to our address. Hikvision is still not a supported brand: Hikvision recorders stay on Hik-Connect (see README).
 
 **The idea:** a generic backup when a shop's recorder cannot be a Dahua auto-register recorder. Two ways in, and what each gives:
 

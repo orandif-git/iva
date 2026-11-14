@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from . import errors
 from .config import get_settings
 from .db import db
-from .routers import (auth as auth_routes, admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_passkeys, admin_plans, admin_push, admin_recorders, admin_shop, admin_staff, admin_storage,
-                      admin_summaries, admin_system, admin_tenants, admin_views, admin_webhooks, internal, internal_evidence, internal_events, public_messaging)
+from .routers import (auth as auth_routes, admin_alert_links, admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_passkeys, admin_plans, admin_push, admin_recorders, admin_shop, admin_staff, admin_storage,
+                      admin_summaries, admin_system, admin_tenants, admin_views, admin_webhooks, hik_events, internal, internal_evidence, internal_events, public_messaging)
 from .messaging import delivery, evidence as delivery_evidence
 from .services import maintenance, reports, staff_push, sweeper, system_health
 
@@ -84,8 +84,8 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         return {"ok": True}
 
     app.include_router(auth_routes.staff)
-    for r in (admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_passkeys, admin_plans, admin_push, admin_recorders, admin_shop, admin_staff, admin_storage, admin_summaries, admin_system, admin_tenants,
-              admin_views, admin_webhooks, internal, internal_evidence, internal_events, public_messaging):
+    for r in (admin_alert_links, admin_alerts, admin_framerate, admin_maintenance, admin_messaging, admin_misc, admin_passkeys, admin_plans, admin_push, admin_recorders, admin_shop, admin_staff, admin_storage, admin_summaries, admin_system, admin_tenants,
+              admin_views, admin_webhooks, hik_events, internal, internal_evidence, internal_events, public_messaging):
         app.include_router(r.router)
 
     web = Path(s.web_dir) if s.web_dir else Path(__file__).resolve().parents[1] / "web"

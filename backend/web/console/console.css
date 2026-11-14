@@ -431,3 +431,6 @@ tr.click:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 
 .steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px}
 .note.ok-note{background:var(--ok-soft)}
+
+textarea.in{height:auto;padding:8px 12px;resize:none;line-height:1.4}.in.code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.hlog .tbl td{white-space:normal;vertical-align:top}.hlog .tbl td:last-child{min-width:200px}
