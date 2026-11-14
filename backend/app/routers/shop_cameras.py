@@ -5,10 +5,12 @@ from uuid import UUID
 import asyncpg
 from cryptography.exceptions import InvalidTag
 from fastapi import Response
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from ..deps import CustomerCtx
 from ..errors import ApiError
 from ..crypto import vault
-from ..services import snapshot
+from ..services import live_stream, snapshot
 from ..schemas import CameraCreate, CameraPatch, ZonesPut
 
 
@@ -102,6 +104,32 @@ async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx):
             ctx.tenant_id, camera_id, z.kind, z.points, z.in_direction)
     await ctx.audit("zones.update", "camera", camera_id, {"kinds": kinds})
     return [dict(r) for r in await ctx.conn.fetch("SELECT id, kind::text AS kind, points, in_direction FROM app.camera_zones WHERE camera_id=$1 AND kind IN ('count_line','anpr_zone') ORDER BY kind", camera_id)]
+
+
+async def camera_live(camera_id: UUID, ctx: CustomerCtx):
+    """Moving pictures of one camera (a multipart stream of JPEGs) for the live view in the Control Center. It ends by itself after a few minutes and can be started again.
+    Every start is written to the activity log. If the video cannot be started the answer is an ordinary error."""
+    await _camera(ctx, camera_id)
+    row = await ctx.conn.fetchrow(
+        """SELECT c.source_ciphertext, c.channel_no, r.device_id, r.protocol::text AS protocol
+           FROM app.cameras c LEFT JOIN app.recorders r ON r.id = c.recorder_id WHERE c.id=$1""", camera_id)
+
+    def decrypt():
+        try:
+            return vault().decrypt(bytes(row["source_ciphertext"]), str(camera_id))
+        except InvalidTag:
+            raise ApiError(500, "source_unreadable", "The stored address failed its integrity check.")
+    place = live_stream.slot()
+    if place is None:
+        raise ApiError(429, "video_busy", "Too many cameras are being watched right now. Try again in a moment.")
+    try:
+        url, fmt = await snapshot.source_for(row, decrypt)
+        await ctx.audit("camera.live_view", "camera", camera_id, {})
+    except BaseException:
+        place.release()
+        raise
+    return StreamingResponse(live_stream.stream(url, fmt, place), media_type=f"multipart/x-mixed-replace; boundary={live_stream.BOUNDARY}",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, background=BackgroundTask(place.release))
 
 
 async def camera_snapshot(camera_id: UUID, ctx: CustomerCtx):

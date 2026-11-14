@@ -167,3 +167,10 @@ Setup, WhatsApp connection has two tabs (Owner only): **Summaries** (the direct-
 ## Oldest recording probe (Dahua)
 
 `python -m dahua.probe --oldest IP PORT USER PASSWORD [CHANNELS]` (read-only) asks one recorder for its recordings over very wide periods (since 2000, last 365, 90 and 30 days) on its first channels and prints exactly what the kit returns: the shape of the answer, how many recordings, and the first and last one with their start and end times. It shows whether the exact start of the oldest recording can be read, and how wide a period the recorder accepts, before the gateway and the customer Health page are built to show "Recordings from <date>".
+
+## Live view
+
+Recorder and cameras lists every camera with a **Watch live** button (Owner and Admin). It opens the camera's window and shows moving pictures (about 6 a second, up to 960 pixels wide), with a red "Live · 4:58 left" label. A live view stops by itself after 5 minutes (`GI_LIVE_STREAM_SECONDS`) and can be started again; closing the window stops it at once. Everyone else sees no button. If the video cannot start (the recorder is offline, too many cameras are being watched, no video source) the window shows the still picture and says why. Marking an area or a line still uses the still picture.
+
+- Endpoint: `GET /admin/v1/tenants/{id}/shop/cameras/{camera}/live` (a `multipart/x-mixed-replace` stream of JPEGs; `services/live_stream.py`, FFmpeg). At most `GI_LIVE_STREAM_MAX` (8) run at once on the server, then the answer is 429 "try again in a moment". Every start is written to the activity log (`camera.live_view`).
+- The console reads the stream with a normal signed-in request (`Api.stream` in `lib.js`), so no token is ever put in an address. If you put a proxy in front, turn response buffering off for this path (the API already sends `X-Accel-Buffering: no`).

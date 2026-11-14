@@ -381,3 +381,6 @@ h1,h2,h3{margin:0;font-weight:700;color:var(--head)}
 .si-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;background:none;color:var(--fg2);border-radius:8px}
 .si-eye:hover{background:var(--hover);color:var(--head)}.si-eye[aria-pressed="true"]{color:var(--brand)}
 .mb12{margin-bottom:12px}
+.vhead .lk.on{color:var(--crit);font-weight:700}.vhead .lk.on::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--crit);margin-right:6px;vertical-align:1px}
+.vhead .btn.sm{margin-left:8px}
+.vhead .btn.sm{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.45)}.vhead .btn.sm:hover{background:rgba(255,255,255,.12)}

@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     fcm_service_account_file: str = ""                   # path to that project's service-account key (JSON). Never stored in the database.
     live_stream_max: int = 8                             # moving live views running at once on this server; more are told to try again
     live_stream_fps: int = 6                             # pictures a second in a live view
+    live_stream_seconds: int = 300                       # a live view in the Control Center stops by itself after this long (it can be started again)
     ffmpeg_path: str = "ffmpeg"                          # used to take one picture from a camera for the "draw your counting line" screen
     dahua_relay_url: str = "http://127.0.0.1:8082"       # the Dahua gateway's video relay
     gb_relay_url: str = "http://127.0.0.1:8081"          # the registrar's video relay

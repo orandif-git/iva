@@ -23,6 +23,7 @@ from ..services.alerts import DEFAULT_ENABLED
 router = APIRouter(prefix="/admin/v1/tenants/{tenant_id}/shop", tags=["admin: shop setup"])
 EDITORS = ("owner", "admin", "onboarding")
 HELPERS = ("owner", "admin", "onboarding", "support")
+LIVE = ("owner", "admin")
 
 
 def shop_ctx(*roles: str):
@@ -255,6 +256,12 @@ async def get_zones(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*HELPER
 async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx = Depends(shop_ctx(*EDITORS))):
     """Replaces the counting line and the plate area of a camera. Send both when both are wanted: what is left out is removed."""
     return await shop_cameras.put_zones(camera_id, body, ctx)
+
+
+@router.get("/cameras/{camera_id}/live")
+async def camera_live(camera_id: UUID, ctx: CustomerCtx = Depends(shop_ctx(*LIVE), scope="function")):
+    """Moving pictures for the live view. The database connection is given back before the stream starts, so a long view never holds one."""
+    return await shop_cameras.camera_live(camera_id, ctx)
 
 
 @router.get("/cameras/{camera_id}/snapshot")
