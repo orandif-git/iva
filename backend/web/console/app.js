@@ -180,7 +180,12 @@ const lcls = (x) => (x === "crit" ? "crit" : x === "warn" ? "warn" : "");
 function renderLights() {
   const d = S.sys, el = $("#lights"); if (!el) return;
   if (!d) { el.innerHTML = ""; return; }
-  const items = [["cpu", "CPU", d.cpu.pct == null ? "" : Math.round(d.cpu.pct) + "%", d.cpu.level, "The processor"], ["worker", "Worker", d.worker.level === "ok" ? "" : "down", d.worker.level, "The analysis worker"], ["cams", "Analysis", `${d.cameras.analysed}/${d.cameras.expected}`, d.cameras.level, "Camera analysis"]];
+  const items = [["cpu", "CPU", d.cpu.pct == null ? "" : d.cpu.pct >= 100 ? "100%+" : Math.round(d.cpu.pct) + "%", d.cpu.level, "The processor"], ["worker", "Worker", d.worker.level === "ok" ? "" : "down", d.worker.level, "The analysis worker"], ["cams", "Analysis", `${d.cameras.analysed}/${d.cameras.expected}`, d.cameras.level, "Camera analysis"]];
+  if (PH.matches) {
+    const bad = items.filter((i) => i[3] !== "ok"), worst = items.some((i) => i[3] === "crit") ? "crit" : bad.length ? "warn" : "ok";
+    el.innerHTML = `<button class="sl one" type="button" data-light="all" aria-expanded="${S.lightOpen === "all"}" aria-label="System status: ${bad.length ? bad.length + (bad.length === 1 ? " thing needs" : " things need") + " a look" : "everything is fine"}"><span class="led ${lcls(worst)}"></span>${bad.length ? `<b>${bad.length}</b>` : ""}</button>`;
+    if (S.lightOpen) showLight(S.lightOpen); return;
+  }
   el.innerHTML = items.map((i) => `<button class="sl" type="button" data-light="${i[0]}" aria-expanded="${S.lightOpen === i[0]}" aria-label="${i[4]}: ${i[3] === "ok" ? "fine" : i[3] === "warn" ? "needs a look" : "needs action"}"><span class="led ${lcls(i[3])}"></span><span class="lt">${i[1]}</span>${i[2] ? `<b>${esc(i[2])}</b>` : ""}</button>`).join("");
   if (S.lightOpen) showLight(S.lightOpen);
 }
@@ -189,9 +194,10 @@ function showLight(k) {
   const d = S.sys, p = $("#lpop"); if (!d || !p) return; S.lightOpen = k;
   const ago = (iso) => { if (!iso) return "Never"; const sec = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return sec < 20 ? "Just now" : sec < 90 ? sec + " seconds ago" : sec < 5400 ? Math.round(sec / 60) + " minutes ago" : Math.round(sec / 3600) + " hours ago"; };
   const row = (a) => a.map((x) => `<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join("");
-  const pct = (x) => (x == null ? "Not measured" : Math.round(x) + "%");
+  const pct = (x) => (x == null ? "Not measured" : x >= 100 ? "100%+" : Math.round(x) + "%");
   const html = { cpu: [d.cpu.level, "Processor", [["Busy", `${pct(d.cpu.pct)} of ${d.cpu.cpus} processor${d.cpu.cpus > 1 ? "s" : ""}`], ["Memory", pct(d.memory.pct) + " used"], ["Disk", pct(d.disk.pct) + " used"]]],
     worker: [d.worker.level, "Analysis worker", [["State", esc(d.worker.text)], ["Last heard", ago(d.worker.last_seen)]]],
+    all: [[d.cpu.level, d.worker.level, d.cameras.level].includes("crit") ? "crit" : [d.cpu.level, d.worker.level, d.cameras.level].includes("warn") ? "warn" : "ok", "System status", [["Processor", pct(d.cpu.pct)], ["Memory", pct(d.memory.pct)], ["Disk", pct(d.disk.pct)], ["Worker", esc(d.worker.text)], ["Analysed", `${d.cameras.analysed} of ${d.cameras.expected} cameras`], ["Messages waiting", d.messages.waiting]]],
     cams: [d.cameras.level, "Camera analysis", [["Analysed", `${d.cameras.analysed} of ${d.cameras.expected} cameras`], ["Speed", d.cameras.fps == null ? "-" : d.cameras.fps + " pictures a second"], ["Silent", d.cameras.silent ? d.cameras.silent + " for 10 minutes" : "None"], ["Messages waiting", d.messages.waiting]]] }[k];
   p.innerHTML = `<h4><span class="led ${lcls(html[0])}"></span>${html[1]}</h4><dl class="kv">${row(html[2])}</dl>${can("sys") ? '<a class="lk-link" href="#setup/sys" data-opensys>Open System health</a>' : ""}`;
   p.hidden = false;
@@ -209,7 +215,7 @@ function serverStrip() {
   const d = S.sys; if (!d) return "";
   const tile = (k, v, lvl, meter, hint) => `<div class="tile"><span class="k"><span class="dot ${lvl === "ok" ? "ok" : lcls(lvl)}"></span>${k}</span><span class="v ${lvl === "crit" ? "t-crit" : lvl === "warn" ? "t-warn" : ""}">${v}</span>${meter != null ? `<div class="mtb"><i class="${lcls(lvl)}" data-w="${Math.min(100, Math.round(meter))}"></i></div>` : ""}<span class="sub small">${hint}</span></div>`;
   const lv = [d.cpu.level, d.disk.level, d.worker.level, d.cameras.level, d.messages.level], worst = lv.includes("crit") ? "crit" : lv.includes("warn") ? "warn" : "ok";
-  const pc = (x) => (x == null ? "-" : Math.round(x) + "%");
+  const pc = (x) => (x == null ? "-" : x >= 100 ? "100%+" : Math.round(x) + "%");
   const days = d.disk.days_left == null ? `${d.disk.free_gb} GB free` : `about ${d.disk.days_left >= 100 ? "100+" : Math.round(d.disk.days_left)} days left`;
   return `<div class="pn"><h3><span class="dot ${worst === "ok" ? "ok" : lcls(worst)}"></span>Server and analysis<span class="sp"></span>${can("sys") ? '<a class="lk-link" href="#setup/sys" data-opensys>Open System health</a>' : ""}</h3><div class="tiles">
     ${tile("Processor", pc(d.cpu.pct), d.cpu.level, d.cpu.pct, `${d.cpu.cpus} processor${d.cpu.cpus > 1 ? "s" : ""}`)}${tile("Memory", pc(d.memory.pct), d.memory.level, d.memory.pct, d.memory.total_gb ? d.memory.total_gb + " GB in total" : "")}${tile("Disk", pc(d.disk.pct), d.disk.level, d.disk.pct, days)}
@@ -1047,6 +1053,24 @@ async function loadPics() {
   await Promise.all([worker(), worker()]);
 }
 let token = 0;
+/* On a phone a table row becomes a card: its heading, then "column name ... value" lines. This reads each table's column headings and puts them on the cells. */
+const NO_LABEL = new Set(["Plate", "Type"]);
+function labelCells(root) {
+  root.querySelectorAll("table.tbl:not(.matrix)").forEach((t) => {
+    const heads = [...t.querySelectorAll("thead th")].map((h) => h.textContent.trim());
+    if (!heads.length) { t.classList.add("kv2"); return; }
+    t.querySelectorAll("tbody tr").forEach((tr) => {
+      let i = 0;
+      for (const td of tr.children) {
+        const name = heads[i]; i += td.colSpan || 1;
+        if (!name && td.querySelector("svg") && !td.textContent.trim()) { td.classList.add("go"); continue; }
+        if (name === "Picture" && td.querySelector(".vthumb")) continue;
+        if (!name || NO_LABEL.has(name) || td.classList.contains("dotc") || td.classList.contains("main-c") || td.classList.contains("ico") || !td.textContent.trim()) continue;
+        td.dataset.l = name; td.innerHTML = `<span class="cv">${td.innerHTML}</span>`;
+      }
+    });
+  });
+}
 async function render(keepScroll) {
   const mine = ++token, p = $("#page"), y = p.scrollTop;
   shell();
@@ -1054,6 +1078,7 @@ async function render(keepScroll) {
   try { html = await PAGES[S.route](); } catch (e) { html = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`; }
   if (mine !== token) return;
   p.innerHTML = html; p.scrollTop = keepScroll ? y : 0; syncHash();
+  if (PH.matches) labelCells(p);
   if (PH.matches) {                                                                // on a phone the page itself scrolls, and a move between tabs slides the new page in from that side
     if (!keepScroll) window.scrollTo(0, 0);
     const tabs = tabList().map((t) => t[0]), now = tabs.indexOf(tabOf()), was = S.tabIdx ?? now; S.tabIdx = now;
@@ -1088,7 +1113,11 @@ document.addEventListener("click", async (ev) => {
     if (t.id === "home") return go("overview");
     if (t.id === "theme" || t.id === "theme2") { const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme:dark)").matches); document.documentElement.dataset.theme = dark ? "light" : "dark"; return shell(); }
     if (t.id === "signout" || "signout" in d) { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); return location.replace("/"); }
-    if ("pwopen" in d) { await openProfile(); return $("#pf-pwb")?.click(); }
+    if ("pwopen" in d) return modal(`${mh("Change password")}<label class="bold" for="pw-cur">Current password</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"><label class="bold" for="pw-1">New password</label><input class="in" id="pw-1" type="password" autocomplete="new-password"><div class="pf-meter" id="pw-meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="sub small" id="pw-tip">${PW_HINT}</div><label class="bold" for="pw-2">New password again</label><input class="in" id="pw-2" type="password" autocomplete="new-password"><div class="pf-err" id="pw-err" role="alert"></div><button class="btn pri" type="button" data-confirm="pwchange">Change password</button><div class="sub small">Your other devices are signed out. This one stays signed in.</div>`);
+    if (d.confirm === "pwchange") { const cur = $("#pw-cur").value, a = $("#pw-1").value, b = $("#pw-2").value, bad = (id, msg) => { $("#pw-err").textContent = msg; $("#" + id).classList.add("bad"); $("#" + id).focus(); };
+      if (!cur) return bad("pw-cur", "Enter your current password."); const [sc, tx] = pwStrength(a, S.me?.email); if (sc <= 1) return bad("pw-1", tx); if (a === cur) return bad("pw-1", "Choose a password you have not used before."); if (a !== b) return bad("pw-2", "The two new passwords are not the same.");
+      try { await api.post("/admin/v1/me/change-password", { current_password: cur, new_password: a, refresh_token: api.refreshToken }); } catch (e) { return bad(e.status === 401 ? "pw-cur" : "pw-1", e.status === 401 ? "Your current password is not right." : errText(e)); }
+      closeModal(); return toast("Password changed. Your other devices were signed out."); }
     if ("close" in d) return closeModal();
     if ("retry" in d) return render();
     if (d.tab) { S.logData = null; if (d.tab === "health") { S.setup = "sys"; return go("setup"); } if (d.tab === "customers") await loadCustomers(); return go(d.tab); }
@@ -1281,6 +1310,7 @@ document.addEventListener("click", async (ev) => {
 });
 document.addEventListener("input", (ev) => {
   const t = ev.target;
+  if (t.id?.startsWith("pw-")) { t.classList.remove("bad"); const er = $("#pw-err"); if (er) er.textContent = ""; if (t.id === "pw-1") { const [sc, tx] = pwStrength(t.value, S.me?.email); $("#pw-meter").dataset.s = sc; $("#pw-tip").textContent = tx; } return; }
   if (t.id === "q") { S.q = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }
   if (t.id === "vq") { S.veh.q = t.value; const p = t.selectionStart; clearTimeout(S.veh.t); S.veh.t = setTimeout(() => render(true).then(() => { const nn = $("#vq"); if (nn) { nn.focus(); nn.setSelectionRange(p, p); } }), 350); return; }
   if (t.id === "evq") { S.evQ = t.value; const p = t.selectionStart; render(true).then(() => { const n = $("#evq"); if (n) { n.focus(); n.setSelectionRange(p, p); } }); return; }

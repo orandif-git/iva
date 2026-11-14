@@ -5,11 +5,11 @@
 html,body{height:auto}
 body{overflow:auto;background:var(--bg);-webkit-text-size-adjust:100%}
 /* the paint behind the phone's status bar, so nothing shows through above the header */
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bar);z-index:60}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bar);z-index:19}
 .app{display:block;height:auto;min-height:100dvh}
 .main{display:block}
 .rail,.side,.areas,.ttl,#theme,.me .role{display:none!important}
-.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;height:52px;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;padding:0 10px 0 4px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;height:52px;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;padding:0 10px 0 4px}
 .top-l{height:52px}
 .logo{border:0;padding:0 4px 0 10px}.logo img{height:26px}.logo[hidden]{display:none}
 .pback{display:grid;place-items:center;width:44px;height:44px;border:0;background:none;color:var(--brand);align-self:center}.pback[hidden]{display:none}
@@ -17,6 +17,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .top-r{gap:4px}
 .lights{border-right:0;padding-right:0;margin-right:0}
 .sl{padding:0 5px;height:36px}.sl b{display:none}
+.sl.one{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:0 12px;background:var(--bg)}.sl.one b{display:inline;font-size:13px}
 .me{padding:0}.meb{padding:0}
 .page{overflow:visible;padding:16px 16px calc(112px + env(safe-area-inset-bottom,0px));grid-column:auto}
 .page.in-r{animation:inr .34s var(--ease)}.page.in-l{animation:inl .34s var(--ease)}.page.in-u{animation:inu .28s var(--ease)}
@@ -26,7 +27,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .rise{animation:none}
 .ponly,.pdesk{display:block}.pdesk{margin-top:6px}
 /* the floating tab bar */
-.tabbar{--n:5;position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:min(calc(100% - 28px),420px);transform:translateX(-50%);z-index:30;height:64px;border-radius:32px;padding:6px;display:grid;grid-template-columns:repeat(var(--n),1fr);
+.tabbar{--n:5;position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:min(calc(100% - 28px),420px);transform:translateX(-50%);z-index:20;height:64px;border-radius:32px;padding:6px;display:grid;grid-template-columns:repeat(var(--n),1fr);
   background:color-mix(in srgb,var(--bg) 74%,transparent);-webkit-backdrop-filter:blur(22px) saturate(1.7);backdrop-filter:blur(22px) saturate(1.7);
   border:1px solid color-mix(in srgb,var(--line) 75%,transparent);box-shadow:0 10px 30px rgba(20,26,36,.18),inset 0 1px 0 rgba(255,255,255,.35)}
 .tabbar[data-n="4"]{--n:4}
@@ -53,7 +54,7 @@ input,select,textarea{font-size:16px}
 /* numbers as cards */
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;border:0;overflow:visible}
 .stats .st,.stats button.st{border:1px solid var(--line);border-radius:14px;padding:12px 14px;flex:none;min-width:0}
-.tiles{grid-template-columns:1fr 1fr}.tile{border-left:0;border-top:1px solid var(--line)}.tile:nth-child(-n+2){border-top:0}.tile:nth-child(even){border-left:1px solid var(--line)}
+.tiles{grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}.tile,.tile:first-child{border:0;border-radius:0;background:var(--bg);padding:12px 14px;min-width:0}
 .mini{gap:16px}
 .cc{grid-template-columns:minmax(0,1fr)}.cc>div,.stack>*,.page>*{min-width:0}
 .pn{border-radius:14px}
@@ -114,3 +115,45 @@ button.card:active,.card[data-evrow]:active{background:var(--hover);transform:sc
 /* rows of settings inside a sheet: label, then the control */
 .cfg{grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;max-width:none}
 .chk{min-height:44px}
+
+/* a table row is a card: heading, then 'column name .... value' lines */
+.tbl td[data-l]{display:flex;justify-content:space-between;align-items:baseline;gap:14px;grid-column:1/-1;padding-top:4px;font-size:14px;color:var(--fg);text-align:right}
+.tbl td[data-l]::before{content:attr(data-l);flex:none;color:var(--fg2);text-align:left;font-size:13px}
+.tbl td .cv{min-width:0;overflow-wrap:anywhere}
+.tbl td[data-l] .mtb{display:inline-block;width:70px;vertical-align:middle}
+.tbl tr{grid-template-columns:auto minmax(0,1fr)}
+.tbl tr>td:not(.dotc):not([data-l]){grid-column:1/-1}
+.tbl tr>td.dotc+td.main-c{grid-column:2}
+.tbl tr>td.main-c:first-child{grid-column:1/-1}
+.tbl tr>td.end:not([data-l]),.tbl tr>td.acts:not([data-l]){text-align:left}
+/* two-column lists with no headings (storage, database sizes): name on the left, value on the right */
+.tbl.kv2 tr{display:flex;justify-content:space-between;align-items:baseline;gap:14px;border:0;border-top:1px solid var(--line);border-radius:0;margin:0;padding:11px 14px}
+.tbl.kv2 tr:first-child{border-top:0}
+.tbl.kv2 td{grid-column:auto;font-size:14px;color:var(--fg);text-align:right}
+.tbl.kv2 td:first-child{color:var(--fg2);text-align:left}
+.tbl.kv2 td.dotc{display:none}
+/* people to message: each person is one card */
+.pr.sub{display:none}
+.pr{grid-template-columns:1fr 1fr auto;max-width:none;gap:8px 12px;padding:12px;border:1px solid var(--line);border-radius:14px}
+.pr>.in{grid-column:1/-1}
+.pr .ibtn{justify-self:end}
+/* opening hours: day, switch, from, to all fit the width */
+.hrow{grid-template-columns:42px 46px minmax(0,1fr) auto minmax(0,1fr);gap:8px;padding:8px 0}
+.hrow .in{min-width:0;width:100%;padding:0 6px;text-align:center}
+.hrow .closed{grid-column:3/-1}
+/* people count and vehicles */
+.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:12px 14px;min-width:0}.kpi .v{font-size:24px}
+.chart{padding:14px 12px 8px;overflow:hidden}.plot,.axis{min-width:0}.plot{height:170px}.axis{font-size:10.5px}.axis span{min-width:0;overflow:hidden}
+.bar.flush .in.sel{flex:1 1 42%;min-width:0}.bar.flush .btn{flex:1 1 100%}
+.tbl .vrow{grid-template-columns:96px minmax(0,1fr);column-gap:12px}
+.tbl tr.vrow>td:first-child{grid-column:1;grid-row:1/span 4;padding-top:0}
+.tbl tr.vrow>td:nth-child(3){grid-column:2;grid-row:1;font-size:17px;padding-top:0;color:var(--head)}
+.tbl tr.vrow>td[data-l]{grid-column:2}
+.vthumb{width:96px;height:64px}
+.more{grid-template-columns:1fr;justify-items:center;gap:8px}.more .end{text-align:center}
+.lpop .kv{grid-template-columns:110px minmax(0,1fr)}
+.tbl td.go{display:none}
+.hrow .in.time{font-size:15px;padding:0 4px}.hrow .in.time::-webkit-calendar-picker-indicator{display:none}
+.tbl td:has(>[data-extendc]){display:none}
+.tbl.kv2 td.main-c{text-align:left;color:var(--head);font-weight:700}
+.tbl.kv2 td.main-c .sub{font-weight:400}
