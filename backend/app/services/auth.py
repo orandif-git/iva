@@ -82,6 +82,8 @@ async def staff_login(conn, email: str, password: str, ip: str | None, remember:
         return _fail()
     guard.succeeded(email)
     await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
+    if passwords.needs_rehash(r["password_hash"]):                  # a password saved with older, weaker settings is saved again with today's
+        await conn.execute("UPDATE platform.staff_users SET password_hash=$2 WHERE id=$1", r["id"], await passwords.hash_async(password))
     out = await _tokens(conn, r["id"], ttl=timedelta(days=s.staff_remember_days) if remember else None)
     out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
     return out

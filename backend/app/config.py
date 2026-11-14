@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="GI_", env_file=".env", extra="ignore")
 
-    env: str = "dev"
+    env: str = "prod"                        # "dev" turns on the interactive API pages (/docs): only on a developer machine, never on a server customers use
     database_url: str
     db_pool_min: int = 2
     db_pool_max: int = 10

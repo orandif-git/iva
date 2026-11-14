@@ -61,9 +61,8 @@ python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"   
 ```
 
 ```ini
-GI_ENV=dev                                   # dev turns on /docs, which you will use through an SSH tunnel (section 7). Never expose it publicly.
+GI_ENV=prod                                  # prod keeps the interactive API pages (/docs) closed. Use dev only on a developer machine, or briefly through an SSH tunnel (section 7).
 GI_DATABASE_URL=postgresql://gi_api:<password>@127.0.0.1:5432/gateinsight
-GI_JWT_SECRET_CUSTOMER=<secret 1>
 GI_JWT_SECRET_PLATFORM=<secret 2>
 GI_SERVICE_TOKEN=<secret 3>
 GI_KEY_ENCRYPTION_KEY=<base64 key>           # losing it makes stored recorder keys and camera passwords unreadable: keep a copy somewhere safe
@@ -161,7 +160,7 @@ Old addresses (`/platform`, `/staff`, `/next`) redirect to `/`. Customers have n
 
 - [ ] Set the public address in `.env` so links point to the right place: `GI_PUBLIC_BASE_URL=https://ivision.jasinfo.in`. Restart `gi-api`.
 - [ ] With the domain: in aaPanel add a website, turn on its free Let's Encrypt certificate, and set it up as a **reverse proxy** to `http://127.0.0.1:8000`. Keep the default `X-Forwarded-*` headers.
-- [ ] Set `GI_ENV=prod` once real customers use it: the interactive API pages (`/docs`) are then switched off.
+- [ ] Make sure `GI_ENV=prod` (the default): the interactive API pages (`/docs`) are then switched off.
 - [ ] Picture taking (marking areas) needs FFmpeg (`ffmpeg -version`) and the Dahua gateway or registrar running. Settings if they are elsewhere: `GI_DAHUA_RELAY_URL` (default `http://127.0.0.1:8082`), `GI_GB_RELAY_URL` (default `http://127.0.0.1:8081`), `GI_FFMPEG_PATH`.
 - Push (Firebase) settings are kept for later; see `docs/PUSH.md`.
 

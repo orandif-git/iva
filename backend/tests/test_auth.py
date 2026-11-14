@@ -238,3 +238,43 @@ async def test_the_switch_under_more_makes_a_sign_in_long_or_short_from_now_on(c
     assert off.json()["remember"] is False and await _expires_in_days(su, off.json()["refresh_token"]) < 1
     assert (await client.post("/admin/v1/auth/remember", json={"refresh_token": "x" * 40, "remember": True})).status_code == 401
     assert (await client.post("/admin/v1/auth/remember", json={"refresh_token": on.json()["refresh_token"], "remember": True})).status_code == 401, "a used token does not work twice"
+
+
+# ---------------------------------------------------------------- stronger password hashing, upgraded at the next sign-in
+import base64 as _b64
+import hashlib as _hl
+import os as _os
+
+from app.services import passwords
+
+
+def _old_hash(password: str) -> str:
+    """What the server saved before the settings were raised (N=2^14, p=1)."""
+    salt = _os.urandom(16)
+    h = _hl.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+    return f"scrypt${2 ** 14}$8$1${_b64.b64encode(salt).decode()}${_b64.b64encode(h).decode()}"
+
+
+def test_new_hashes_use_todays_settings_and_old_ones_are_flagged():
+    new = passwords.hash_password("a long enough password")
+    assert new.split("$")[1:4] == [str(2 ** 15), "8", "3"] and not passwords.needs_rehash(new)
+    old = _old_hash("a long enough password")
+    assert passwords.needs_rehash(old) and passwords.verify_password("a long enough password", old) and not passwords.verify_password("wrong password!!", old)
+    assert not passwords.needs_rehash(None) and not passwords.needs_rehash("garbage")
+
+
+async def test_an_old_password_hash_is_replaced_by_a_stronger_one_at_sign_in(client, su):
+    _, email = await staff_with_password(su)
+    await su.execute("UPDATE platform.staff_users SET password_hash=$2 WHERE email=$1", email, _old_hash(PW))
+    assert (await staff_login(client, email, PW)).status_code == 200
+    now = await su.fetchval("SELECT password_hash FROM platform.staff_users WHERE email=$1", email)
+    assert not passwords.needs_rehash(now) and passwords.verify_password(PW, now)
+    assert (await staff_login(client, email, PW)).status_code == 200
+
+
+async def test_a_wrong_password_does_not_change_the_saved_hash(client, su):
+    _, email = await staff_with_password(su)
+    old = _old_hash(PW)
+    await su.execute("UPDATE platform.staff_users SET password_hash=$2 WHERE email=$1", email, old)
+    assert (await staff_login(client, email, "not the password!")).status_code == 401
+    assert await su.fetchval("SELECT password_hash FROM platform.staff_users WHERE email=$1", email) == old

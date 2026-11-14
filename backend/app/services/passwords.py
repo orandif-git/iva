@@ -1,7 +1,7 @@
 """Password hashing and the rules a new password must meet.
 
 scrypt from the standard library (memory-hard, no extra package). The format keeps its own parameters, so they can be raised later
-and old hashes still verify. Hashing takes about 50 ms and 16 MB, so it runs in a thread and never blocks the server."""
+and old hashes still verify (and are replaced by a stronger one when that person next signs in). Hashing takes about 200 ms and 32 MB, so it runs in a thread and never blocks the server."""
 import asyncio
 import base64
 import hashlib
@@ -10,7 +10,7 @@ import os
 
 from ..errors import ApiError
 
-N, R, P = 2 ** 14, 8, 1
+N, R, P = 2 ** 15, 8, 3                      # current guidance (OWASP): about 200 ms and 32 MB per hash. Older hashes keep their own settings and are upgraded at the next sign-in.
 MIN_LENGTH = 10
 _COMMON = {"password", "password1", "password12", "password123", "1234567890", "12345678901", "qwertyuiop", "qwerty12345", "iloveyou12",
            "welcome123", "admin12345", "letmein123", "gateinsight", "changeme123", "abcdefghij"}
@@ -33,6 +33,15 @@ def verify_password(password: str, stored: str | None) -> bool:
         got = hashlib.scrypt(password.encode(), salt=base64.b64decode(salt), n=int(n), r=int(r), p=int(p), dklen=32, maxmem=64 * 1024 * 1024)
         return hmac.compare_digest(got, base64.b64decode(want)) and stored is not None
     except (ValueError, TypeError):
+        return False
+
+
+def needs_rehash(stored: str | None) -> bool:
+    """True when a saved hash was made with weaker settings than today's."""
+    try:
+        _, n, r, p, _, _ = (stored or "").split("$")
+        return (int(n), int(r), int(p)) != (N, R, P)
+    except ValueError:
         return False
 
 

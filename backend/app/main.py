@@ -49,6 +49,8 @@ async def lifespan(app: FastAPI):
 
 def create_app(use_lifespan: bool = True) -> FastAPI:
     s = get_settings()
+    if s.env == "dev":
+        logging.getLogger("gateinsight").warning("GI_ENV=dev: the interactive API pages (/docs) are open. Use this only on a developer machine.")
     app = FastAPI(title="Jas iVision API", version="0.1.0", lifespan=lifespan if use_lifespan else None,
                   docs_url="/docs" if s.env == "dev" else None, redoc_url=None, openapi_url="/openapi.json" if s.env == "dev" else None)
     errors.register(app)
