@@ -44,6 +44,7 @@ async def test_a_silent_worker_and_a_silent_camera_are_named(client, make, su):
 async def test_messages_that_wait_too_long_are_flagged(client, make, su):
     t, u, (cam,), rec = await setup_cameras(client, make, plan="full", footfall=1)
     staff = await make.staff("owner")
+    await su.execute("DELETE FROM app.notifications WHERE status='queued'")            # this test counts every waiting message, so start from none whatever other tests left queued
     await su.execute("INSERT INTO app.notifications (tenant_id, channel, recipient, status, created_at, next_attempt_at) VALUES ($1,'whatsapp','+919800000001','queued', now() - interval '40 minutes', now() - interval '39 minutes')", t)
     m = (await client.get("/admin/v1/system/health", headers=staff["headers"])).json()["messages"]
     assert m["waiting"] == 1 and m["oldest_waiting_minutes"] >= 39 and m["level"] == "crit"
