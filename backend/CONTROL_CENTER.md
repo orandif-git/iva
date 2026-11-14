@@ -207,3 +207,8 @@ On screens up to 760 px wide the Control Center switches to a phone layout (`web
 - Phone: Overview, Customers (health, events on/off and edit, cameras and rename, people, hours, messages), Messages, System health, change password, sign out, live view (stops after 2 minutes on a phone, 5 on a computer).
 - Computer only (hidden on a phone, with "best done on a larger screen" notes, and a collapsed "On a larger screen" group in More): adding customers or events, deleting events, drawing or redrawing areas, WhatsApp templates and connection, console users, data kept, activity log, editing a customer, the end date, deleting a customer, adding recorders.
 - Next steps (not built yet): install to the home screen (service worker scoped to `/console/`), push notifications by role, and an optional "Stay signed in on this phone" (30 days, off by default).
+
+### Compact lists and People count
+- On a phone, a customer's Cameras (recorders and cameras), People and Hours are compact grouped lists (one rounded block, thin lines, one line of detail per row). Tapping a row opens a sheet: a recorder shows its status and connection details; a camera has Rename and Watch live; a person has name, mobile, the Alerts and Summary ticks, Save and Remove; a day has the open switch, opening and closing times, copy to every open day, and Save. Health lists its recorders and cameras the same way.
+- The profile picture is not in the phone header any more; the profile, Change password, light/dark and Sign out are under More.
+- People count (computer and phone): one block of numbers (people in, people out, busiest hour or day, about inside now) and the graph with the busiest hour shaded and tagged "Busiest".

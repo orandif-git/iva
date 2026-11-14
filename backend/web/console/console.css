@@ -418,3 +418,13 @@ tr.click:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 
 /* ---- phone-only pieces stay out of the way on a computer; phone.css turns them on ---- */
 .ptitle,.pback,.tabbar,.ponly,.pdesk{display:none}
+
+/* people count: one block of numbers, and the busiest hour marked on the graph */
+.pstats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.pstats>div{padding:14px 16px;border-left:1px solid var(--line);min-width:0}.pstats>div:first-child{border-left:0}
+.pstats .k{color:var(--fg2);font-size:13px}.pstats .v{font-size:26px;font-weight:700;color:var(--head);font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px}.pstats .v.peak{color:var(--brand)}.pstats .nt{color:var(--fg2);font-size:12px;margin-top:2px}
+.plot{padding-top:32px}
+.plot .col{position:relative;border-radius:6px 6px 0 0}
+.plot .col.peak{background:var(--brand-soft)}.plot .col.peak .i{box-shadow:none}
+.plot .col.peak::before{content:"Busiest";position:absolute;top:-28px;left:50%;transform:translateX(-50%);background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.axis span.p{color:var(--brand);font-weight:700}
