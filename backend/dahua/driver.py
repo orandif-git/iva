@@ -311,6 +311,10 @@ class NetSdkDriver:
             except Exception as e:
                 log.info("survey %s: state %s (%s) could not be asked: %s: %s", login_id, code, what, type(e).__name__, e)
         try:
+            self._survey_oldest(login_id, channels)
+        except Exception as e:
+            log.info("survey %s: the oldest recording could not be asked: %s: %s", login_id, type(e).__name__, e)
+        try:
             self._survey_log(login_id)
         except Exception as e:
             log.info("survey %s: the device log could not be read: %s: %s", login_id, type(e).__name__, e)
@@ -326,6 +330,34 @@ class NetSdkDriver:
                 log.info("survey %s: GetStorageDeviceInfo(%r) -> %r %s", login_id, name, res, self._dump(dev))
             except Exception as e:
                 log.info("survey %s: GetStorageDeviceInfo(%r) failed: %s: %s", login_id, name, type(e).__name__, e)
+
+    def _survey_oldest(self, login_id, channels) -> None:
+        """Read-only. Asks for the recordings of very wide periods on the first two channels and writes exactly what comes back, so it can be seen whether the exact start of the
+        oldest recording can be read (and how wide a period the recorder accepts) before "recordings from <date>" is built on it."""
+        import time
+        from datetime import datetime, timedelta
+        from NetSDK.SDK_Struct import NET_TIME
+        from .probe import describe_result
+        clock = self._clock(login_id)
+        if not clock or not clock.get("local"):
+            log.info("survey %s: oldest recording: the recorder's clock could not be read", login_id)
+            return
+        end = datetime.fromisoformat(clock["local"])
+
+        def stamp(d):
+            t = NET_TIME()
+            t.dwYear, t.dwMonth, t.dwDay, t.dwHour, t.dwMinute, t.dwSecond = d.year, d.month, d.day, d.hour, d.minute, d.second
+            return t
+
+        for index in range(max(1, min(channels, 2))):
+            for label, start in (("since 2000", datetime(2000, 1, 1)), ("last 365 days", end - timedelta(days=365)), ("last 90 days", end - timedelta(days=90)), ("last 30 days", end - timedelta(days=30))):
+                t0 = time.monotonic()
+                try:
+                    res = self._sdk.QueryRecordFile(login_id, index, 0, stamp(start), stamp(end), "", 5000, False)
+                except Exception as e:
+                    log.info("survey %s: oldest recording, channel %s, %s: failed, %s: %s", login_id, index + 1, label, type(e).__name__, e)
+                    continue
+                log.info("survey %s: oldest recording, channel %s, %s (answered in %.1f s): %s", login_id, index + 1, label, time.monotonic() - t0, " | ".join(x.strip() for x in describe_result(res)))
 
     def _survey_log(self, login_id) -> None:
         """The recorder's own event log for the last three days, as written: when, who, and the text. A restart, a disk problem or a power cut shows up here."""
