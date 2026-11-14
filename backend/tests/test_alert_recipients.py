@@ -1,6 +1,15 @@
 """An alert nobody has chosen people for goes to everyone of the customer who has a mobile number; once someone chooses, exactly their choice is used (even nobody)."""
+import pytest
+
 from app.db import db
 from app.services.alerts import raise_alert
+
+
+@pytest.fixture(autouse=True)
+async def _tidy(su):
+    """These tests queue messages that nothing sends; take them away afterwards so they do not look like messages waiting too long to the tests that run later."""
+    yield
+    await su.execute("DELETE FROM app.notifications n USING app.alerts a WHERE a.id = n.alert_id AND a.rule_type = 'recorder_offline' AND n.status = 'queued'")
 
 
 async def people(su, t, *rows):
