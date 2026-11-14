@@ -14,6 +14,7 @@ from ..deps import CustomerCtx
 from ..errors import ApiError
 from ..messaging import evidence
 from ..services import report_builders as rb
+from ..services import shop_health
 from ..services.detectors import people_inside
 from ..services.plates import normalize
 from ..services.reports import local_period
@@ -42,6 +43,13 @@ async def views(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
                   EXISTS (SELECT 1 FROM app.cameras WHERE use_anpr) AS plates_on, EXISTS (SELECT 1 FROM app.plate_events) AS plates_history""")
     return {"people": {"on": r["people_on"], "history": r["people_history"], "show": r["people_on"] or r["people_history"]},
             "vehicles": {"on": r["plates_on"], "history": r["plates_history"], "show": r["plates_on"] or r["plates_history"]}}
+
+
+# --------------------------------------------------------------------------------------------------------------------- health
+@router.get("/health")
+async def health(ctx: CustomerCtx = Depends(shop_ctx(*HELPERS))):
+    """How this customer's recorders and cameras are doing right now, and how many problems each of the last seven days had."""
+    return await shop_health.report(ctx.conn)
 
 
 # --------------------------------------------------------------------------------------------------------------------- people count

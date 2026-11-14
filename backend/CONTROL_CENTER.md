@@ -182,3 +182,11 @@ The address carries where you are (`#customer/<id>/<section>`, `#setup/<tab>`, `
 ## Overview numbers
 
 Every number on the Overview opens the matching page: Customers, Active and Need a look open the customer list with that status; Cameras and Recorders open the customer list; Sent in 24 hours, Held back and Failed to send open Messages for the last 24 hours with that result. The message log has a "Last 24 hours" range (`hours=24` on `GET /admin/v1/messaging/log`, the last N hours up to now), which is exactly what the Overview counts.
+
+## Health of one customer, and renaming a camera
+
+A customer's left menu has **Health** (every console user). It reads `GET /admin/v1/tenants/{id}/shop/health` (`services/shop_health.py`) and shows, in the same look as System health: a verdict with what needs a look, recorders online and cameras working, messages sent and failed in the last 24 hours, a **Recorders** table (status, last heard, disks and how full, clock, and **Recordings from** the exact start of the oldest recording the recorder holds, with the days), a **Cameras** table (working, last picture, recording now, picture fine / moved / covered / blurry / dark) and the problems of each of the last 7 days (test alerts are not counted). It refreshes with the other pages.
+
+A camera is working when its recorder is online and the analysis worker sent a result in the last 3 minutes.
+
+**Rename** is on every camera in the Cameras list under Recorder and cameras, and on each "Already added" camera in "Cameras found on <recorder>" (Owner, Admin and Onboarding).
