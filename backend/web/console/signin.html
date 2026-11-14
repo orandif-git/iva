@@ -6,6 +6,12 @@
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>Jas iVision Control Center</title>
+<link rel="manifest" href="/console/manifest.webmanifest">
+<meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1A2029" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="iVision">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="stylesheet" href="/console/console.css">
@@ -22,6 +28,7 @@
       <input class="in" id="email" type="email" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" autofocus>
       <label class="si-l" for="pw">Password</label>
       <input class="in" id="pw" type="password" autocomplete="current-password">
+      <label class="si-keep" for="keep"><input id="keep" type="checkbox"><span>Stay signed in on this phone<small>For 30 days. Leave this off on a shared computer.</small></span></label>
     </div>
 
     <div id="set-fields" hidden>

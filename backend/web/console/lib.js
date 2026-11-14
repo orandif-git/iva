@@ -5,13 +5,23 @@ export class ApiError extends Error {
 
 export class Api {
   /** refreshUrl: where a refresh token is exchanged. key: where it is kept. Staff use sessionStorage (gone when the tab closes). */
-  constructor({ refreshUrl, key, storage = localStorage, onSignedOut }) {
-    Object.assign(this, { refreshUrl, key, storage, onSignedOut });
+  constructor({ refreshUrl, key, storage = localStorage, keepFlag = null, onSignedOut }) {
+    Object.assign(this, { refreshUrl, key, storage, keepFlag, onSignedOut });
     this.access = null;
     this._refreshing = null;
   }
-  get refreshToken() { try { return this.storage.getItem(this.key); } catch { return null; } }
-  set refreshToken(v) { try { v ? this.storage.setItem(this.key, v) : this.storage.removeItem(this.key); } catch { /* private mode */ } }
+  /** "Stay signed in" keeps the sign-in in localStorage (it survives closing the app); otherwise it stays in `storage` and goes when the tab or app closes. */
+  get _keep() { try { return !!this.keepFlag && localStorage.getItem(this.keepFlag) === "1"; } catch { return false; } }
+  get refreshToken() { try { return (this._keep ? localStorage : this.storage).getItem(this.key) || this.storage.getItem(this.key); } catch { return null; } }
+  set refreshToken(v) {
+    try {
+      const use = this._keep ? localStorage : this.storage, other = use === localStorage ? this.storage : localStorage;
+      other.removeItem(this.key); v ? use.setItem(this.key, v) : use.removeItem(this.key);
+    } catch { /* private mode */ }
+  }
+  /** Turn "stay signed in" on or off for this device. Call before storing the next token. */
+  set keep(on) { try { on ? localStorage.setItem(this.keepFlag, "1") : localStorage.removeItem(this.keepFlag); } catch { /* private mode */ } }
+  get keep() { return this._keep; }
   signedIn() { return !!(this.access || this.refreshToken); }
   setTokens(t) { this.access = t.access_token; this.refreshToken = t.refresh_token; }
   clear() { this.access = null; this.refreshToken = null; }

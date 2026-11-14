@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # Sign-in
     access_token_minutes: int = 15
     staff_refresh_hours: int = 12
+    staff_remember_days: int = 30                          # "Stay signed in on this phone": how long a sign-in lasts without use
     invite_days: int = 7
     reset_hours: int = 1
     lockout_failures: int = 5                # wrong passwords before an account is locked
@@ -42,6 +43,9 @@ class Settings(BaseSettings):
     messaging_allow_private_hosts: bool = False         # tests only: lets an integration call a local server
     delivery_poll_seconds: float = 2.0
     rtsp_probe_seconds: float = 20.0                     # how long to wait for a camera to answer a check
+    vapid_public_key: str = ""                           # notifications on console users' phones (Web Push); off while these are empty. Make a pair: python -m app.services.staff_push keygen
+    vapid_private_key: str = ""
+    vapid_subject: str = ""                              # who the push services can contact: a mailto: address or an https address (default: the public address)
     fcm_project_id: str = ""                             # Firebase project for push notifications; push is off while this is empty
     fcm_service_account_file: str = ""                   # path to that project's service-account key (JSON). Never stored in the database.
     live_stream_max: int = 8                             # moving live views running at once on this server; more are told to try again

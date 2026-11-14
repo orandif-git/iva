@@ -45,10 +45,15 @@ async def _issue_refresh(conn, account_id, family=None, ttl: timedelta | None = 
     return raw
 
 
-async def _tokens(conn, account_id, family=None) -> dict:
+def _long(ttl: timedelta) -> bool:
+    return ttl > timedelta(days=1)
+
+
+async def _tokens(conn, account_id, family=None, ttl: timedelta | None = None) -> dict:
     s = get_settings()
+    ttl = ttl or timedelta(hours=s.staff_refresh_hours)
     return {"access_token": issue_token("platform", {"sub": str(account_id)}, s.access_token_minutes * 60), "token_type": "bearer", "expires_in": s.access_token_minutes * 60,
-            "refresh_token": await _issue_refresh(conn, account_id, family)}
+            "refresh_token": await _issue_refresh(conn, account_id, family, ttl), "remember": _long(ttl)}
 
 
 async def _record_failure(conn, table: str, ids: list) -> None:
@@ -61,7 +66,7 @@ async def _record_failure(conn, table: str, ids: list) -> None:
             i, s.lockout_failures, s.lockout_minutes)
 
 
-async def staff_login(conn, email: str, password: str, ip: str | None) -> dict | ApiError:
+async def staff_login(conn, email: str, password: str, ip: str | None, remember: bool = False) -> dict | ApiError:
     s = get_settings()
     email = email.strip().lower()
     guard.check(ip, email, s.login_ip_limit, s.lockout_failures, s.lockout_minutes * 60)
@@ -77,15 +82,17 @@ async def staff_login(conn, email: str, password: str, ip: str | None) -> dict |
         return _fail()
     guard.succeeded(email)
     await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
-    out = await _tokens(conn, r["id"])
+    out = await _tokens(conn, r["id"], ttl=timedelta(days=s.staff_remember_days) if remember else None)
     out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
     return out
 
 
 # -------------------------------------------------------------------------------- refresh and logout
-async def refresh(conn, raw: str) -> dict | ApiError:
+async def refresh(conn, raw: str, remember: bool | None = None) -> dict | ApiError:
+    """Swap a refresh token for a new one. The sign-in keeps its length (12 hours, or 30 days when the person chose to stay signed in) and each use starts it again.
+    `remember` True or False changes the length from now on (the switch under More)."""
     row = await conn.fetchrow(
-        "SELECT id, account_id, family, expires_at, used_at, revoked_at FROM platform.auth_tokens WHERE token_hash=$1 AND kind='refresh' AND account_type='staff'", token_hash(raw))
+        "SELECT id, account_id, family, created_at, expires_at, used_at, revoked_at FROM platform.auth_tokens WHERE token_hash=$1 AND kind='refresh' AND account_type='staff'", token_hash(raw))
     if not row or row["revoked_at"] or row["expires_at"] < _now():
         raise ApiError(401, "invalid_token", "Sign in again.")
     claimed = await conn.fetchval("UPDATE platform.auth_tokens SET used_at=now() WHERE id=$1 AND used_at IS NULL RETURNING id", row["id"])
@@ -95,7 +102,11 @@ async def refresh(conn, raw: str) -> dict | ApiError:
     u = await conn.fetchrow("SELECT id, status FROM platform.staff_users WHERE id=$1", row["account_id"])
     if not u or u["status"] != "active":
         raise ApiError(401, "invalid_token", "Sign in again.")
-    return await _tokens(conn, row["account_id"], family=row["family"])
+    s = get_settings()
+    ttl = row["expires_at"] - row["created_at"]
+    if remember is not None:
+        ttl = timedelta(days=s.staff_remember_days) if remember else timedelta(hours=s.staff_refresh_hours)
+    return await _tokens(conn, row["account_id"], family=row["family"], ttl=ttl)
 
 
 async def logout(conn, raw: str) -> None:

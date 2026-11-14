@@ -2,7 +2,7 @@
 // One page of script, one registry of screens, every number comes from the admin API (/admin/v1). There are no inline styles: the page's security policy forbids them.
 import { Api } from "/console/lib.js";
 
-const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, onSignedOut: () => location.replace("/") });
+const api = new Api({ refreshUrl: "/admin/v1/auth/refresh", key: "gi_staff_rt", storage: sessionStorage, keepFlag: "gi_staff_keep", onSignedOut: () => { api.keep = false; location.replace("/"); } });
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -39,7 +39,7 @@ const IC = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', car: '<path d="M4 15.5V12l2-5h12l2 5v3.5M4 15.5h16M4 15.5v2.5h3v-2.5M17 15.5V18h3v-2.5"/><circle cx="7.5" cy="12.5" r=".6"/><circle cx="16.5" cy="12.5" r=".6"/>', head: '<circle cx="12" cy="7" r="3"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M3.5 9.5v-4h4M20.5 9.5v-4h-4"/>', dl: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>', trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   wa: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8c-1-.4-2-1.4-2.4-2.4l.8-1-1-2z"/>',
   photo: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4 16l4.5-4 4 3.5 3-2.5L20 16"/>', area: '<path d="M5 8l5-3.5 9 4-2 9-8 2.5z"/>',
-  camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>', dots: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>', screen: '<rect x="3.5" y="5" width="17" height="11" rx="2"/><path d="M9 19.5h6M12 16v3.5"/>'
+  camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>', phone: '<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>', dots: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>', screen: '<rect x="3.5" y="5" width="17" height="11" rx="2"/><path d="M9 19.5h6M12 16v3.5"/>'
 };
 const ico = (n, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const sw = (id, on, dis, act) => `<label class="sw"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""} ${act ? `data-act="${act}"` : ""}><i></i><span class="sr">Switch</span></label>`;
@@ -940,8 +940,11 @@ function pageMore() {
   const m = S.me || {}, desk = ["Activity log", "WhatsApp templates", "WhatsApp connection", "Console users", "Data kept", "Adding customers and events", "Drawing areas on the picture"];
   return `<div class="rise stack"><div class="card nodot"><span class="av lg">${esc(initials(m.name))}</span><span class="ct"><b>${esc(m.name || "")}</b><span class="sub small">${esc(m.email || "")}</span></span><span class="tag brand">${esc(ROLES[S.role]?.[0] || "")}</span></div>
    <div class="sec-h">This phone</div>
+   ${standalone() ? "" : `<button class="card nodot" type="button" data-install>${ico("phone", 20)}<span class="ct"><b>Add to home screen</b><span class="sub small">Open it like an app, without the browser bar</span></span>${ico("chev", 16)}</button>`}
+   <button class="card nodot" type="button" data-notif>${ico("bell", 20)}<span class="ct"><b>Notifications</b><span class="sub small">Choose what this phone tells you about</span></span>${ico("chev", 16)}</button>
    <button class="card nodot" type="button" data-pwopen>${ico("lock", 20)}<span class="ct"><b>Change password</b></span>${ico("chev", 16)}</button>
    <button class="card nodot" type="button" id="theme2">${ico("moon", 20)}<span class="ct"><b>Dark or light</b><span class="sub small">Switch how it looks</span></span>${ico("chev", 16)}</button>
+   <div class="card nodot">${ico("shield", 20)}<span class="ct"><b>Stay signed in on this phone</b><span class="sub small" id="keep-sub">${api.keep ? "For 30 days after you last open it" : "Off. You sign in again when the app closes"}</span></span>${sw("keep-on", api.keep, false, "staykeep")}</div>
    <button class="card nodot out" type="button" data-signout>${ico("out", 20)}<span class="ct"><b>Sign out</b></span></button>
    <details class="dgrp"><summary>${ico("screen", 20)}<span class="ct"><b>On a larger screen</b><span class="sub small">${desk.length} things that are best done on a computer or tablet</span></span>${ico("chev", 16)}</summary><div class="stack">${desk.map((x) => `<div class="card nodot desk"><span class="ct"><b>${x}</b><span class="sub small">Best done on a larger screen</span></span><span class="tag">Larger screen</span></div>`).join("")}</div></details>
    <div class="sub small mid">Control Center 1.0</div></div>`;
@@ -1135,7 +1138,7 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-tab],[data-prec],[data-pcam],[data-pper],[data-paddp],[data-phr],[data-psave],[data-pdel],[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#theme2,#signout,[data-signout],[data-pwopen]");
+  const t = ev.target.closest("[data-tab],[data-install],[data-notif],[data-pnon],[data-pnoff],[data-pntest],[data-prec],[data-pcam],[data-pper],[data-paddp],[data-phr],[data-psave],[data-pdel],[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#theme2,#signout,[data-signout],[data-pwopen]");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
@@ -1143,7 +1146,7 @@ document.addEventListener("click", async (ev) => {
     if ("scrim" in d) { if (ev.target !== t) return; return closeModal(); }
     if (t.id === "home") return go("overview");
     if (t.id === "theme" || t.id === "theme2") { const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme:dark)").matches); document.documentElement.dataset.theme = dark ? "light" : "dark"; return shell(); }
-    if (t.id === "signout" || "signout" in d) { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); return location.replace("/"); }
+    if (t.id === "signout" || "signout" in d) { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); api.keep = false; return location.replace("/"); }
     if (d.prec) { const r = S.cur.recs.find((x) => x.id === d.prec); return modal(`${mh(esc(r.name || r.device_id))}<div><span class="tag ${r.status === "online" ? "ok" : r.status === "offline" ? "crit" : ""}">${r.status === "never" ? "Not connected yet" : humanize(r.status)}</span></div><div class="kv"><span>Brand</span><span>${esc(humanize(r.brand || ""))}</span></div><div class="kv"><span>Last seen</span><span>${fmtTime(r.last_heartbeat_at)}</span></div><div class="kv"><span>Recorder ID</span><span class="sc">${esc(r.device_id)}</span></div><button class="btn" type="button" data-showconn="${r.id}">Connection details</button><div class="sub small">Editing a recorder is best done on a larger screen.</div>`); }
     if (d.pcam) { const c = S.cur.cams.find((x) => x.id === d.pcam), r = S.cur.recs.find((x) => x.id === c.recorder_id); return modal(`${mh(esc(c.name))}<div class="kv"><span>Recorder</span><span>${esc(r ? (r.name || r.device_id) : "-")}</span></div><div class="kv"><span>Used for</span><span>${usedFor(c)}</span></div><div class="row"><button class="btn" type="button" data-rencam="${c.id}" ${can("recs") ? "" : "disabled"}>${ico("edit", 14)}Rename</button><button class="btn pri" type="button" data-campic="${c.id}" ${can("live") ? "" : "disabled"}>${ico("play", 14)}Watch live</button></div>`); }
     if (d.pper !== undefined) return openPerson(+d.pper);
@@ -1151,6 +1154,11 @@ document.addEventListener("click", async (ev) => {
     if (d.phr !== undefined) return openHour(+d.phr);
     if ("psave" in d) { closeModal(); return saveSection(); }
     if (d.pdel !== undefined) { S.cur.f.people.splice(+d.pdel, 1); closeModal(); return saveSection(); }
+    if ("install" in d) return installApp();
+    if ("notif" in d) return openNotifications();
+    if ("pnon" in d) return pushOn();
+    if ("pnoff" in d) return pushOff();
+    if ("pntest" in d) { try { const r = await api.post("/admin/v1/push/test"); return toast(r.ok ? "Test sent. It should arrive in a moment." : "The test could not be delivered. Try turning notifications off and on again.", !r.ok); } catch (e) { return toast(errText(e), true); } }
     if ("pwopen" in d) return modal(`${mh("Change password")}<label class="bold" for="pw-cur">Current password</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"><label class="bold" for="pw-1">New password</label><input class="in" id="pw-1" type="password" autocomplete="new-password"><div class="pf-meter" id="pw-meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="sub small" id="pw-tip">${PW_HINT}</div><label class="bold" for="pw-2">New password again</label><input class="in" id="pw-2" type="password" autocomplete="new-password"><div class="pf-err" id="pw-err" role="alert"></div><button class="btn pri" type="button" data-confirm="pwchange">Change password</button><div class="sub small">Your other devices are signed out. This one stays signed in.</div>`);
     if (d.confirm === "pwchange") { const cur = $("#pw-cur").value, a = $("#pw-1").value, b = $("#pw-2").value, bad = (id, msg) => { $("#pw-err").textContent = msg; $("#" + id).classList.add("bad"); $("#" + id).focus(); };
       if (!cur) return bad("pw-cur", "Enter your current password."); const [sc, tx] = pwStrength(a, S.me?.email); if (sc <= 1) return bad("pw-1", tx); if (a === cur) return bad("pw-1", "Choose a password you have not used before."); if (a !== b) return bad("pw-2", "The two new passwords are not the same.");
@@ -1375,6 +1383,14 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("change", async (ev) => {
   const t = ev.target, d = t.dataset;
   try {
+    if (d.act?.startsWith("pncat:")) { try { await api.put("/admin/v1/push/preferences", { categories: { [d.act.slice(6)]: t.checked } }); return toast("Saved"); } catch (e) { t.checked = !t.checked; return toast(errText(e), true); } }
+    if (d.act === "staykeep") {
+      try { const r = await fetch("/admin/v1/auth/remember", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: api.refreshToken, remember: t.checked }) });
+        if (!r.ok) throw new Error("fail"); const j = await r.json(); api.keep = j.remember; api.setTokens(j);
+        const sub = $("#keep-sub"); if (sub) sub.textContent = j.remember ? "For 30 days after you last open it" : "Off. You sign in again when the app closes";
+        return toast(j.remember ? "You will stay signed in on this phone" : "You will be signed out when the app closes");
+      } catch { t.checked = !t.checked; return toast("Could not change this. Try again.", true); }
+    }
     if (d.act?.startsWith("phopen:") && S.cur) { const i = +d.act.slice(7); S.cur.f.hours[i].open = t.checked; openHour(i); return render(true); }
     if (d.act?.startsWith("evsw:") && S.cur) { return toggleRow(+d.act.slice(5), t.checked); }
     if (d.act?.startsWith("camfoot:") || d.act?.startsWith("camplate:")) { const plate = d.act.startsWith("camplate:"), id = d.act.split(":")[1], c = S.cur.cams.find((x) => x.id === id);
@@ -1394,6 +1410,51 @@ document.addEventListener("change", async (ev) => {
   } catch (e) { toast(e.code === "use_required" ? "A camera needs at least one use. Turn Watching off to stop it instead." : errText(e), true); render(true); }
 });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
+
+/* ------------------------------------------------------------------------------------------------ the app on the home screen */
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const onIPhone = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let installEvt = null;                                                      // Android and desktop Chrome hand over a ready-made install prompt
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; if (S.route === "more") render(true); });
+window.addEventListener("appinstalled", () => { installEvt = null; if (S.route === "more") render(true); toast("Installed. Find it on your home screen."); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/console/sw.js", { scope: "/console/" }).catch(() => { /* the app still works without it */ });
+async function installApp() {
+  if (installEvt) { const e = installEvt; installEvt = null; e.prompt(); try { await e.userChoice; } catch { /* closed */ } return render(true); }
+  modal(`${mh("Add to your home screen")}${onIPhone()
+    ? `<ol class="steps"><li>Tap the <b>Share</b> button at the bottom of Safari (a square with an arrow).</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. The Jas iVision icon appears on your home screen.</li></ol><div class="sub small">On an iPhone this works in Safari. If you are in another app's browser, open this page in Safari first.</div>`
+    : `<ol class="steps"><li>Open your browser's menu (the three dots).</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Tap <b>Install</b>.</li></ol>`}<button class="btn" type="button" data-close>Close</button>`);
+}
+
+/* ------------------------------------------------------------------------------------------------ notifications on this phone */
+const b64key = (s) => Uint8Array.from(atob((s + "=".repeat((4 - s.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+async function mySub() { try { return await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch { return null; } }
+async function openNotifications() {
+  let st, sub = null;
+  try { st = await api.get("/admin/v1/push"); sub = canPush() ? await mySub() : null; } catch (e) { return toast(errText(e), true); }
+  const why = !st.enabled ? "Notifications are not set up on the server yet. Ask the Owner."
+    : !canPush() ? (onIPhone() && !standalone() ? "On an iPhone, add the app to your home screen first (More, Add to home screen), then open it from there to turn notifications on." : "This browser cannot show notifications.")
+    : Notification.permission === "denied" && !sub ? "Notifications are blocked for this app. Allow them in your phone's settings, then come back." : "";
+  const cats = st.categories.map((c) => `<div class="card nodot"><span class="ct"><b>${esc(c.label)}</b><span class="sub small">${esc(c.help)}</span></span>${sw("pn-" + c.key, c.on, false, "pncat:" + c.key)}</div>`).join("");
+  modal(`${mh("Notifications")}${why ? `<div class="note">${esc(why)}</div>` : sub
+    ? `<div class="note ok-note">Notifications are on for this phone.</div><div class="sub">You are signed in as <b>${esc(ROLES[S.role]?.[0] || S.role)}</b>, so some are on to start with. Change any of them.</div>${cats}<div class="row"><button class="btn" type="button" data-pntest>Send me a test</button><button class="btn" type="button" data-pnoff>Turn off on this phone</button></div>`
+    : `<div class="sub">Get a short notification on this phone when something needs you, even when the app is closed.</div><button class="btn pri" type="button" data-pnon>Turn on notifications</button>`}`);
+}
+async function pushOn() {
+  try {
+    const st = await api.get("/admin/v1/push");
+    if (await Notification.requestPermission() !== "granted") return toast("Notifications were not allowed.", true);
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64key(st.public_key) });
+    const j = sub.toJSON();
+    await api.post("/admin/v1/push/subscribe", { endpoint: j.endpoint, keys: j.keys, device: (onIPhone() ? "iPhone" : navigator.userAgentData?.platform || "Browser").slice(0, 60) });
+    toast("Notifications are on"); return openNotifications();
+  } catch (e) { toast(e.status ? errText(e) : "Could not turn notifications on. Try again.", true); }
+}
+async function pushOff() {
+  try { const sub = await mySub(); if (sub) { await api.post("/admin/v1/push/unsubscribe", { endpoint: sub.endpoint }); await sub.unsubscribe(); } toast("Notifications are off for this phone"); return openNotifications(); }
+  catch (e) { toast(errText(e), true); }
+}
 
 /* ------------------------------------------------------------------------------------------------ start */
 async function boot() {

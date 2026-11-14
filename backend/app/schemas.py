@@ -375,10 +375,15 @@ Secret = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 class StaffLoginIn(Strict):
     email: Email
     password: Secret
+    remember: bool = False                    # "Stay signed in on this phone": the sign-in lasts 30 days instead of 12 hours
 
 
 class RefreshIn(Strict):
     refresh_token: Annotated[str, StringConstraints(min_length=20, max_length=200)]
+
+
+class RememberIn(RefreshIn):
+    remember: bool
 
 
 class SetPasswordIn(Strict):

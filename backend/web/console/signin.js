@@ -2,7 +2,11 @@
 const $ = (s) => document.querySelector(s);
 const KEY = "gi_staff_rt";                                   // the console reads its sign-in from here
 const setting = location.pathname.startsWith("/set-password");
-const store = { get: () => { try { return sessionStorage.getItem(KEY); } catch { return null; } }, set: (v) => { try { v ? sessionStorage.setItem(KEY, v) : sessionStorage.removeItem(KEY); } catch { /* private window */ } } };
+const KEEP = "gi_staff_keep";                                // "1" when this device stays signed in (the sign-in is then kept in localStorage)
+const kept = () => { try { return localStorage.getItem(KEEP) === "1"; } catch { return false; } };
+const store = { get: () => { try { return (kept() ? localStorage : sessionStorage).getItem(KEY) || sessionStorage.getItem(KEY); } catch { return null; } },
+  keep: (on) => { try { on ? localStorage.setItem(KEEP, "1") : localStorage.removeItem(KEEP); } catch { /* private mode */ } },
+  set: (v) => { try { const use = kept() ? localStorage : sessionStorage, other = use === localStorage ? sessionStorage : localStorage; other.removeItem(KEY); v ? use.setItem(KEY, v) : use.removeItem(KEY); } catch { /* private window */ } } };
 
 async function post(url, body) {
   let r;
@@ -82,8 +86,8 @@ async function startSignIn() {
     if (!pw) return fail("pw", "Enter your password.");
     $("#go").disabled = true; $("#go").textContent = "Signing in…";
     try {
-      const j = await post("/admin/v1/auth/login", { email, password: pw });
-      store.set(j.refresh_token); location.replace("/console/");
+      const j = await post("/admin/v1/auth/login", { email, password: pw, remember: $("#keep").checked });
+      store.keep(j.remember); store.set(j.refresh_token); location.replace("/console/");
     } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign in"; fail(null, e.message); $("#pw").value = ""; $("#pw").focus(); }
   });
 }

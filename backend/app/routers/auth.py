@@ -5,7 +5,7 @@ from ..config import get_settings
 from ..db import db
 from ..deps import client_ip
 from ..errors import ApiError
-from ..schemas import RefreshIn, SetPasswordIn, StaffLoginIn
+from ..schemas import RefreshIn, RememberIn, SetPasswordIn, StaffLoginIn
 from ..services import auth
 from ..services.loginguard import guard
 
@@ -26,7 +26,7 @@ def _no_store(response: Response) -> None:
 async def staff_login(body: StaffLoginIn, request: Request, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
-        result = await auth.staff_login(conn, body.email, body.password, client_ip(request))
+        result = await auth.staff_login(conn, body.email, body.password, client_ip(request), body.remember)
     return _raise_if_error(result)
 
 
@@ -35,6 +35,15 @@ async def staff_refresh(body: RefreshIn, response: Response):
     _no_store(response)
     async with db.admin_tx() as conn:
         result = await auth.refresh(conn, body.refresh_token)
+    return _raise_if_error(result)
+
+
+@staff.post("/remember")
+async def staff_remember(body: RememberIn, response: Response):
+    """Switch "Stay signed in on this phone" on or off for the sign-in that holds this token. Answers with the new tokens, like a refresh."""
+    _no_store(response)
+    async with db.admin_tx() as conn:
+        result = await auth.refresh(conn, body.refresh_token, body.remember)
     return _raise_if_error(result)
 
 

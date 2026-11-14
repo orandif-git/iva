@@ -201,3 +201,40 @@ async def test_signing_out_every_other_device_keeps_this_one(client, su):
     for dead in (b, c):
         assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": dead["refresh_token"]})).status_code == 401
     assert (await client.post("/admin/v1/auth/refresh", json={"refresh_token": a["refresh_token"]})).status_code == 200
+
+
+# ------------------------------------------------------------------------------------------------ stay signed in on this phone
+async def _expires_in_days(su, raw):
+    from app.services.auth import token_hash
+    return await su.fetchval("SELECT extract(epoch FROM expires_at - now()) / 86400 FROM platform.auth_tokens WHERE token_hash=$1", token_hash(raw))
+
+
+async def test_a_sign_in_lasts_12_hours_unless_the_person_chose_to_stay_signed_in_for_30_days(client, su):
+    sid, email = await staff_with_password(su)
+    short = (await staff_login(client, email)).json()
+    assert short["remember"] is False and 0.45 < await _expires_in_days(su, short["refresh_token"]) < 0.55
+    guard.reset()
+    long = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "remember": True})).json()
+    assert long["remember"] is True and 29.9 < await _expires_in_days(su, long["refresh_token"]) < 30.1
+
+
+async def test_a_long_sign_in_stays_long_when_it_is_renewed_and_a_short_one_stays_short(client, su):
+    sid, email = await staff_with_password(su)
+    long = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, "remember": True})).json()
+    again = (await client.post("/admin/v1/auth/refresh", json={"refresh_token": long["refresh_token"]})).json()
+    assert again["remember"] is True and 29.9 < await _expires_in_days(su, again["refresh_token"]) < 30.1
+    guard.reset()
+    short = (await staff_login(client, email)).json()
+    renewed = (await client.post("/admin/v1/auth/refresh", json={"refresh_token": short["refresh_token"]})).json()
+    assert renewed["remember"] is False and await _expires_in_days(su, renewed["refresh_token"]) < 1
+
+
+async def test_the_switch_under_more_makes_a_sign_in_long_or_short_from_now_on(client, su):
+    sid, email = await staff_with_password(su)
+    j = (await staff_login(client, email)).json()
+    on = await client.post("/admin/v1/auth/remember", json={"refresh_token": j["refresh_token"], "remember": True})
+    assert on.status_code == 200 and on.json()["remember"] is True and await _expires_in_days(su, on.json()["refresh_token"]) > 29
+    off = await client.post("/admin/v1/auth/remember", json={"refresh_token": on.json()["refresh_token"], "remember": False})
+    assert off.json()["remember"] is False and await _expires_in_days(su, off.json()["refresh_token"]) < 1
+    assert (await client.post("/admin/v1/auth/remember", json={"refresh_token": "x" * 40, "remember": True})).status_code == 401
+    assert (await client.post("/admin/v1/auth/remember", json={"refresh_token": on.json()["refresh_token"], "remember": True})).status_code == 401, "a used token does not work twice"

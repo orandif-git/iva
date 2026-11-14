@@ -358,3 +358,19 @@ async def test_the_phone_layout_is_served_loads_only_on_small_screens_and_uses_n
     for tab in ("overview", "customers", "messages", "health", "more"):                                       # the five tabs of the floating bar
         assert f'["{tab}"' in (await client.get("/console/app.js")).text
     assert "style=" not in page                                                                              # the page's security policy forbids inline styles
+
+
+async def test_the_app_can_be_added_to_a_home_screen_and_its_service_worker_is_only_for_the_console(client):
+    page = (await client.get("/console/")).text
+    assert 'rel="manifest" href="/console/manifest.webmanifest"' in page and 'rel="apple-touch-icon"' in page and 'apple-mobile-web-app-capable' in page
+    m = await client.get("/console/manifest.webmanifest")
+    j = m.json()
+    assert m.status_code == 200 and "manifest+json" in m.headers["content-type"]
+    assert j["display"] == "standalone" and j["start_url"] == "/console/" and j["scope"] == "/" and {i["sizes"] for i in j["icons"]} >= {"192x192", "512x512"}
+    for icon in j["icons"]:
+        assert (await client.get(icon["src"])).status_code == 200, icon["src"]
+    sw = await client.get("/console/sw.js")
+    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
+    assert "/admin/" not in sw.text.split("fetch")[1].split("push")[0] or "startsWith(\"/console/\")" in sw.text      # only the console's own files are kept, never the API
+    assert 'register("/console/sw.js", { scope: "/console/" })' in (await client.get("/console/app.js")).text
+    assert (await client.get("/sw.js")).status_code == 200, "the old worker's address still retires itself"
