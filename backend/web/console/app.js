@@ -147,10 +147,10 @@ function dirSvg(pts, dir) {
   const ux = v[0], uy = v[1], x1 = cx - ux * 55, y1 = cy - uy * 55, x2 = cx + ux * 55, y2 = cy + uy * 55, head = `${x2 + ux * 16},${y2 + uy * 16} ${x2 - uy * 11},${y2 + ux * 11} ${x2 + uy * 11},${y2 - ux * 11}`;
   return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#fff" stroke-width="6" stroke-linecap="round"/><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2F8BFF" stroke-width="3" stroke-linecap="round"/><polygon points="${head}" fill="#fff" stroke="#2F8BFF" stroke-width="2"/><text x="${x2 + ux * 34 + (uy ? 22 : 0)}" y="${y2 + uy * 34 + 5}" fill="#fff" font-size="16" font-weight="700" text-anchor="middle" stroke="#0a2a55" stroke-width="3" paint-order="stroke">IN</text>`;
 }
-function videoFrame(title, pts, drawable, snap, mode, flip, pdir) {
+function videoFrame(title, pts, drawable, snap, mode, flip, pdir, camId) {
   const shape = mode === "line" ? lineSvg(pts, flip) : mode === "zone" ? `${pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : ""}${dirSvg(pts, pdir)}` : (pts && pts.length ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}" fill="rgba(0,111,255,.28)" stroke="#2F8BFF" stroke-width="3" stroke-linejoin="round"/>${pts.map(dot).join("")}` : "");
   const poly = (pts && pts.length) || drawable ? `<svg class="draw" ${drawable ? 'id="draw"' : ""} viewBox="0 0 640 360" preserveAspectRatio="none">${shape}</svg>` : "";
-  return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk">Picture</span><span class="sp"></span></div><div class="vpic">${snap ? `<img class="snap" src="${snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
+  return `<div class="vframe"><div class="vhead">${ico("camera2", 22)}<span>${esc(title)}</span><span class="lk ${S.live ? "on" : ""}" id="lv-state">${S.live ? "Live" : "Picture"}</span><span class="sp"></span>${camId && can("live") ? `<button class="btn sm" type="button" id="lv-btn" data-live="${camId}">${S.live ? "Stop" : "Watch live"}</button>` : ""}</div><div class="vpic">${(S.live && S.live.url) || snap ? `<img class="snap" src="${(S.live && S.live.url) || snap}" alt="Camera picture">` : SCENE}${poly}</div></div>`;
 }
 
 /* ------------------------------------------------------------------------------------------------ Overview */
@@ -474,7 +474,7 @@ function pageEvent() {
     const had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
     if (e.loadingPic) body = `<div class="note">Getting the picture from ${esc(e.target?.name || "the camera")}… this can take up to 30 seconds.</div>`;
     else if (e.snapErr) body = `<div class="note warn">${blockedText(e.target?.name || "This camera", e.snapErr, m === "area" ? "The area cannot be marked." : m === "line" ? "The counting line cannot be marked." : "The plate area cannot be marked on the picture.")}</div><div class="row"><button class="btn pri" type="button" data-snaptry>Try again</button></div>`;
-    else body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip, e.pdir)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>${m === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way in the picture counts as coming in, the other way as going out. Needed to match entries with exits.</small></span>${dirPicker(e.pdir, "data-pdir")}${e.pdir ? "" : `<div class="note warn">Choose a direction to continue.</div>`}</div>` : ""}`; }
+    else body = `${had && !e.touched ? `<div class="note">${m === "line" ? "A counting line is already marked on this camera." : "A plate area is already marked on this camera."} Click on the picture to draw a new one, or press Next to keep it.</div>` : ""}${videoFrame((e.target?.name || "") + " · " + cname(), e.pts, true, e.snap, m, e.flip, e.pdir, e.target?.id)}<div class="vtool"><span class="sub">${help}${e.snap ? "" : " The camera's picture is not available yet, so this is a sample view."}</span><span class="grow"></span>${m === "line" ? '<button class="btn sm" type="button" data-flip>Swap IN and OUT</button>' : ""}${m === "zone" ? '<button class="btn sm" type="button" data-whole>Use the whole picture</button>' : ""}<button class="btn sm" type="button" data-clearpts>Start again</button></div>${m === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way in the picture counts as coming in, the other way as going out. Needed to match entries with exits.</small></span>${dirPicker(e.pdir, "data-pdir")}${e.pdir ? "" : `<div class="note warn">Choose a direction to continue.</div>`}</div>` : ""}`; }
   else body = settingsBody(e);
   const pos = o.indexOf(S.estep), last = pos === o.length - 1;
   const m = markMode(e.key), had = m === "line" ? e.zones?.some((z) => z.kind === "count_line") : m === "zone" ? e.zones?.some((z) => z.kind === "anpr_zone") : false;
@@ -588,7 +588,7 @@ async function openMark(i) {
 }
 function drawMark() {
   const M = S.mark, r = S.cur.rows[M.i];
-  modal(`${mh(MARK_TITLE[M.mode])}${videoFrame(r.cam.name + " · " + cname(), M.pts, true, M.snap, M.mode, M.flip, M.pdir)}<div class="vtool"><span class="sub">${M.mode === "line" ? "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN." : "Click the corners of the area where plates should be read, or use the whole picture. Then choose which way is IN."}</span><span class="grow"></span>${M.mode === "line" ? '<button class="btn sm" type="button" data-mflip>Swap IN and OUT</button>' : '<button class="btn sm" type="button" data-mwhole>Use the whole picture</button>'}<button class="btn sm" type="button" data-mclear>Start again</button></div>${M.mode === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way counts as coming in, the other way as going out.</small></span>${dirPicker(M.pdir, "data-mpdir")}</div>` : ""}<div class="row"><button class="btn pri" type="button" data-msave ${M.mode === "zone" && (!M.pdir || (M.pts.length > 0 && M.pts.length < 3)) ? "disabled" : ""}>Save</button><button class="btn" type="button" data-close>Cancel</button></div>`);
+  modal(`${mh(MARK_TITLE[M.mode])}${videoFrame(r.cam.name + " · " + cname(), M.pts, true, M.snap, M.mode, M.flip, M.pdir, r.cam.id)}<div class="vtool"><span class="sub">${M.mode === "line" ? "Click two points to draw a line across the door or the path. People crossing it the way the arrow points are counted IN." : "Click the corners of the area where plates should be read, or use the whole picture. Then choose which way is IN."}</span><span class="grow"></span>${M.mode === "line" ? '<button class="btn sm" type="button" data-mflip>Swap IN and OUT</button>' : '<button class="btn sm" type="button" data-mwhole>Use the whole picture</button>'}<button class="btn sm" type="button" data-mclear>Start again</button></div>${M.mode === "zone" ? `<div class="stack pdir"><span class="lb">Which way is IN?<small>A vehicle moving this way counts as coming in, the other way as going out.</small></span>${dirPicker(M.pdir, "data-mpdir")}</div>` : ""}<div class="row"><button class="btn pri" type="button" data-msave ${M.mode === "zone" && (!M.pdir || (M.pts.length > 0 && M.pts.length < 3)) ? "disabled" : ""}>Save</button><button class="btn" type="button" data-close>Cancel</button></div>`);
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); if (M.mode === "line" && M.pts.length >= 2) M.pts = []; M.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); M.touched = true; drawMark(); });
 }
 async function createEvent() {
@@ -719,7 +719,7 @@ async function openRedraw() {
 }
 function drawRedraw() {
   const r = S.cur.rows[S.edit.i], R = S.redraw;
-  modal(`${mh("Redraw the area")}${videoFrame(r.cam.name + " · " + cname(), R.pts, true, R.snap)}<div class="vtool"><span class="sub">${R.fresh || !R.pts.length ? "Click to add the corners of the new area. At least 3 corners." : "This is the area now. Click on the picture to draw a new one, or press Use this area to keep it."}</span><span class="grow"></span><button class="btn sm" type="button" data-redrawclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-redrawsave ${R.pts.length >= 3 ? "" : "disabled"}>Use this area</button><button class="btn" type="button" data-redrawcancel>Cancel</button></div>`);
+  modal(`${mh("Redraw the area")}${videoFrame(r.cam.name + " · " + cname(), R.pts, true, R.snap, undefined, undefined, undefined, r.cam.id)}<div class="vtool"><span class="sub">${R.fresh || !R.pts.length ? "Click to add the corners of the new area. At least 3 corners." : "This is the area now. Click on the picture to draw a new one, or press Use this area to keep it."}</span><span class="grow"></span><button class="btn sm" type="button" data-redrawclear>Start again</button></div><div class="row"><button class="btn pri" type="button" data-redrawsave ${R.pts.length >= 3 ? "" : "disabled"}>Use this area</button><button class="btn" type="button" data-redrawcancel>Cancel</button></div>`);
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const b = d.getBoundingClientRect(); if (!R.fresh) { R.fresh = true; R.pts = []; } R.pts.push([Math.round((ev.clientX - b.left) / b.width * 640), Math.round((ev.clientY - b.top) / b.height * 360)]); drawRedraw(); });
 }
 /* Delete, with the cautions */
@@ -839,24 +839,29 @@ async function openTpl(type) {
 function modal(html) { $("#layer").innerHTML = `<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`; const b = $("#layer .modal input, #layer .modal button"); if (b) b.focus(); }
 /* ---- live view: moving pictures of one camera, from the camera picture window (Owner and Admin) ---- */
 async function startLive(camId) {
-  const box = document.querySelector("[data-campic-box]"), state = $("#lv-state"), btn = $("#lv-btn");
-  if (!box || S.live) return;
-  box.textContent = ""; box.insertAdjacentHTML("beforeend", '<span class="picmsg">Starting the live view…</span>');
+  if (S.live) return;
+  const frame = () => document.querySelector(".vframe .vpic"), say = (t, on) => { const x = $("#lv-state"); if (x) { x.textContent = t; x.classList.toggle("on", !!on); } }, button = (t) => { const b = $("#lv-btn"); if (b) b.textContent = t; };
+  if (!frame()) return;
   const ctl = new AbortController(), L = S.live = { ctl, url: null, timer: null, ends: Date.now() + 300000 };
-  btn.textContent = "Stop"; state.textContent = "Starting…"; state.classList.add("on");
-  const img = box.querySelector("img.snap") || box.appendChild(Object.assign(document.createElement("img"), { className: "snap", alt: "Live picture" }));
-  const tick = () => { const left = Math.max(0, Math.round((L.ends - Date.now()) / 1000)); if (state.isConnected) state.textContent = `Live · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`; };
-  L.timer = setInterval(tick, 1000);
+  const campic = frame().hasAttribute("data-campic-box");
+  if (campic) { frame().textContent = ""; frame().insertAdjacentHTML("beforeend", '<span class="picmsg">Starting the live view…</span>'); }
+  button("Stop"); say("Starting…", true);
+  const tick = () => { const left = Math.max(0, Math.round((L.ends - Date.now()) / 1000)); say(`Live · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, true); };
+  L.timer = setInterval(() => { if (L.url) tick(); }, 1000);
   let got = false;
   try {
     await api.stream(`/admin/v1/tenants/${S.cid}/shop/cameras/${camId}/live`, (bytes) => {
-      if (S.live !== L || !img.isConnected) return;
-      if (!got) { got = true; L.ends = Date.now() + 300000; tick(); box.querySelectorAll(".picmsg").forEach((m) => m.remove()); }
-      const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })), old = L.url; L.url = url; img.src = url; if (old) URL.revokeObjectURL(old);
+      if (S.live !== L) return;
+      const box = frame(); if (!box) return;
+      let img = box.querySelector("img.snap");
+      if (!img) { img = Object.assign(document.createElement("img"), { className: "snap", alt: "Live picture" }); const scene = box.querySelector("svg:not(.draw)"); if (scene) scene.remove(); box.prepend(img); }
+      if (!got) { got = true; L.ends = Date.now() + 300000; box.querySelectorAll(".picmsg").forEach((m) => m.remove()); }
+      const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })), old = L.url; L.url = url; img.src = url; if (old) setTimeout(() => URL.revokeObjectURL(old), 500);
+      tick();
     }, { signal: ctl.signal });
-    if (S.live === L && state.isConnected) { state.textContent = got ? "Live ended" : "Picture"; if (got) toast("The live view ended. Press Watch live to continue."); else loadPics(); }
-  } catch (e) { if (state.isConnected) state.textContent = "Picture"; toast(errText(e), true); if (!got) loadPics(); }
-  finally { clearInterval(L.timer); if (S.live === L) S.live = null; if (btn.isConnected) btn.textContent = "Watch live"; if (state.isConnected) state.classList.remove("on"); }
+    if (S.live === L) { say(got ? "Live ended" : "Picture", false); if (got) toast("The live view ended. Press Watch live to continue."); else if (campic) loadPics(); }
+  } catch (e) { say("Picture", false); toast(errText(e), true); if (!got && campic) loadPics(); }
+  finally { clearInterval(L.timer); if (S.live === L) { S.live = null; button("Watch live"); const x = $("#lv-state"); if (x) x.classList.remove("on"); } }
 }
 function stopLive(manual) {
   const L = S.live; if (!L) return; L.ctl.abort(); clearInterval(L.timer); S.live = null;
@@ -887,7 +892,7 @@ async function render(keepScroll) {
   let html;
   try { html = await PAGES[S.route](); } catch (e) { html = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`; }
   if (mine !== token) return;
-  p.innerHTML = html; p.scrollTop = keepScroll ? y : 0;
+  p.innerHTML = html; p.scrollTop = keepScroll ? y : 0; syncHash();
   if (S.route === "customer") side();                                        // the menu depends on what this customer has (loaded just now)
   p.querySelectorAll(".bars i[data-h]").forEach((b) => { b.style.height = b.dataset.h + "px"; });
   p.querySelectorAll(".mtb i[data-w]").forEach((b) => { b.style.width = b.dataset.w + "%"; });
@@ -895,7 +900,14 @@ async function render(keepScroll) {
   loadPics();
   const d = $("#draw"); if (d) d.addEventListener("click", (ev) => { const r = d.getBoundingClientRect(), E = S.ev; if (markMode(E.key) === "line" && E.pts.length >= 2) E.pts = []; E.pts.push([Math.round((ev.clientX - r.left) / r.width * 640), Math.round((ev.clientY - r.top) / r.height * 360)]); E.touched = true; E.whole = false; render(true); });
 }
-function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = false; closeModal(); try { history.replaceState(null, "", "#" + r); } catch { /* fine */ } return render(); }
+const SECTIONS = ["cams", "events", "count", "vehicles", "people", "hours", "log"], SETUPS = ["tpl", "team", "keep", "wa", "sys", "audit"];
+function hashNow() {
+  if (S.route === "customer" && S.cid) return `customer/${S.cid}/${S.section}`;
+  if (S.route === "setup") return `setup/${S.setup}`;
+  return ["overview", "customers", "messages"].includes(S.route) ? S.route : null;        // the step-by-step screens are not remembered
+}
+function syncHash() { const h = hashNow(); if (h && location.hash !== "#" + h) { try { history.replaceState(null, "", "#" + h); } catch { /* fine */ } } }
+function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = false; closeModal(); return render(); }
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
@@ -1145,7 +1157,10 @@ async function boot() {
   try { S.me = await api.get("/admin/v1/me"); } catch (e) { if (e.status === 401) return location.replace("/"); return void ($("#page").innerHTML = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`); }
   S.role = S.me.role;
   try { await loadCustomers(); } catch (e) { toast(errText(e), true); }
-  const h = location.hash.slice(1); if (["overview", "customers", "messages", "setup"].includes(h)) S.route = h;
+  const [r, a, b] = location.hash.slice(1).split("/");
+  if (["overview", "customers", "messages"].includes(r)) S.route = r;
+  else if (r === "setup") { S.route = "setup"; if (SETUPS.includes(a)) S.setup = a; }
+  else if (r === "customer" && cust(a)) { S.route = "customer"; S.cid = a; S.cur = null; S.section = SECTIONS.includes(b) ? b : "cams"; }
   render();
 }
 boot();
