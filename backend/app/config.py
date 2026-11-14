@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     gb_port: int = 5060
     dahua_viewer_user: str = "giview"      # the viewer-only user a customer creates on a Dahua recorder (the gateway signs in as this user)
     heartbeat_timeout_seconds: int = 90
+    recorder_offline_grace_minutes: int = 5       # a recorder that has been offline this long, and has not been mentioned yet, is reported (a one-minute blip is not)
     # Sign-in
     access_token_minutes: int = 15
     staff_refresh_hours: int = 12

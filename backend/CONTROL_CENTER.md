@@ -234,3 +234,7 @@ A Hikvision recorder is not connected like a Dahua one. Instead it can send its 
 
 ## Face ID as a second step (Owners and Admins)
 Once an Owner or Admin has set up Face ID (More, Face ID), signing in with the password is only the first step: the sign-in page then asks for Face ID and finishes the sign-in. Until someone has set it up, the password alone still works (nobody is locked out), so the Face ID row says what it is for. Other roles are not asked. The roles are the setting `GI_PASSKEY_SECOND_STEP_ROLES` (default `["owner","admin"]`). The step between the password and Face ID is a short note (5 minutes) signed with its own key, so it can never be used as a sign-in. A Face ID belonging to someone else is refused. Recommended: set Face ID up on two devices. Recovery for a lost phone is in DEPLOY.md, section 6e.
+
+## When a recorder goes offline
+A recorder that loses its connection is reported once for that outage: when it has been offline for 5 minutes (`GI_RECORDER_OFFLINE_GRACE_MINUTES`), or at once when the 90-second heartbeat check sees it go. A drop of a minute or two is not reported (the connection history and "Unstable connection" still count it). If an alert about the same recorder was raised a little earlier, a long outage that follows still gets its own. After 6 hours offline the customer is told again ("Recorder still offline"), then every 6 hours for up to 7 days, and that reminder is never held back by an earlier alert.
+

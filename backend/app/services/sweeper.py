@@ -20,13 +20,27 @@ async def mark_stale_recorders(timeout_seconds: int) -> int:
             await link_history.record(conn, r["tenant_id"], r["id"], "offline")
             await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['name']} has lost its connection.", camera_name=r["name"], details={"recorder": r["name"]},
                               dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=60)
+        # A recorder can also be marked offline somewhere else: when its connection to the gateway closes, the gateway says so at once and the status changes there, so the
+        # check above never sees it. And an alert held back because the recorder dropped just before (a recorder that comes and goes) leaves a real outage unsaid.
+        # So: any recorder that has now been offline for a few minutes and has had NO alert since it was last heard from gets exactly one, with its own key for this outage.
+        grace = get_settings().recorder_offline_grace_minutes
+        silent = await conn.fetch(
+            """SELECT r.id, r.tenant_id, coalesce(r.name, r.device_id) AS name, r.last_heartbeat_at, extract(epoch FROM (now() - r.last_heartbeat_at))::int / 60 AS minutes FROM app.recorders r
+               WHERE r.status='offline' AND r.last_heartbeat_at < now() - make_interval(mins => $1) AND r.last_heartbeat_at > now() - interval '7 days'
+                 AND NOT EXISTS (SELECT 1 FROM app.alerts a WHERE a.tenant_id = r.tenant_id AND a.rule_type='recorder_offline' AND a.dedupe_key LIKE 'recorder_offline:' || r.id::text || '%'
+                                  AND a.created_at > r.last_heartbeat_at)""", grace)
+        for r in silent:
+            how = "has lost its connection" if r["minutes"] < 60 else f"has been offline for {r['minutes'] // 60} hours"
+            await raise_alert(conn, r["tenant_id"], "recorder_offline", body=f"Recorder {r['name']} {how}.", camera_name=r["name"], details={"recorder": r["name"]},
+                              dedupe_key=f"recorder_offline:{r['id']}:{int(r['last_heartbeat_at'].timestamp())}", cooldown_minutes=24 * 60)
         # Still offline hours later: said again every six hours, so a recorder that is down all day is not one message at dawn and then silence.
+        # (Its own key: an earlier alert about the same recorder must never keep the reminder back.)
         still = await conn.fetch(
             """SELECT id, tenant_id, device_id, coalesce(name, device_id) AS name, extract(epoch FROM (now() - last_heartbeat_at))::int / 3600 AS hours FROM app.recorders
                WHERE status='offline' AND last_heartbeat_at < now() - interval '6 hours' AND last_heartbeat_at > now() - interval '7 days'""")
         for r in still:
             await raise_alert(conn, r["tenant_id"], "recorder_offline", title="Recorder still offline", body=f"{r['name']} has been offline for {r['hours']} hours.", camera_name=r["name"],
-                              details={"recorder": r["name"]}, dedupe_key=f"recorder_offline:{r['id']}", cooldown_minutes=360)
+                              details={"recorder": r["name"]}, dedupe_key=f"recorder_offline:{r['id']}:still", cooldown_minutes=360)
     return len(rows)
 
 

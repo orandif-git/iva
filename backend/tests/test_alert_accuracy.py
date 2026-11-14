@@ -85,3 +85,72 @@ async def test_a_recorder_that_stays_offline_is_said_again_after_six_hours_and_i
     r = await client.post(f"/internal/v1/recorders/{rec['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.2.3.4", "channels": [{"channel_no": 1, "name": "C1"}]})
     assert r.status_code == 200
     assert await su.fetchval("SELECT title FROM app.alerts WHERE tenant_id=$1 AND rule_type='back_to_normal'", t) is not None
+
+
+# ---------------------------------------------------------------- a recorder that is down always gets one message for the outage
+async def offline_recorder(client, make, su, minutes_ago, rule_people=True):
+    t, u, _, _ = await setup_cameras(client, make)
+    rec = await su.fetchrow("SELECT id, device_id FROM app.recorders WHERE tenant_id=$1", t)
+    await su.execute("UPDATE app.recorders SET status='offline', last_heartbeat_at = now() - make_interval(mins => $2) WHERE id=$1", rec["id"], minutes_ago)
+    return t, rec
+
+
+async def outage_alerts(su, t):
+    return [(r["title"], r["body"]) for r in await su.fetch("SELECT title, body FROM app.alerts WHERE tenant_id=$1 AND rule_type='recorder_offline' ORDER BY created_at", t)]
+
+
+async def test_a_recorder_the_gateway_marked_offline_still_gets_its_alert(client, make, su):
+    """The gateway reports a dropped connection itself and the status changes there, so the heartbeat check never sees the recorder go offline."""
+    t, rec = await offline_recorder(client, make, su, 20)
+    await sweeper.mark_stale_recorders(90)
+    await sweeper.mark_stale_recorders(90)
+    assert await outage_alerts(su, t) == [("Recorder offline", f"Recorder {await su.fetchval('SELECT coalesce(name, device_id) FROM app.recorders WHERE id=$1', rec['id'])} has lost its connection.")]
+
+
+async def test_a_blip_of_a_minute_or_two_is_not_reported(client, make, su):
+    t, rec = await offline_recorder(client, make, su, 2)
+    await sweeper.mark_stale_recorders(90)
+    assert await outage_alerts(su, t) == []
+    await su.execute("UPDATE app.recorders SET last_heartbeat_at = now() - interval '6 minutes' WHERE id=$1", rec["id"])
+    await sweeper.mark_stale_recorders(90)
+    assert len(await outage_alerts(su, t)) == 1
+
+
+async def test_a_recorder_that_comes_and_goes_still_gets_one_alert_for_the_outage_that_lasts(client, make, su):
+    """An alert for the same recorder 30 minutes ago holds the first one back; the long outage that follows must not be left unsaid."""
+    t, rec = await offline_recorder(client, make, su, 25)
+    await su.execute("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, dedupe_key, created_at) VALUES ($1,'recorder_offline','critical','Recorder offline','earlier blip',$2, now() - interval '30 minutes')",
+                     t, f"recorder_offline:{rec['id']}")
+    await sweeper.mark_stale_recorders(90)
+    await sweeper.mark_stale_recorders(90)
+    titles = [x[0] for x in await outage_alerts(su, t)]
+    assert titles == ["Recorder offline", "Recorder offline"], "the earlier blip and the new outage, once each"
+
+
+async def test_a_long_outage_says_how_long(client, make, su):
+    t, rec = await offline_recorder(client, make, su, 5 * 60 + 10)
+    await sweeper.mark_stale_recorders(90)
+    ((title, body),) = await outage_alerts(su, t)
+    assert title == "Recorder offline" and "offline for 5 hours" in body
+
+
+async def test_the_six_hour_reminder_is_not_held_back_by_an_earlier_alert(client, make, su):
+    t, rec = await offline_recorder(client, make, su, 7 * 60)
+    await su.execute("INSERT INTO app.alerts (tenant_id, rule_type, severity, title, body, dedupe_key, created_at) VALUES ($1,'recorder_offline','critical','Recorder offline','x',$2, now() - interval '3 hours')",
+                     t, f"recorder_offline:{rec['id']}:12345")
+    await sweeper.mark_stale_recorders(90)
+    assert "Recorder still offline" in [x[0] for x in await outage_alerts(su, t)]
+
+
+async def test_the_gateway_reporting_a_dropped_connection_leads_to_the_alert_a_few_minutes_later(client, make, su):
+    """The real path from the night this was found: the gateway says the connection closed, the status changes at once, and the heartbeat check never fires."""
+    t, u, _, _ = await setup_cameras(client, make)
+    rec = await su.fetchrow("SELECT id, device_id FROM app.recorders WHERE tenant_id=$1", t)
+    await su.execute("UPDATE app.recorders SET status='online', last_heartbeat_at = now() WHERE id=$1", rec["id"])
+    assert (await client.post(f"/internal/v1/recorders/{rec['device_id']}/offline", headers=make.service())).status_code == 204
+    await sweeper.mark_stale_recorders(90)
+    assert await outage_alerts(su, t) == [], "just dropped: not yet"
+    await su.execute("UPDATE app.recorders SET last_heartbeat_at = now() - interval '8 minutes' WHERE id=$1", rec["id"])
+    await sweeper.mark_stale_recorders(90)
+    await sweeper.mark_stale_recorders(90)
+    assert [x[0] for x in await outage_alerts(su, t)] == ["Recorder offline"]
