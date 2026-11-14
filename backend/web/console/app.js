@@ -498,7 +498,7 @@ function hikSteps(r) {
   return `<div class="stack"><div class="note">Do these on a computer in the shop. This is the only time the command is shown.</div>
   <ol class="steps"><li>Replace <b>RECORDER_ADDRESS</b> in the command with the recorder's address (for example 192.168.1.64), paste it into Terminal and press Enter. It asks for the recorder's password.</li>
   <li>On the recorder's web page, open <b>Configuration, Event</b>. For Video Loss and for the fault types under Exception, tick <b>Notify Surveillance Center</b> and save.</li>
-  <li>Open the address below in a browser on the same network. It should say "Ready to receive alerts".</li></ol>
+  <li>Open the address below in a browser on the same network. It should say "Ready to receive alerts".</li></ol><div class="sub">Recorders only send alerts over plain HTTP, so the address starts with http://. That is expected.</div>
   <label class="bold">Command</label><textarea class="in code" id="hl-cmd" readonly rows="12">${esc(r.command)}</textarea>
   <div class="row"><button class="btn" type="button" data-copyel="hl-cmd">Copy command</button><button class="btn" type="button" data-copyel="hl-addr">Copy address</button></div>
   <label class="bold">Address</label><input class="in code" id="hl-addr" readonly value="${esc(r.address)}">

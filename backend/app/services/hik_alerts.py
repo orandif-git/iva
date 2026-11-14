@@ -35,8 +35,17 @@ def fingerprint(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
+def receiver() -> tuple[str, int]:
+    """Where a recorder sends its messages: our site's name and a PLAIN HTTP port. Hikvision recorders (checked on a DS-7632NXI-K2) accept only plain HTTP for event alerts,
+    so a site that is served over HTTPS must still answer plain HTTP on port 80 for /hik/events/ (see DEPLOY.md)."""
+    from urllib.parse import urlsplit
+    u = urlsplit(get_settings().public_base_url)
+    return u.hostname or "localhost", (80 if u.scheme == "https" else u.port or 80)
+
+
 def address(code: str) -> str:
-    return f"{get_settings().public_base_url.rstrip('/')}/hik/events/{code}"
+    host, port = receiver()
+    return f"http://{host}{'' if port == 80 else f':{port}'}/hik/events/{code}"
 
 
 # ------------------------------------------------------------------------------------------------ reading a message
@@ -161,11 +170,10 @@ async def receive(conn, code: str, content_type: str, body: bytes, ip: str | Non
 
 # ------------------------------------------------------------------------------------------------ for the team
 def setup_command(code: str) -> str:
-    """The one command that tells a recorder where to send its alerts. The recorder's address and password are asked for, never stored here."""
-    from urllib.parse import urlsplit
-    u = urlsplit(get_settings().public_base_url)
-    https = u.scheme == "https"
+    """The one command that tells a recorder where to send its alerts. The recorder's address and password are asked for, never stored here.
+    Plain HTTP only: this is the one value the recorder accepts (it refuses HTTPS)."""
+    host, port = receiver()
     return ("curl --digest -u admin -X PUT -H 'Content-Type: application/xml' http://RECORDER_ADDRESS/ISAPI/Event/notification/httpHosts/1 -d "
-            f"'<HttpHostNotification><id>1</id><url>/hik/events/{code}</url><protocolType>{'HTTPS' if https else 'HTTP'}</protocolType><parameterFormatType>XML</parameterFormatType>"
-            f"<addressingFormatType>hostname</addressingFormatType><hostName>{u.hostname}</hostName><portNo>{u.port or (443 if https else 80)}</portNo>"
+            f"'<HttpHostNotification><id>1</id><url>/hik/events/{code}</url><protocolType>HTTP</protocolType><parameterFormatType>XML</parameterFormatType>"
+            f"<addressingFormatType>hostname</addressingFormatType><hostName>{host}</hostName><portNo>{port}</portNo>"
             "<httpAuthenticationMethod>none</httpAuthenticationMethod></HttpHostNotification>'")

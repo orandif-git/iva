@@ -48,6 +48,7 @@ async def test_adding_a_link_gives_the_code_address_and_command_once_and_keeps_o
     t, staff, made = await link(client, make)
     assert len(made["code"]) >= 30 and made["address"].endswith("/hik/events/" + made["code"])
     assert made["code"] in made["command"] and "RECORDER_ADDRESS" in made["command"] and "-u admin" in made["command"]
+    assert "<protocolType>HTTP</protocolType>" in made["command"] and "<portNo>80</portNo>" in made["command"] and made["address"].startswith("http://"), "recorders accept plain HTTP only"
     stored = await su.fetchrow("SELECT * FROM platform.alert_links WHERE id=$1", made["id"])
     assert made["code"] not in str(dict(stored)) and stored["code_hash"] == hik_alerts.fingerprint(made["code"])
     listed = (await client.get(f"/admin/v1/tenants/{t}/alert-links", headers=staff["headers"])).json()
