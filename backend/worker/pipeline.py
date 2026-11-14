@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from . import overlay
 from .areas import AreaConfig, AreaMonitor, picture
 from .footfall import LineCounter
 from .geometry import point_in_polygon
@@ -89,14 +90,33 @@ class CameraPipeline:
         self.frame_no = 0
         self.picture_every, self._picture_at = picture_every, -1e9           # the camera's own picture is measured every few minutes (see worker/picture.py)
         self.totals = {"in": 0, "out": 0}
+        self._area_people: dict = {}                       # people inside each marked area at the latest picture, and whether it is at its limit: drawn on the clip
+        self._area_over: dict = {}
         self.stats = {"frames": 0, "detect_ms": 0.0, "plate_ms": 0.0, "plate_reads": 0, "plates_emitted": 0, "skipped_plates": 0}
 
     # ---------------------------------------------------------------------- frames
     def process(self, frame, ts: datetime) -> Observation:
+        """Analyses one picture. The picture then goes into the clip buffer with what the AI found drawn on it (see overlay.py), so an alert's video shows what was seen."""
         self.frame_no += 1
         self.stats["frames"] += 1
-        if self.clips is not None:
-            self.clips.add(frame, ts)
+        analysed = bool(self.counter or self.areas or (self.cfg.use_anpr and self.reader))
+        try:
+            return self._process(frame, ts)
+        finally:
+            if self.clips is not None:
+                self.clips.add(self._clip_frame(frame) if analysed else frame, ts)
+
+    def _clip_frame(self, frame):
+        """A copy of the picture with the boxes, areas and counts drawn on it. If the drawing fails the plain picture is used: a clip is never lost to it."""
+        try:
+            areas = [{"points": a.points, "name": a.name, "count": self._area_people.get(a.id), "over": self._area_over.get(a.id, False)} for a in (self.areas.areas if self.areas else [])]
+            return overlay.draw(frame, people=[t for t in self.people.tracks if t.confirmed], vehicles=[t for t in self.vehicles.tracks if t.confirmed], areas=areas,
+                                line=self.cfg.line if self.counter else None, zone=self.cfg.zone if (self.cfg.use_anpr and self.reader) else None)
+        except Exception:
+            log.exception("could not draw on the clip picture of %s", self.cfg.name)
+            return frame
+
+    def _process(self, frame, ts: datetime) -> Observation:
         self._measure_picture(frame, ts)
         h, w = frame.shape[:2]
         if not (self.counter or self.areas or (self.cfg.use_anpr and self.reader)):
@@ -145,6 +165,7 @@ class CameraPipeline:
         vehicles = [t for t in self.vehicles.tracks if t.confirmed] if self.areas.wants_vehicles else []
         for r in self.areas.update(ts.timestamp(), w, h, people, phones, vehicles):
             a = r["area"]
+            self._area_people[a.id], self._area_over[a.id] = r["people"], r.get("over", False)
             sample = {"zone_id": a.id, "at": iso(ts), "people": r["people"], "wait_seconds": r["wait_seconds"], "phone_seconds": r["phone_seconds"]}
             self.sink.add_zone(self.cfg.camera_id, sample, picture(frame, a, r["inside"], phones) if r["take_picture"] else None)
             self.stats["area_reports"] = self.stats.get("area_reports", 0) + 1

@@ -304,3 +304,23 @@ def test_a_camera_that_reads_no_plates_still_follows_vehicles_for_an_activity_ar
     pipe = CameraPipeline(c, CarScript((120, 100, 240, 170)), None, sink)
     feed(pipe, 30)
     assert sink.zones and sink.zones[-1]["people"] == 1                     # the vehicle is counted in the area although no plates are read
+
+
+def test_the_clip_pictures_show_what_the_ai_found_and_the_analysed_picture_is_untouched():
+    """Each analysed picture goes into the clip buffer after the analysis, with the people, the area and its count drawn on a copy."""
+    import cv2
+    sink = MemorySink()
+    zone = {"id": "z1", "kind": "area_count", "name": "Counter", "points": [list(p) for p in SQUARE], "params": {"limit": 2}}
+    c = CameraConfig("cam", "Hall", areas=(AreaConfig.from_backend(zone),), clips=True)
+    pipe = CameraPipeline(c, Script(lambda n: ([(100, 60, 140, 160), (160, 70, 200, 170)], [])), None, sink)
+    clips = pipe.clips
+    assert clips is not None
+    frame = np.zeros((H, W, 3), np.uint8)
+    start = datetime(2026, 11, 10, 10, 0, 0, tzinfo=timezone.utc)
+    for i in range(30):
+        pipe.process(frame, start + timedelta(seconds=i * 0.5))
+    assert (frame == 0).all(), "the analysed picture is never drawn on"
+    jpeg = clips.ring.frames[-1][1]
+    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert (img > 40).any(), "boxes and the area outline are drawn on the clip picture"
+    assert clips.stats["frames_buffered"] == 30

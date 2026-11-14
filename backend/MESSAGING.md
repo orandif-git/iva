@@ -263,3 +263,10 @@ test a key without sending one.
 **Phone:** the alert's title is "Daily system summary" or "Weekly system summary"; the text is a short headline and its Tamil line. **App:** the Home screen shows the newest summary whole (`GET /v1/summary`).
 
 **Check one customer without sending:** `python -m scripts.print_summary --customer "Jas Office" [--kind weekly]`.
+
+
+## What the AI sees, drawn on every clip
+
+Each picture that goes into an alert's video has what the AI found drawn on a copy (`worker/overlay.py`): a green box round each person (a yellow one round each vehicle that is followed), each marked area with its name and the number of people in it (the outline turns orange while the area is at its limit), the counting line with its IN arrow, the plate zone, and "People in view: N". There are no names, track numbers or percentages. It applies to every customer and every clip made from analysed pictures (plate and marked-area alerts); the picture the analysis works on is never changed, and if drawing fails the plain picture is used.
+
+The pictures are saved after the analysis of each picture (`CameraPipeline.process`), so the boxes match that moment. The clip still plays at 5 pictures a second and is made from the pictures that were analysed (about 2 a second while nothing is in view and about 5 while something is); a smoother clip is the next step.

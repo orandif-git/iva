@@ -121,7 +121,7 @@ class AreaMonitor:
                     picture, st.shot_at = True, ts
             elif limit >= 1:
                 st.over_since = st.shot_at = None                       # back under the limit: the next time starts again
-            out.append({"area": a, "people": n, "wait_seconds": wait, "phone_seconds": phone, "take_picture": picture, "inside": inside})
+            out.append({"area": a, "people": n, "wait_seconds": wait, "phone_seconds": phone, "take_picture": picture, "inside": inside, "over": bool(limit >= 1 and n >= limit)})
         return out
 
     def forget(self) -> None:
