@@ -40,18 +40,40 @@ def describe_file(f) -> str:
     return ", ".join(out) or repr(f)[:160]
 
 
+def _start_of(f):
+    """The start of one recording as a datetime, or None."""
+    from datetime import datetime
+    for name, _typ in getattr(f, "_fields_", []):
+        v = getattr(f, name, None)
+        if "start" in name.lower() and hasattr(v, "dwYear"):
+            try:
+                return datetime(v.dwYear, v.dwMonth, v.dwDay, v.dwHour, v.dwMinute, v.dwSecond)
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
 def describe_result(res) -> list[str]:
-    """What QueryRecordFile gave back, in words: the shape of the answer, how many recordings, and the first and last one."""
+    """What QueryRecordFile gave back, in words: the shape of the answer, how many recordings, the first and the last in the list, and the earliest and the latest start time
+    found among them (so the order the recorder uses does not matter). The wrapper returns (ok, how many, a block of recordings); only that many entries of the block are real."""
     lines = [f"answer is a {type(res).__name__}" + (f" of {len(res)} parts" if isinstance(res, (tuple, list)) else "")]
     if not isinstance(res, tuple):
         return lines + [f"   value: {repr(res)[:160]}"]
+    counts = [p for p in res if isinstance(p, int) and not isinstance(p, bool) and p > 1]
     for n, part in enumerate(res):
-        if isinstance(part, (list, tuple)):
-            lines.append(f"   part {n}: a list of {len(part)} recordings")
-            if part:
-                lines.append(f"      first: {describe_file(part[0])}")
-                if len(part) > 1:
-                    lines.append(f"      last:  {describe_file(part[-1])}")
+        if isinstance(part, (list, tuple)) or hasattr(part, "_length_"):
+            real = len(part)
+            if counts:
+                real = min(real, max(counts))
+            items = [part[k] for k in range(real)]
+            lines.append(f"   part {n}: a list of {real} recordings")
+            if items:
+                lines.append(f"      first: {describe_file(items[0])}")
+                if len(items) > 1:
+                    lines.append(f"      last:  {describe_file(items[-1])}")
+                starts = [d for d in (_start_of(x) for x in items) if d]
+                if starts:
+                    lines.append(f"      earliest start: {min(starts).isoformat(sep=' ')}, latest start: {max(starts).isoformat(sep=' ')}")
         else:
             lines.append(f"   part {n}: {type(part).__name__} {repr(part)[:100]}")
     return lines

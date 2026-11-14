@@ -35,3 +35,12 @@ def test_an_answer_with_only_a_count_says_so():
 def test_an_odd_answer_does_not_crash_the_probe():
     assert probe.describe_result(None)[0].startswith("answer is a NoneType")
     assert probe.describe_file("odd") == "'odd'"
+
+
+def test_the_block_the_wrapper_returns_is_opened_and_only_the_real_entries_count():
+    block = (FakeFile * 5000)()                                 # a recorder answers (ok, how many, a block of up to 5000 entries)
+    block[0], block[1], block[2] = a_file(20), a_file(3), a_file(27)      # not in time order
+    lines = probe.describe_result((1, 3, block))
+    joined = "\n".join(lines)
+    assert "a list of 3 recordings" in joined, joined
+    assert "earliest start: 2026-10-03 03:12:09, latest start: 2026-10-27 03:12:09" in joined, joined
