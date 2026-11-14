@@ -197,6 +197,9 @@ async def test_a_recorder_going_offline_is_announced_once_and_when_it_comes_back
     await subscribe(client, owner, phone)
     t = await make.tenant("Lakshmi Jewellers")
     rid = await su.fetchval("INSERT INTO app.recorders (tenant_id, device_id, brand, protocol, name, status) VALUES ($1,'DEV-PUSH','dahua','auto_register','Dr SMS','online') RETURNING id", t)
+
+    def mine():                                                            # other tests may leave other customers' recorders behind; only this one is judged
+        return [m for _, m in phone.got if m["title"].startswith("Lakshmi Jewellers")]
     async with db.admin_tx() as conn:
         await staff_push.check_recorders(conn)                              # first sight: quiet
     assert not phone.got
@@ -204,11 +207,11 @@ async def test_a_recorder_going_offline_is_announced_once_and_when_it_comes_back
     for _ in range(3):                                                     # a minute passes, three times: still only one note
         async with db.admin_tx() as conn:
             await staff_push.check_recorders(conn)
-    assert len(phone.got) == 1 and phone.got[0][1]["title"] == "Lakshmi Jewellers: recorder offline" and phone.got[0][1]["url"] == f"/console/#customer/{t}/health"
+    assert len(mine()) == 1 and mine()[0]["title"] == "Lakshmi Jewellers: recorder offline" and mine()[0]["url"] == f"/console/#customer/{t}/health"
     await su.execute("UPDATE app.recorders SET status='online' WHERE id=$1", rid)
     async with db.admin_tx() as conn:
         await staff_push.check_recorders(conn)
-    assert len(phone.got) == 2 and "back" in phone.got[1][1]["title"]
+    assert len(mine()) == 2 and "back" in mine()[1]["title"]
 
 
 async def test_a_server_problem_is_announced_once_and_so_is_the_all_clear(client, make, push, monkeypatch):
