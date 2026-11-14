@@ -733,7 +733,12 @@ function confirmDelete(i) {
 async function doDelete(i) {
   const r = S.cur.rows[i], base = `/admin/v1/tenants/${S.cid}/shop`;
   if (r.k === "rule") await api.del(`${base}/events/${r.type}`);
-  else if (r.k === "data") { const c = r.cam, other = [c.use_footfall && r.flag !== "use_footfall", c.use_anpr && r.flag !== "use_anpr", c.use_areas].some(Boolean); await api.patch(`${base}/cameras/${c.id}`, { [r.flag]: false, ...(other ? {} : { enabled: false }) }); }
+  else if (r.k === "data") {
+    const c = r.cam, other = [c.use_footfall && r.flag !== "use_footfall", c.use_anpr && r.flag !== "use_anpr", c.use_areas].some(Boolean), kind = r.flag === "use_footfall" ? "count_line" : "anpr_zone";
+    const zones = await api.get(`${base}/cameras/${c.id}/zones`);                         // the marked line or plate area goes too, or the row would stay in the list switched off
+    if (zones.some((z) => z.kind === kind)) await api.put(`${base}/cameras/${c.id}/zones`, { zones: zones.filter((z) => z.kind !== kind).map((z) => ({ kind: z.kind, points: z.points, in_direction: z.in_direction || null })) });
+    await api.patch(`${base}/cameras/${c.id}`, { [r.flag]: false, ...(other ? {} : { enabled: false }) });
+  }
   else { const c = r.cam, list = (S.cur.areas[c.id] || []).filter((a) => a.id !== r.area.id), last = !list.length && !c.use_footfall && !c.use_anpr; if (last) await api.patch(`${base}/cameras/${c.id}`, { enabled: false }); await api.put(`${base}/cameras/${c.id}/areas`, { areas: list.map((a) => ({ id: a.id, kind: a.kind, name: a.name, points: a.points, params: a.params })) }); }
   closeModal(); await loadCurrent(S.cid); toast("Deleted"); render(true);
 }
