@@ -107,7 +107,7 @@ async def put_zones(camera_id: UUID, body: ZonesPut, ctx: CustomerCtx):
 
 
 async def camera_live(camera_id: UUID, ctx: CustomerCtx):
-    """Moving pictures of one camera (a multipart stream of JPEGs) for the live view in the Control Center. It ends by itself after a few minutes and can be started again.
+    """Moving pictures of one camera (a stream of JPEGs; sent as plain bytes because iPhone browsers refuse to read a multipart stream with fetch) for the live view in the Control Center. It ends by itself after a few minutes and can be started again.
     Every start is written to the activity log. If the video cannot be started the answer is an ordinary error."""
     await _camera(ctx, camera_id)
     row = await ctx.conn.fetchrow(
@@ -128,7 +128,7 @@ async def camera_live(camera_id: UUID, ctx: CustomerCtx):
     except BaseException:
         place.release()
         raise
-    return StreamingResponse(live_stream.stream(url, fmt, place), media_type=f"multipart/x-mixed-replace; boundary={live_stream.BOUNDARY}",
+    return StreamingResponse(live_stream.stream(url, fmt, place), media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, background=BackgroundTask(place.release))
 
 

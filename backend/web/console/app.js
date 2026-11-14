@@ -1020,7 +1020,7 @@ async function startLive(camId) {
       tick();
     }, { signal: ctl.signal });
     if (S.live === L) { say(got ? "Live ended" : "Picture", false); if (got) toast("The live view ended. Press Watch live to continue."); else if (campic) loadPics(); }
-  } catch (e) { say("Picture", false); toast(errText(e), true); if (!got && campic) loadPics(); }
+  } catch (e) { say("Picture", false); toast(e.status ? errText(e) : "The live picture stopped. Try again.", true); if (!got && campic) loadPics(); }
   finally { clearInterval(L.timer); if (S.live === L) { S.live = null; button("Watch live"); const x = $("#lv-state"); if (x) x.classList.remove("on"); } }
 }
 function stopLive(manual) {

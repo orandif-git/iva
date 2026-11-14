@@ -62,7 +62,7 @@ async def test_a_live_view_streams_pictures_and_ends_by_itself_when_the_time_is_
     for role in ("owner", "admin"):
         s = await make.staff(role)
         r = await asyncio.wait_for(client.get(f"/admin/v1/tenants/{t}/shop/cameras/{cam}/live", headers=s["headers"]), 15)
-        assert r.status_code == 200 and r.headers["content-type"].startswith("multipart/x-mixed-replace"), role
+        assert r.status_code == 200 and r.headers["content-type"] == "application/octet-stream", role
         got = live_stream.pop_jpegs(bytearray(r.content))
         assert len(got) >= 3 and all(g.startswith(b"\xff\xd8") for g in got) and b"Content-Type: image/jpeg" in r.content
         assert live_stream.open_count() == 0, "its place is given back"
