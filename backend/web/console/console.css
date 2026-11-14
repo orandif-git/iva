@@ -415,3 +415,6 @@ tr.click:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 /* The name in the middle of the top bar: JAS in the brand colour, the rest in the normal text colour */
 .ttl{color:var(--head);font-weight:400}.ttl .ttl-j{color:var(--brand);font-weight:700}.ttl i{font-style:italic;color:var(--head)}
 .ttl i{margin-right:.2em}
+
+/* ---- phone-only pieces stay out of the way on a computer; phone.css turns them on ---- */
+.ptitle,.pback,.tabbar,.ponly,.pdesk{display:none}

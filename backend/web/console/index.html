@@ -9,14 +9,17 @@
 <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="stylesheet" href="/console/console.css">
+<link rel="stylesheet" href="/console/phone.css" media="(max-width: 760px)">
 </head>
 <body>
 <div class="app">
   <header class="top">
     <div class="top-l">
+      <button class="pback" id="pback" type="button" data-go="customers" aria-label="Back to all customers" hidden></button>
       <button class="logo" id="home" type="button" aria-label="Jas iVision, go to Overview"><img src="/console/logo-compact.svg" alt="Jas iVision"></button>
       <nav class="areas" id="areas" aria-label="Areas"></nav>
     </div>
+    <h1 class="ptitle" id="ptitle"></h1>
     <div class="ttl" aria-label="Jas iVision Control Center"><b class="ttl-j">JAS</b> <i>iVision</i> Control Center</div>
     <div class="top-r">
       <div class="lights" id="lights" role="group" aria-label="System status"></div>
@@ -32,6 +35,7 @@
   </div>
 </div>
 <div id="layer"></div>
+<nav class="tabbar" id="tabbar" aria-label="Main"><span class="pill" id="pill"></span></nav>
 <noscript><p class="noscript">Please turn on JavaScript to use this page.</p></noscript>
 <script type="module" src="/console/app.js"></script>
 </body>

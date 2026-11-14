@@ -1,0 +1,116 @@
+/* Control Center on a phone (screens up to 760 px wide). Loaded only on small screens.
+   One column. The page itself scrolls. A header sits under the phone's own status bar, and a floating tab bar sits above the home bar.
+   A capsule slides to the tab you tap, and a page slides in from the side you are moving towards. Same colours and fonts as the computer layout. */
+:root{--spring:cubic-bezier(.3,1.25,.4,1)}
+html,body{height:auto}
+body{overflow:auto;background:var(--bg);-webkit-text-size-adjust:100%}
+/* the paint behind the phone's status bar, so nothing shows through above the header */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bar);z-index:60}
+.app{display:block;height:auto;min-height:100dvh}
+.main{display:block}
+.rail,.side,.areas,.ttl,#theme,.me .role{display:none!important}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;height:52px;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;padding:0 10px 0 4px}
+.top-l{height:52px}
+.logo{border:0;padding:0 4px 0 10px}.logo img{height:26px}.logo[hidden]{display:none}
+.pback{display:grid;place-items:center;width:44px;height:44px;border:0;background:none;color:var(--brand);align-self:center}.pback[hidden]{display:none}
+.ptitle{display:block;font-size:17px;text-align:left;padding-left:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--head)}
+.top-r{gap:4px}
+.lights{border-right:0;padding-right:0;margin-right:0}
+.sl{padding:0 5px;height:36px}.sl b{display:none}
+.me{padding:0}.meb{padding:0}
+.page{overflow:visible;padding:16px 16px calc(112px + env(safe-area-inset-bottom,0px));grid-column:auto}
+.page.in-r{animation:inr .34s var(--ease)}.page.in-l{animation:inl .34s var(--ease)}.page.in-u{animation:inu .28s var(--ease)}
+@keyframes inr{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+@keyframes inl{from{opacity:0;transform:translateX(-28px)}to{opacity:1;transform:none}}
+@keyframes inu{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.rise{animation:none}
+.ponly,.pdesk{display:block}.pdesk{margin-top:6px}
+/* the floating tab bar */
+.tabbar{--n:5;position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:min(calc(100% - 28px),420px);transform:translateX(-50%);z-index:30;height:64px;border-radius:32px;padding:6px;display:grid;grid-template-columns:repeat(var(--n),1fr);
+  background:color-mix(in srgb,var(--bg) 74%,transparent);-webkit-backdrop-filter:blur(22px) saturate(1.7);backdrop-filter:blur(22px) saturate(1.7);
+  border:1px solid color-mix(in srgb,var(--line) 75%,transparent);box-shadow:0 10px 30px rgba(20,26,36,.18),inset 0 1px 0 rgba(255,255,255,.35)}
+.tabbar[data-n="4"]{--n:4}
+@media (prefers-reduced-transparency:reduce){.tabbar{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}}
+.pill{position:absolute;top:6px;bottom:6px;left:6px;width:calc((100% - 12px) / var(--n));border-radius:26px;background:color-mix(in srgb,var(--brand) 16%,transparent);transform:translateX(calc(var(--i,0) * 100%));transition:transform .42s var(--spring)}
+.tabbar button{position:relative;z-index:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--fg2);height:100%;border-radius:26px;transition:color .25s}
+.tabbar button svg{transition:transform .42s var(--spring)}
+.tabbar button[aria-current="true"]{color:var(--brand);font-weight:700}
+.tabbar button[aria-current="true"] svg{animation:pop .5s var(--spring);transform:translateY(-1px) scale(1.1)}
+@keyframes pop{0%{transform:scale(.7)}60%{transform:translateY(-3px) scale(1.2)}100%{transform:translateY(-1px) scale(1.1)}}
+/* touch sizes. Inputs are 16 px so the phone does not zoom in when one is tapped. */
+input,select,textarea{font-size:16px}
+.in{max-width:none;height:46px;border-radius:12px}
+.btn{min-height:44px;border-radius:12px}.btn.sm{min-height:36px;border-radius:10px}
+.search{width:100%;height:46px;border-radius:14px}
+.bar{gap:8px}.bar .search{flex:1 1 100%}
+.logbar{gap:8px}.logbar .search{flex:1 1 100%}.logbar .in.sel{flex:1}.logbar .sp{display:none}
+.stack{display:flex;flex-direction:column;gap:14px}
+.f{grid-template-columns:1fr}
+/* the title row of a page: the app bar already shows the name */
+.title{gap:6px 12px;margin-bottom:12px}.title h1{display:none}.title .sp{display:none}
+.hb{justify-content:flex-start}.hb .btn{display:none}.hb [data-testmsg],.hb [data-pausec]{display:inline-flex}
+[data-addev],[data-delev],[data-redraw],[data-addrec],[data-addcams],[data-findcams],[data-editrec],[data-delrec],[data-extend],[data-extendc],[data-editc],[data-delc]{display:none!important}
+/* numbers as cards */
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;border:0;overflow:visible}
+.stats .st,.stats button.st{border:1px solid var(--line);border-radius:14px;padding:12px 14px;flex:none;min-width:0}
+.tiles{grid-template-columns:1fr 1fr}.tile{border-left:0;border-top:1px solid var(--line)}.tile:nth-child(-n+2){border-top:0}.tile:nth-child(even){border-left:1px solid var(--line)}
+.mini{gap:16px}
+.cc{grid-template-columns:minmax(0,1fr)}.cc>div,.stack>*,.page>*{min-width:0}
+.pn{border-radius:14px}
+.hv{border-radius:14px}
+/* tables become rows of cards */
+.scroll{overflow:visible}
+.tbl,.tbl tbody{display:block;width:100%}
+.tbl thead{display:none}
+.tbl tr{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:2px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.pn .tbl tr{border:0;border-top:1px solid var(--line);border-radius:0;margin:0}.pn .tbl tr:first-child{border-top:0}
+.tbl td{display:block;border:0;padding:0;height:auto;white-space:normal;min-width:0;font-size:13px;color:var(--fg2);grid-column:2;text-align:left}
+.tbl td:empty{display:none}
+.tbl td.dotc{grid-column:1;grid-row:1;padding-top:6px;width:auto}
+.tbl td.main-c{grid-row:1;font-size:15px;font-weight:700;color:var(--head)}
+.tbl td.ico{display:none}
+.tbl td.acts,.tbl td.end{text-align:left}
+.tbl td .btn{margin-top:4px}
+.tbl.mini td{height:auto}
+.pn .pad{padding:12px 14px}
+/* pieces made for the phone */
+.pchips{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 12px;padding:2px 16px;scrollbar-width:none}.pchips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:0 16px;height:38px;color:var(--fg2);white-space:nowrap;transition:background .2s,color .2s}
+.chip[aria-pressed="true"],.chip[aria-selected="true"]{background:var(--brand-soft);border-color:transparent;color:var(--brand);font-weight:700}
+.card{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);border-radius:14px;background:var(--bg);padding:12px 14px;min-height:60px;transition:background .15s,transform .15s}
+.card.nodot{grid-template-columns:minmax(0,1fr) auto}
+.card.nodot:has(>svg:first-child),.card.nodot:has(>.av:first-child){grid-template-columns:auto minmax(0,1fr) auto auto}
+button.card:active,.card[data-evrow]:active{background:var(--hover);transform:scale(.985)}
+.card .dot{margin:0}
+.card .ct{display:flex;flex-direction:column;gap:1px;min-width:0}.card .ct b{color:var(--head);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card>svg:last-child{color:var(--mute)}
+.card.ev.off b{color:var(--fg2)}
+.card.out,.card.out svg,.card.out b{color:var(--crit)}
+.card.desk{opacity:.75}
+.pcards{display:flex;flex-direction:column;gap:10px}
+.pcards .gbtn{height:34px;padding:0 2px}
+.msg{border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;align-items:flex-start}.msg .l1{display:flex;gap:10px;align-items:center;justify-content:space-between;width:100%}.msg b{color:var(--head)}
+.dgrp{border:1px solid var(--line);border-radius:14px}
+.dgrp summary{list-style:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;min-height:60px;cursor:pointer}
+.dgrp summary::-webkit-details-marker{display:none}
+.dgrp summary .ct{display:flex;flex-direction:column}.dgrp summary b{color:var(--head)}
+.dgrp summary>svg:last-child{transition:transform .25s var(--ease);color:var(--mute)}
+.dgrp[open] summary>svg:last-child{transform:rotate(90deg)}
+.dgrp>.stack{padding:0 12px 12px}
+/* sheets: dialogs and side panels rise from the bottom */
+.scrim{place-items:end center;padding:0}
+.modal{width:100%;max-height:92dvh;border-radius:22px 22px 0 0;padding:16px 18px calc(22px + env(safe-area-inset-bottom,0px));animation:sheetup .36s var(--ease)}
+@keyframes sheetup{from{transform:translateY(100%)}to{transform:none}}
+.shade{inset:0;z-index:34}
+.drawer{top:auto;left:0;right:0;bottom:0;width:100%;max-height:90dvh;border:0;border-radius:22px 22px 0 0;z-index:35;animation:sheetup .36s var(--ease);box-shadow:0 -10px 30px rgba(0,0,0,.18)}
+.dbody{padding-bottom:6px}.df{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+.vframe{max-width:none}
+.pfp{position:fixed;top:auto;left:0;right:0;bottom:0;width:100%;max-width:none;max-height:90dvh;border:0;border-radius:22px 22px 0 0;z-index:70;box-shadow:0 0 0 100vmax var(--scrim);animation:sheetup .36s var(--ease)}
+.pf-box .in{height:44px}
+.lpop{top:calc(58px + env(safe-area-inset-top,0px));right:8px}
+.toast{bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:80}
+@media (prefers-reduced-motion:reduce){.page.in-r,.page.in-l,.page.in-u,.pill,.tabbar button svg,.modal,.drawer,.pfp{animation:none!important;transition:none!important}}
+
+/* rows of settings inside a sheet: label, then the control */
+.cfg{grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;max-width:none}
+.chk{min-height:44px}

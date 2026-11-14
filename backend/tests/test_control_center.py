@@ -347,3 +347,14 @@ async def test_a_plate_camera_keeps_the_in_direction_staff_set_and_the_worker_is
     cfg = (await client.get(f"/internal/v1/cameras/{cam}/config", headers=make.service())).json()
     zone = [z for z in cfg["zones"] if z["kind"] == "anpr_zone"][0]
     assert zone["in_direction"] == [1.0, 0.0], "the worker marks reads in or out from this"
+
+
+async def test_the_phone_layout_is_served_loads_only_on_small_screens_and_uses_no_inline_styles(client):
+    page = (await client.get("/console/")).text
+    assert '<link rel="stylesheet" href="/console/phone.css" media="(max-width: 760px)">' in page            # phones only: a computer never loads it
+    assert 'id="tabbar"' in page and 'id="ptitle"' in page and 'id="pback"' in page
+    css = await client.get("/console/phone.css")
+    assert css.status_code == 200 and "text/css" in css.headers["content-type"]
+    for tab in ("overview", "customers", "messages", "health", "more"):                                       # the five tabs of the floating bar
+        assert f'["{tab}"' in (await client.get("/console/app.js")).text
+    assert "style=" not in page                                                                              # the page's security policy forbids inline styles

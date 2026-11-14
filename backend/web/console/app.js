@@ -39,7 +39,7 @@ const IC = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', car: '<path d="M4 15.5V12l2-5h12l2 5v3.5M4 15.5h16M4 15.5v2.5h3v-2.5M17 15.5V18h3v-2.5"/><circle cx="7.5" cy="12.5" r=".6"/><circle cx="16.5" cy="12.5" r=".6"/>', head: '<circle cx="12" cy="7" r="3"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M3.5 9.5v-4h4M20.5 9.5v-4h-4"/>', dl: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>', trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/>', pause: '<path d="M9 5.5v13M15 5.5v13"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   wa: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8c-1-.4-2-1.4-2.4-2.4l.8-1-1-2z"/>',
   photo: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4 16l4.5-4 4 3.5 3-2.5L20 16"/>', area: '<path d="M5 8l5-3.5 9 4-2 9-8 2.5z"/>',
-  camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>'
+  camera2: '<path d="M4 8h3l1.5-2h7L17 8h3v10H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>', out: '<path d="M9 5H5v14h4M15 8l4 4-4 4M19 12H9"/>', dots: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>', screen: '<rect x="3.5" y="5" width="17" height="11" rx="2"/><path d="M9 19.5h6M12 16v3.5"/>'
 };
 const ico = (n, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const sw = (id, on, dis, act) => `<label class="sw"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""} ${act ? `data-act="${act}"` : ""}><i></i><span class="sr">Switch</span></label>`;
@@ -100,15 +100,34 @@ async function loadCustomers() {
 
 /* ------------------------------------------------------------------------------------------------ shell */
 const AREAS = [["overview", "Overview", "grid"], ["customers", "Customers", "users"], ["messages", "Messages", "chat"], ["setup", "Setup", "gear"]];
+const PH = matchMedia("(max-width: 760px)");                                   // the phone layout: same pages, laid out for a small screen
+const TABS = [["overview", "Overview", "grid"], ["customers", "Customers", "users"], ["messages", "Messages", "chat"], ["health", "Health", "pulse"], ["more", "More", "dots"]];
+const tabOf = () => S.route === "setup" ? (S.setup === "sys" ? "health" : "more") : S.route === "more" ? "more" : areaOf();
+const tabList = () => TABS.filter((t) => t[0] !== "health" || can("sys"));
+const PTITLE = { overview: "Overview", customers: "Customers", messages: "Messages", more: "More", new: "New customer", event: "New event" };
+const SETUP_NAME = { tpl: "WhatsApp templates", team: "Console users", keep: "Data kept", wa: "WhatsApp connection", sys: "System health", audit: "Activity log" };
+function tabBar() {
+  const bar = $("#tabbar"); if (!bar) return;
+  const tabs = tabList();
+  if (bar.dataset.n !== String(tabs.length)) {
+    bar.dataset.n = String(tabs.length); bar.querySelectorAll("button").forEach((b) => b.remove());
+    tabs.forEach((t) => bar.insertAdjacentHTML("beforeend", `<button type="button" data-tab="${t[0]}" aria-label="${t[1]}">${ico(t[2], 23)}<span>${t[1]}</span></button>`));
+  }
+  const cur = tabOf();
+  bar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-current", String(b.dataset.tab === cur)));
+  $("#pill").style.setProperty("--i", String(Math.max(0, tabs.findIndex((t) => t[0] === cur))));
+  const t = S.route === "customer" ? cname() : S.route === "setup" ? SETUP_NAME[S.setup] || "Setup" : PTITLE[S.route] || "";
+  $("#ptitle").textContent = t; const inCust = PH.matches && S.route === "customer"; $("#pback").hidden = !inCust; $("#pback").innerHTML = ico("back", 24); $("#home").hidden = inCust;
+}
 const areaOf = () => ["customers", "customer", "new", "event"].includes(S.route) ? "customers" : S.route;
 function shell() {
   $("#areas").innerHTML = AREAS.map((a) => `<button class="area" type="button" data-go="${a[0]}" ${areaOf() === a[0] ? 'aria-current="page"' : ""}>${ico(a[2], 19)}<span>${a[1]}</span></button>`).join("");
-  const rails = { overview: [["overview", "pulse", "Overview"]], customers: [["customers", "list", "All customers"], ["new", "plus", "New customer", !can("newCustomer")]], messages: [["messages", "log", "Message log"]], setup: [["setup", "gear", "Setup"]] }[areaOf()];
+  const rails = { overview: [["overview", "pulse", "Overview"]], customers: [["customers", "list", "All customers"], ["new", "plus", "New customer", !can("newCustomer")]], messages: [["messages", "log", "Message log"]], setup: [["setup", "gear", "Setup"]], more: [] }[areaOf()];
   $("#rail").innerHTML = rails.map((r) => `<button class="rb" type="button" title="${r[2]}${r[3] ? " (not for your role)" : ""}" data-go="${r[0]}" ${r[3] ? "disabled" : ""} ${S.route === r[0] || (r[0] === "customers" && ["customer", "event"].includes(S.route)) ? 'aria-current="page"' : ""} aria-label="${r[2]}">${ico(r[1], 19)}</button>`).join("");
   $("#theme").innerHTML = ico(document.documentElement.dataset.theme === "dark" ? "sun" : "moon", 19);
   $("#av").textContent = (S.me?.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   $("#role").textContent = ROLES[S.role]?.[0] || "";
-  side();
+  side(); tabBar();
 }
 const NSTEPS = [["shop", "Customer", "store"], ["people", "Who gets messages", "users"], ["hours", "Business hours", "clock"], ["cams", "Recorder", "cam"], ["summary", "Summaries and end date", "send"]];
 const ESTEPS = [["event", "Event", "bell"], ["type", "Event type", "list"], ["recorder", "Recorder", "rec"], ["camera", "Camera", "cam"], ["area", "Mark on the picture", "area"], ["settings", "Settings", "gear"]];
@@ -119,11 +138,12 @@ const MARK_TITLE = { area: "Mark the area", line: "Mark the counting line", zone
 const needsCam = (k) => !!(k && (AREA_KIND[k] || NEEDS_COUNT.has(k) || k.startsWith("__")));
 const eorder = () => { const o = ["event", "type"]; if (S.ev.key && needsCam(S.ev.key)) { if (S.cur.recs.length > 1) o.push("recorder"); o.push("camera"); } if (markMode(S.ev.key)) o.push("area"); o.push("settings"); return o; };
 const cname = () => cust(S.cid)?.name || "";
+const custSecs = () => [["cams", "cam", "Recorder and cameras", "Cameras"], ["events", "bell", "Events", "Events"], ...(S.viewsByCust[S.cid]?.people.show ? [["count", "head", "People count", "People count"]] : []), ...(S.viewsByCust[S.cid]?.vehicles.show ? [["vehicles", "car", "Vehicles", "Vehicles"]] : []), ["people", "users", "Who gets messages", "People"], ["hours", "clock", "Business hours", "Hours"], ["health", "pulse", "Health", "Health"], ["log", "log", "Messages sent", "Messages"]];
 function side() {
   const el = $("#side"); let h = "";
   if (S.route === "new") h = `<h3>New customer</h3>` + NSTEPS.map((s, i) => `<button class="si" type="button" data-step="${s[0]}" aria-current="${S.step === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.form.done[s[0]] ? "done" : ""}">${S.form.done[s[0]] ? "✓" : i + 1}</span></button>`).join("");
   else if (S.route === "event") { const o = eorder(); h = `<button class="si" type="button" data-go="customer">${ico("back")}${esc(cname())}</button><h3 class="pt8">New event</h3>` + ESTEPS.map((s, i) => { const skip = !!S.ev.key && !o.includes(s[0]); return `<button class="si ${skip ? "dim" : ""}" type="button" data-estep="${s[0]}" aria-current="${S.estep === s[0]}">${ico(s[2])}${s[1]}<span class="stp ${S.ev.done[s[0]] ? "done" : ""}">${skip ? "Skipped" : S.ev.done[s[0]] ? "✓" : i + 1}</span></button>`; }).join(""); }
-  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + [["cams", "cam", "Recorder and cameras"], ["events", "bell", "Events"], ...(S.viewsByCust[S.cid]?.people.show ? [["count", "head", "People count"]] : []), ...(S.viewsByCust[S.cid]?.vehicles.show ? [["vehicles", "car", "Vehicles"]] : []), ["people", "users", "Who gets messages"], ["hours", "clock", "Business hours"], ["health", "pulse", "Health"], ["log", "log", "Messages sent"]].map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
+  else if (S.route === "customer") h = `<button class="si" type="button" data-go="customers">${ico("back")}All customers</button><h3 class="pt8">${esc(cname())}</h3>` + custSecs().map((s) => `<button class="si" type="button" data-sec="${s[0]}" aria-current="${S.section === s[0]}">${ico(s[1])}${s[2]}</button>`).join("");
   else if (S.route === "setup") h = `<h3>Setup</h3>` + [["tpl", "chat", "WhatsApp templates", can("templates")], ["team", "shield", "Console users", can("team")], ["keep", "log", "Data kept", can("keep")], ["wa", "wa", "WhatsApp connection", can("wa")], ["sys", "pulse", "System health", can("sys")], ["audit", "log", "Activity log", true]].map((s) => `<button class="si ${s[3] ? "" : "dim"}" type="button" data-setup="${s[0]}" aria-current="${S.setup === s[0]}">${ico(s[1])}${s[2]}${s[3] ? "" : `<span class="stp">${ico("lock", 12)}</span>`}</button>`).join("");
   if (h) h += `<div class="foot"><span>Control Center 1.0</span></div>`;
   el.hidden = !h; el.innerHTML = h;
@@ -220,9 +240,17 @@ async function pageOverview() {
 }
 
 /* ------------------------------------------------------------------------------------------------ Customers */
+function phoneCustomers(list) {
+  const chips = [["all", "All"], ...STATUSES.map((x) => [x, x])];
+  return `<div class="rise stack"><label class="search">${ico("search")}<span class="sr">Search customers</span><input id="q" placeholder="Search customers" value="${esc(S.q)}" autocomplete="off"></label>
+  <div class="pchips">${chips.map((c) => `<button class="chip" type="button" data-filter="${c[0]}" aria-pressed="${S.filter === c[0]}">${c[1]}</button>`).join("")}</div>
+  ${list.length ? list.map((c) => { const st = statusOf(c), k = st[1] === "mute" ? "" : st[1]; return `<button class="card" type="button" data-cust="${c.id}"><span class="dot ${k}"></span><span class="ct"><b>${esc(c.name)}</b><span class="sub small">${esc(c.place)}${c.place ? " · " : ""}${c.cams} camera${c.cams === 1 ? "" : "s"}</span>${whyOf(c) ? `<span class="small t-${st[1]}">${esc(whyOf(c))}</span>` : ""}</span><span class="tag ${k}">${st[0]}</span>${ico("chev", 16)}</button>`; }).join("") : `<div class="empty">${S.customers.length ? "No customers match. Clear the search or the filter." : "No customers yet."}</div>`}
+  <div class="sub small pdesk">Adding a customer is best done on a larger screen.</div></div>`;
+}
 function pageCustomers() {
   const q = S.q.toLowerCase();
   const list = S.customers.filter((c) => (!q || (c.name + c.place).toLowerCase().includes(q)) && (S.filter === "all" || statusOf(c)[0] === S.filter));
+  if (PH.matches) return phoneCustomers(list);
   const body = !list.length ? `<div class="empty">${S.customers.length ? "No customers match. Clear the search or the filter." : "No customers yet. Add the first one."}</div>` : S.view === "list" ?
     `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th class="ico">Type</th><th>Name</th><th>Status</th><th>Place</th><th>Cameras</th><th>Messages go to</th><th>Last message</th><th>Ends on</th></tr></thead><tbody>${list.map((c) => { const st = statusOf(c); return `<tr class="click" data-cust="${c.id}"><td class="dotc"><span class="dot ${st[1] === "mute" ? "" : st[1]}"></span></td><td class="ico"><span class="glyph">${ico("store", 20)}</span></td><td class="main-c">${esc(c.name)}</td><td class="t-${st[1]}">${st[0]}${whyOf(c) ? `<br><span class="sub small">${esc(whyOf(c))}</span>` : ""}</td><td>${esc(c.place)}</td><td class="num">${c.cams}</td><td>${esc(peopleShort(c.people))}</td><td class="num">${fmtTime(c.last)}</td><td class="num">${fmtDate(c.endsOn)}</td></tr>`; }).join("")}</tbody></table></div>` :
     `<div class="grid">${list.map((c) => { const st = statusOf(c); return `<button class="tile" type="button" data-cust="${c.id}"><div class="pic"><span class="cc2">${c.cams} cameras</span>${ico("store", 30)}</div><div class="tb"><b>${esc(c.name)}</b><span class="t-${st[1]}">${st[0]}</span><span> · ${esc(c.place)}</span></div></button>`; }).join("")}</div>`;
@@ -371,7 +399,8 @@ async function pageCustomer() {
    <button class="btn sm" type="button" data-testmsg>${ico("send", 15)}Send test message</button><button class="btn sm" type="button" data-editc ${can("editc") ? "" : "disabled title='Not for your role'"}>${ico("edit", 15)}Edit</button><button class="btn sm" type="button" data-pausec ${can("pause") ? "" : "disabled title='Not for your role'"}>${ico("pause", 15)}${c.status === "suspended" ? "Resume" : "Pause"}</button><button class="btn sm" type="button" data-extend ${can("expiry") ? "" : "disabled title='Owner or Admin only'"}>${ico("clock", 15)}Change end date</button><button class="btn sm danger" type="button" data-delc ${can("del") ? "" : "disabled title='Owner only'"}>${ico("trash", 15)}Delete</button></span></div>
    ${c.ownerPhones.length ? "" : `<div class="whyline t-warn">The owner's mobile number is missing. Add it with Edit.</div>`}
    ${whyOf(c) ? `<div class="whyline ${st[1] === "warn" ? "t-warn" : st[1] === "crit" ? "t-crit" : "sub"}">${esc(whyOf(c))}</div>` : ""}
-   <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log", "count", "vehicles", "health"].includes(S.section) ? "full" : ""}">${body}</div></div>`;
+   <div class="pchips ponly" role="tablist" aria-label="This customer">${[...custSecs()].sort((a, b) => (b[0] === "health") - (a[0] === "health")).map((x) => `<button class="chip" type="button" role="tab" data-sec="${x[0]}" aria-selected="${S.section === x[0]}">${x[3]}</button>`).join("")}</div>
+   <h2 class="h2">${titles[S.section]}</h2><div class="form ${["events", "cams", "log", "count", "vehicles", "health"].includes(S.section) ? "full" : ""}">${body}</div>${S.section === "events" ? "" : '<div class="ponly sub small pdesk">Editing this customer, changing the end date and deleting are best done on a larger screen.</div>'}</div>`;
 }
 /* A recorder's window on the Health page: connection, disks, recordings, clock, hardware and the last day's connection history */
 const hsize = (mb) => (mb == null ? "-" : mb >= 1e6 ? `${+(mb / 1e6).toFixed(1)} TB` : `${Math.round(mb / 1e3)} GB`);
@@ -510,6 +539,11 @@ async function loadLog(tenantId, more, reuse) {
   S.logData = { key, total: r.total, items: more && same ? S.logData.items.concat(r.items) : r.items };
 }
 const kindOf = (m) => m.status === "failed" ? "Failed" : m.status === "queued" ? "Waiting" : ["suppressed", "cancelled"].includes(m.status) ? "Held back" : "Sent";
+function phoneLog(rows, withCustomer, D) {
+  const cls = (m) => ({ Failed: "crit", Waiting: "warn", "Held back": "", Sent: "ok" }[kindOf(m)]);
+  return `<div class="pcards">${rows.map((m) => `<div class="msg"><div class="l1"><b>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</b><span class="tag ${cls(m)}">${kindOf(m)}</span></div><span class="sub small">${fmtTime(m.created_at)}${withCustomer ? " · " + esc(m.tenant) : ""}${m.recipient ? " · " + esc(m.recipient) : ""}</span>${m.error ? `<span class="small t-crit">${esc(m.error)}</span>` : ""}${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</div>`).join("")}</div>
+  ${rows.length < D.total ? `<button class="btn" type="button" data-lmore>Load more</button>` : ""}<div class="sub small mid">Showing ${rows.length} of ${D.total}</div>`;
+}
 function logTable(withCustomer) {
   const chips = [["all", "All"], ["Sent", "Sent"], ["Failed", "Failed"], ["Waiting", "Waiting"], ["Held back", "Held back"]], D = S.logData, rows = D.items;
   const cls = (m) => ({ Failed: "crit", Waiting: "warn", "Held back": "", Sent: "ok" }[kindOf(m)]), txt = (m) => ({ Failed: "t-crit", Waiting: "t-warn", "Held back": "t-mute", Sent: "t-ok" }[kindOf(m)]);
@@ -517,7 +551,7 @@ function logTable(withCustomer) {
     ${S.logRange === "custom" ? `<label class="sub">From <input class="in time" type="date" id="lfrom" value="${esc(S.logFrom)}"></label><label class="sub">To <input class="in time" type="date" id="lto" value="${esc(S.logTo)}"></label>` : ""}
     <label class="sr" for="lrange">Date range</label><select class="in sel" id="lrange" data-lrangesel>${RANGES.map((c) => `<option value="${c[0]}" ${S.logRange === c[0] ? "selected" : ""}>${c[0] === "custom" ? "Custom range" : c[1]}</option>`).join("")}</select>
     <label class="sr" for="lstatus">Status</label><select class="in sel" id="lstatus" data-lchipsel>${chips.map((c) => `<option value="${c[0]}" ${S.logChip === c[0] ? "selected" : ""}>${c[0] === "all" ? "All messages" : c[1]}</option>`).join("")}</select></div>
-  ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${rows.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div><div class="more"><span></span>${rows.length < D.total ? `<button class="btn" type="button" data-lmore>Load more</button>` : "<span></span>"}<span class="sub end">Showing ${rows.length} of ${D.total}</span></div>` : `<div class="empty">No messages in this range${S.logQ || S.logChip !== "all" ? " match" : ""}.</div>`}`;
+  ${rows.length && PH.matches ? phoneLog(rows, withCustomer, D) : rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th class="dotc"></th><th>Time</th>${withCustomer ? "<th>Customer</th>" : ""}<th>Message</th><th>To</th><th>Result</th><th>Why</th><th></th></tr></thead><tbody>${rows.map((m) => `<tr><td class="dotc"><span class="dot ${cls(m)}"></span></td><td class="num">${fmtTime(m.created_at)}</td>${withCustomer ? `<td class="main-c">${esc(m.tenant)}</td>` : ""}<td>${esc(m.title || humanize((m.event || "message").split(".").pop()))}</td><td>${esc(m.recipient || "")}</td><td class="${txt(m)}">${kindOf(m)}</td><td class="sub">${esc(m.error || "")}</td><td>${m.status === "failed" && can("templates") ? `<button class="btn sm" type="button" data-resend="${m.id}">Send again</button>` : ""}</td></tr>`).join("")}</tbody></table></div><div class="more"><span></span>${rows.length < D.total ? `<button class="btn" type="button" data-lmore>Load more</button>` : "<span></span>"}<span class="sub end">Showing ${rows.length} of ${D.total}</span></div>` : `<div class="empty">No messages in this range${S.logQ || S.logChip !== "all" ? " match" : ""}.</div>`}`;
 }
 async function saveSection() {
   const f = S.cur.f, base = `/admin/v1/tenants/${S.cid}/shop`;
@@ -748,6 +782,16 @@ function groupsHtml(rows, list, line, searching) {
     return `<tr class="grp"><td colspan="7"><button class="gbtn" type="button" data-evgrp="${key}" aria-expanded="${open}"><span class="chev ${open ? "" : "shut"}">${ico("chev", 14)}</span>${label}<span class="meta">${all.filter((r) => r.on).length} on of ${all.length} · ${note}</span></button></td></tr>${open ? mine.map(line).join("") : ""}`;
   }).join("");
 }
+function phoneEvents(rows, list, ro, on, k) {
+  const card = (r) => { const i = rows.indexOf(r), warn = warnText(r); return `<div class="card nodot ev ${r.on ? "" : "off"}" data-evrow="${i}" role="button" tabindex="0"><span class="ct"><b>${esc(rowName(r))}</b><span class="sub small">${rowSends(r)[0]}${r.g === "default" ? " · Default" : ""}${warn ? ` · <span class="t-warn">${warn}</span>` : ""}</span></span>${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</div>`; };
+  const groups = EV_GROUPS2.map(([key, label]) => {
+    const all = rows.filter((r) => groupOf(r) === key), mine = list.filter((r) => groupOf(r) === key); if (!mine.length) return "";
+    const open = !!k || S.evOpen[key];
+    return `<button class="gbtn" type="button" data-evgrp="${key}" aria-expanded="${open}"><span class="chev ${open ? "" : "shut"}">${ico("chev", 14)}</span>${label}<span class="meta">${all.filter((r) => r.on).length} on of ${all.length}</span></button>${open ? mine.map(card).join("") : ""}`;
+  }).join("");
+  return `<div class="stack"><div class="sub">${on} on of ${rows.length}. Tap an event to see or change it.</div><label class="search">${ico("search")}<span class="sr">Search events</span><input id="evq" placeholder="Search events" value="${esc(S.evQ)}" autocomplete="off"></label>
+  <div class="ev-tbl pcards">${groups || '<div class="empty">No events match your search.</div>'}</div><div class="sub small pdesk">Adding or deleting an event and drawing an area are best done on a larger screen.</div></div>`;
+}
 function secEvents() {
   const rows = S.cur.rows = eventRows(), ro = !can("events"), on = rows.filter((r) => r.on).length, k = S.evQ.trim().toLowerCase();
   const list = rows.filter((r) => !k || `${rowName(r)} ${rowType(r)} ${rowWhere(r)} ${r.k === "data" ? "" : namesOf(r.rule?.recipient_ids)}`.toLowerCase().includes(k));
@@ -755,6 +799,7 @@ function secEvents() {
     const i = rows.indexOf(r), m = rowSends(r), warn = !!warnText(r), goes = r.k === "data" ? "—" : namesOf(r.rule?.recipient_ids);
     return `<tr class="ev ${r.on ? "" : "off"}" data-evrow="${i}" tabindex="0"><td class="dotc"><span class="dot ${r.on ? (warn ? "warn" : "ok") : ""}"></span></td><td class="main-c">${esc(rowName(r))}${warn ? ` <span class="tag warn">${warnText(r)}</span>` : ""}${r.g === "default" ? ' <span class="tag">Default</span>' : ""}</td><td>${esc(rowType(r))}</td><td>${esc(rowWhere(r))}</td><td><span class="tag ${m[1]}">${m[0]}</span></td><td>${esc(goes)}</td><td class="sw-c">${sw("evsw-" + i, r.on, ro, "evsw:" + i)}</td></tr>`;
   };
+  if (PH.matches) return phoneEvents(rows, list, ro, on, k);
   return `<div class="stack"><div class="bar flush"><span class="sub">${on} on of ${rows.length}. Click an event to see it, change it or delete it.</span><span class="sp"></span><button class="btn pri" type="button" data-addev ${ro ? "disabled title='Not for your role'" : ""}>${ico("plus")}Add event</button></div>
   <div class="bar flush"><label class="search">${ico("search")}<span class="sr">Search events</span><input id="evq" placeholder="Search events" value="${esc(S.evQ)}" autocomplete="off"></label>${k ? `<span class="sub">${list.length} found</span>` : ""}</div>
   ${rows.length ? `<div class="scroll"><table class="tbl ev-tbl"><thead><tr><th class="dotc"></th><th>Event</th><th>Event type</th><th>Where</th><th>Sends</th><th>Goes to</th><th class="sw-c">On</th></tr></thead><tbody>${list.length ? groupsHtml(rows, list, line, !!k) : '<tr><td colspan="7" class="empty">No events match your search.</td></tr>'}</tbody></table></div>` : `<div class="empty">No events yet. Add the first one.</div>`}</div>`;
@@ -791,7 +836,8 @@ function drawEdit() {
   <div><div class="sec-h">Sends</div><span class="tag ${m[1]}">${m[0]}</span></div>
   ${data ? `<div class="${warn ? "note warn" : "sub"}">${r.flag === "use_footfall" ? (warn ? "No line is marked on this camera, so nothing is counted yet." : "A counting line is marked. People crossing the way the arrow points are counted IN.") : (pdir ? `${marked ? "A plate area is marked." : "Plates are read in the whole picture."} ${DIR_LABEL[pdir]} counts as coming in.` : "No direction is set, so vehicles on this camera have no in or out. Mark the plate area and choose the direction.")}</div><div><button class="btn ${warn ? "pri" : ""}" type="button" data-editmark="${i}" ${ro ? "disabled" : ""}>${r.flag === "use_footfall" ? (marked ? "Mark the line again" : "Mark the line") : (pdir ? "Change the plate area or direction" : "Mark the plate area and direction")}</button></div>` : ""}
   ${!data && NEEDS_PLATES.has(r.type) ? platesNote(r.type) : ""}
-  ${kind ? `<div><button class="btn" type="button" data-redraw ${ro ? "disabled" : ""}>Redraw the area</button></div>` : ""}</div>
+  ${kind ? `<div><button class="btn" type="button" data-redraw ${ro ? "disabled" : ""}>Redraw the area</button></div>` : ""}
+  <div class="ponly sub small">${def ? "" : "Deleting this event"}${kind ? (def ? "Redrawing the area" : " or redrawing its area") : ""}${def && !kind ? "" : " is best done on a larger screen."}</div></div>
   <div class="df"><button class="btn pri" type="button" data-esave ${ro ? "disabled" : ""}>Save</button><button class="btn" type="button" id="dclose2">Cancel</button><span class="grow"></span>${def ? "" : `<button class="btn danger" type="button" data-delev="${i}" ${ro ? "disabled" : ""}>Delete</button>`}</div></aside>`;
 }
 async function saveEdit() {
@@ -853,6 +899,16 @@ async function pageMessages() { await loadLog(null, false, true); return `<div c
 
 /* ------------------------------------------------------------------------------------------------ Setup */
 const lock = (n) => `<div class="empty rise">${ico("lock", 28)}<h2 class="h2 pt8">${n} is for ${n === "WhatsApp connection" ? "the Owner" : "Owner or Admin"}</h2><p>Ask the Owner if you need this changed.</p></div>`;
+function pageMore() {
+  const m = S.me || {}, desk = ["Activity log", "WhatsApp templates", "WhatsApp connection", "Console users", "Data kept", "Adding customers and events", "Drawing areas on the picture"];
+  return `<div class="rise stack"><div class="card nodot"><span class="av lg">${esc(initials(m.name))}</span><span class="ct"><b>${esc(m.name || "")}</b><span class="sub small">${esc(m.email || "")}</span></span><span class="tag brand">${esc(ROLES[S.role]?.[0] || "")}</span></div>
+   <div class="sec-h">This phone</div>
+   <button class="card nodot" type="button" data-pwopen>${ico("lock", 20)}<span class="ct"><b>Change password</b></span>${ico("chev", 16)}</button>
+   <button class="card nodot" type="button" id="theme2">${ico("moon", 20)}<span class="ct"><b>Dark or light</b><span class="sub small">Switch how it looks</span></span>${ico("chev", 16)}</button>
+   <button class="card nodot out" type="button" data-signout>${ico("out", 20)}<span class="ct"><b>Sign out</b></span></button>
+   <details class="dgrp"><summary>${ico("screen", 20)}<span class="ct"><b>On a larger screen</b><span class="sub small">${desk.length} things that are best done on a computer or tablet</span></span>${ico("chev", 16)}</summary><div class="stack">${desk.map((x) => `<div class="card nodot desk"><span class="ct"><b>${x}</b><span class="sub small">Best done on a larger screen</span></span><span class="tag">Larger screen</span></div>`).join("")}</div></details>
+   <div class="sub small mid">Control Center 1.0</div></div>`;
+}
 async function pageSetup() {
   if (S.setup === "tpl") {
     if (!can("templates")) return lock("WhatsApp templates");
@@ -946,11 +1002,11 @@ async function startLive(camId) {
   if (S.live) return;
   const frame = () => document.querySelector(".vframe .vpic"), say = (t, on) => { const x = $("#lv-state"); if (x) { x.textContent = t; x.classList.toggle("on", !!on); } }, button = (t) => { const b = $("#lv-btn"); if (b) b.textContent = t; };
   if (!frame()) return;
-  const ctl = new AbortController(), L = S.live = { ctl, url: null, timer: null, ends: Date.now() + 300000 };
+  const LIVE_MS = PH.matches ? 120000 : 300000, ctl = new AbortController(), L = S.live = { ctl, url: null, timer: null, ends: Date.now() + LIVE_MS };
   const campic = frame().hasAttribute("data-campic-box");
   if (campic) { frame().textContent = ""; frame().insertAdjacentHTML("beforeend", '<span class="picmsg">Starting the live view…</span>'); }
   button("Stop"); say("Starting…", true);
-  const tick = () => { const left = Math.max(0, Math.round((L.ends - Date.now()) / 1000)); say(`Live · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, true); };
+  const tick = () => { const left = Math.max(0, Math.round((L.ends - Date.now()) / 1000)); say(`Live · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, true); if (PH.matches && left === 0 && L.url) { stopLive(true); toast("The live view stopped after 2 minutes. Press Watch live to continue."); } };
   L.timer = setInterval(() => { if (L.url) tick(); }, 1000);
   let got = false;
   try {
@@ -959,7 +1015,7 @@ async function startLive(camId) {
       const box = frame(); if (!box) return;
       let img = box.querySelector("img.snap");
       if (!img) { img = Object.assign(document.createElement("img"), { className: "snap", alt: "Live picture" }); const scene = box.querySelector("svg:not(.draw)"); if (scene) scene.remove(); box.prepend(img); }
-      if (!got) { got = true; L.ends = Date.now() + 300000; box.querySelectorAll(".picmsg").forEach((m) => m.remove()); }
+      if (!got) { got = true; L.ends = Date.now() + LIVE_MS; box.querySelectorAll(".picmsg").forEach((m) => m.remove()); }
       const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })), old = L.url; L.url = url; img.src = url; if (old) setTimeout(() => URL.revokeObjectURL(old), 500);
       tick();
     }, { signal: ctl.signal });
@@ -974,7 +1030,8 @@ function stopLive(manual) {
 }
 const closeModal = () => { stopLive(); $("#layer").innerHTML = ""; S.edit = null; };
 const mh = (t) => `<div class="mh"><span class="spacer"></span><h2>${t}</h2><button class="ibtn" type="button" data-close aria-label="Close">${ico("x")}</button></div>`;
-const PAGES = { overview: pageOverview, customers: pageCustomers, new: pageNew, customer: pageCustomer, event: pageEvent, messages: pageMessages, setup: pageSetup };
+const PAGES = { more: pageMore, overview: pageOverview, customers: pageCustomers, new: pageNew, customer: pageCustomer, event: pageEvent, messages: pageMessages, setup: pageSetup };
+PH.addEventListener("change", () => { if (S.me) render(true); });
 let picRun = 0;
 setInterval(() => { if (S.route === "setup" && S.setup === "sys" && !document.hidden && !$("#layer").innerHTML && Date.now() - (S.sysAt || 0) > 25000) render(true); }, 30000);
 async function loadPics() {
@@ -997,6 +1054,12 @@ async function render(keepScroll) {
   try { html = await PAGES[S.route](); } catch (e) { html = `<div class="empty">${esc(errText(e))}<br><button class="btn" type="button" data-retry>Try again</button></div>`; }
   if (mine !== token) return;
   p.innerHTML = html; p.scrollTop = keepScroll ? y : 0; syncHash();
+  if (PH.matches) {                                                                // on a phone the page itself scrolls, and a move between tabs slides the new page in from that side
+    if (!keepScroll) window.scrollTo(0, 0);
+    const tabs = tabList().map((t) => t[0]), now = tabs.indexOf(tabOf()), was = S.tabIdx ?? now; S.tabIdx = now;
+    p.classList.remove("in-r", "in-l", "in-u"); void p.offsetWidth;
+    if (!keepScroll) p.classList.add(now > was ? "in-r" : now < was ? "in-l" : "in-u");
+  }
   if (S.route === "customer") side();                                        // the menu depends on what this customer has (loaded just now)
   p.querySelectorAll(".bars i[data-h]").forEach((b) => { b.style.height = b.dataset.h + "px"; });
   p.querySelectorAll(".mtb i[data-w]").forEach((b) => { b.style.width = b.dataset.w + "%"; });
@@ -1006,6 +1069,7 @@ async function render(keepScroll) {
 }
 const SECTIONS = ["cams", "health", "events", "count", "vehicles", "people", "hours", "log"], SETUPS = ["tpl", "team", "keep", "wa", "sys", "audit"];
 function hashNow() {
+  if (S.route === "more") return "more";
   if (S.route === "customer" && S.cid) return `customer/${S.cid}/${S.section}`;
   if (S.route === "setup") return `setup/${S.setup}`;
   return ["overview", "customers", "messages"].includes(S.route) ? S.route : null;        // the step-by-step screens are not remembered
@@ -1015,20 +1079,22 @@ function go(r, extra) { Object.assign(S, extra || {}); S.route = r; S.pop = fals
 const ORDER = NSTEPS.map((s) => s[0]);
 let busyAct = false;
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#signout");
+  const t = ev.target.closest("[data-tab],[data-go],[data-cust],[data-view],[data-pop],[data-filter],[data-lchip],[data-lrange],[data-lmore],[data-step],[data-sec],[data-setup],[data-sysrefresh],[data-live],[data-campic],[data-rencam],[data-hrec],[data-evgrp],[data-stat],[data-watab],[data-alsave],[data-alapply],[data-altest],[data-next],[data-prev],[data-create],[data-addph],[data-editstaff],[data-delstaff],[data-delph],[data-editc],[data-hmode],[data-copyh],[data-rtype],[data-addp],[data-delp],[data-tpl],[data-close],[data-scrim],[data-finish],[data-testmsg],[data-pausec],[data-extend],[data-extendc],[data-delc],[data-save],[data-resend],[data-invite],[data-testwa],[data-addev],[data-estep],[data-evnext],[data-evprev],[data-evcreate],[data-erec],[data-ecam],[data-etype],[data-evrow],[data-evgrp],[data-editmark],[data-delev],[data-esave],[data-redraw],[data-redrawclear],[data-redrawsave],[data-redrawcancel],[data-clearpts],[data-snaptry],[data-retry2],[data-flip],[data-pdir],[data-mpdir],[data-goplates],[data-whole],[data-mflip],[data-mwhole],[data-mclear],[data-msave],[data-evdone],[data-retry],[data-addrec],[data-campic],[data-findcams],[data-showconn],[data-veh],[data-vmore],[data-export],[data-editrec],[data-newpw],[data-delrec],[data-addcams],[data-chall],[data-setupall],[data-disable],[data-enable],[data-resetlink],[data-wasave],[data-keepsave],[data-keepclear],[data-confirm],#home,#theme,#theme2,#signout,[data-signout],[data-pwopen]");
   if (S.pop && !ev.target.closest(".tools")) { S.pop = false; render(true); }
   if (ev.target.closest(".ev-tbl .sw")) return;                      // a switch in the Events list is handled by its own change
   if (!t) return; const d = t.dataset;
   try {
     if ("scrim" in d) { if (ev.target !== t) return; return closeModal(); }
     if (t.id === "home") return go("overview");
-    if (t.id === "theme") { const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme:dark)").matches); document.documentElement.dataset.theme = dark ? "light" : "dark"; return shell(); }
-    if (t.id === "signout") { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); return location.replace("/"); }
+    if (t.id === "theme" || t.id === "theme2") { const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme:dark)").matches); document.documentElement.dataset.theme = dark ? "light" : "dark"; return shell(); }
+    if (t.id === "signout" || "signout" in d) { try { await api.call("POST", "/admin/v1/auth/logout", { refresh_token: api.refreshToken }); } catch { /* signing out anyway */ } api.clear(); return location.replace("/"); }
+    if ("pwopen" in d) { await openProfile(); return $("#pf-pwb")?.click(); }
     if ("close" in d) return closeModal();
     if ("retry" in d) return render();
+    if (d.tab) { S.logData = null; if (d.tab === "health") { S.setup = "sys"; return go("setup"); } if (d.tab === "customers") await loadCustomers(); return go(d.tab); }
     if (d.go || d.cust || d.sec || d.setup) S.logData = null;
     if (d.go) { if (d.go === "new") { S.form = blankForm(); S.step = "shop"; } if (d.go === "customers") await loadCustomers(); if (d.go === "customer") S.cur = null; return go(d.go); }
-    if (d.cust) { S.cid = d.cust; S.cur = null; S.section = "cams"; return go("customer"); }
+    if (d.cust) { S.cid = d.cust; S.cur = null; S.section = PH.matches ? "health" : "cams"; return go("customer"); }
     if (d.view) { S.view = d.view; return render(true); }
     if ("pop" in d) { S.pop = !S.pop; return render(true); }
     if (d.filter) { S.filter = d.filter; S.pop = false; return render(true); }
@@ -1268,7 +1334,7 @@ async function boot() {
   loadStatus();
   try { await loadCustomers(); } catch (e) { toast(errText(e), true); }
   const [r, a, b] = location.hash.slice(1).split("/");
-  if (["overview", "customers", "messages"].includes(r)) S.route = r;
+  if (["overview", "customers", "messages", "more"].includes(r)) S.route = r;
   else if (r === "setup") { S.route = "setup"; if (SETUPS.includes(a)) S.setup = a; }
   else if (r === "customer" && cust(a)) { S.route = "customer"; S.cid = a; S.cur = null; S.section = SECTIONS.includes(b) ? b : "cams"; }
   render();
