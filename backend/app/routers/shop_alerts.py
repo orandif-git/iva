@@ -9,7 +9,7 @@ from pydantic import Field, field_validator
 from ..db import db
 from ..deps import CustomerCtx
 from ..errors import ApiError
-from ..services import alert_catalog
+from ..services import alert_catalog, alerts
 from ..services.alert_catalog import ALERT_TYPES
 from ..schemas import Strict
 from ..services.alerts import DEFAULT_ENABLED
@@ -156,21 +156,24 @@ def check_params(rule_type: str, params: dict) -> dict:
     return out
 
 
-def _rule_out(rule_type: str, r) -> dict:
+def _rule_out(rule_type: str, r, default_ids: list | None = None) -> dict:
+    chosen = bool(r and (r["recipients"] or r["recipients_set"]))
+    ids = list(r["recipients"]) if chosen else ([] if rule_type in alert_catalog.DIRECT_SEND else list(default_ids or []))
     meta = ALERT_TYPES[rule_type]
     enabled = r["enabled"] if r else rule_type in DEFAULT_ENABLED
     return {"type": rule_type, "family": meta["family"], "group": meta["group"], "ai": meta["family"] == alert_catalog.SMART,
             "title": meta["title"], "description": meta["description"], "severity": meta["severity"],
             "settings": {k: {**v} for k, v in meta["params"].items()}, "enabled": enabled,
             "params": (r["params"] if r else {}) or {k: v["default"] for k, v in meta["params"].items()},
-            "channels": ["whatsapp"], "recipient_ids": list(r["recipients"]) if r else [],
+            "channels": ["whatsapp"], "recipient_ids": ids, "recipients_default": not chosen,
             "quiet_start": r["quiet_start"].strftime("%H:%M") if r and r["quiet_start"] else None,
             "quiet_end": r["quiet_end"].strftime("%H:%M") if r and r["quiet_end"] else None}
 
 
 async def alert_types(ctx: CustomerCtx):
     rows = {r["rule_type"]: r for r in await ctx.conn.fetch("SELECT * FROM app.alert_rules")}
-    return [_rule_out(t, rows.get(t)) for t in await alert_catalog.visible(ctx.conn, ctx.tenant_id)]
+    default_ids = await alerts.default_recipients(ctx.conn, ctx.tenant_id)
+    return [_rule_out(t, rows.get(t), default_ids) for t in await alert_catalog.visible(ctx.conn, ctx.tenant_id)]
 
 
 async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx):
@@ -195,9 +198,9 @@ async def set_alert_type(rule_type: str, body: RuleIn, ctx: CustomerCtx):
     if body.enabled and not ids:
         warnings.append("No one will be messaged yet. The alert will only appear in the app until you choose people.")
     row = await ctx.conn.fetchrow(
-        """INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params, channels, recipients, quiet_start, quiet_end)
-           VALUES ($1,$2,$3,$4,$5::app.channel_kind[],$6,$7,$8)
-           ON CONFLICT (tenant_id, rule_type) DO UPDATE SET enabled=$3, params=$4, channels=$5::app.channel_kind[], recipients=$6, quiet_start=$7, quiet_end=$8
+        """INSERT INTO app.alert_rules (tenant_id, rule_type, enabled, params, channels, recipients, recipients_set, quiet_start, quiet_end)
+           VALUES ($1,$2,$3,$4,$5::app.channel_kind[],$6,true,$7,$8)
+           ON CONFLICT (tenant_id, rule_type) DO UPDATE SET enabled=$3, params=$4, channels=$5::app.channel_kind[], recipients=$6, recipients_set=true, quiet_start=$7, quiet_end=$8
            RETURNING *""", ctx.tenant_id, rule_type, body.enabled, params, body.channels, ids, body.quiet_start, body.quiet_end)
     await ctx.audit("alert_rule.update", "alert_rule", row["id"], {"type": rule_type, "enabled": body.enabled, "channels": body.channels, "recipients": len(ids), "params": params})
     return {**_rule_out(rule_type, row), "warnings": warnings}

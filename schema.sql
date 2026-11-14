@@ -645,6 +645,7 @@ CREATE TABLE app.alert_rules (
   params      jsonb NOT NULL DEFAULT '{}',             -- thresholds, for example {"max_hours": 4} or {"people": 40, "minutes": 5}
   channels    app.channel_kind[] NOT NULL DEFAULT '{whatsapp}',
   recipients  uuid[] NOT NULL DEFAULT '{}',            -- app.recipients.id
+  recipients_set boolean NOT NULL DEFAULT false,       -- true once someone chose the people (even none); until then the alert goes to everyone with a mobile number
   quiet_start time,                                    -- no messages between these local times (the alert is still recorded)
   quiet_end   time,
   label       text,                                    -- the name the Control Center shows for this event

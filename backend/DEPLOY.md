@@ -132,6 +132,7 @@ WantedBy=multi-user.target
    su postgres -c "psql -d gateinsight -f migrations/029_alert_connection.sql"  # one shared WhatsApp connection (address and key) for alerts
    su postgres -c "psql -d gateinsight -f migrations/030_staff_push.sql"  # notifications on console users' phones
    su postgres -c "psql -d gateinsight -f migrations/031_passkeys.sql"  # sign in with Face ID or a fingerprint
+   su postgres -c "psql -d gateinsight -f migrations/032_alert_recipients_default.sql"  # an alert nobody chose people for goes to everyone with a mobile number
    ```
    Then restart the API: `systemctl restart gi-api`.
    **Notifications on phones** also need a pair of keys, made once. Run `cd /www/wwwroot/iva/backend && .venv/bin/python -m app.services.staff_push keygen`, put the two lines it prints in the API's settings (the same place as the other `GI_` settings) and restart `gi-api`. Keep the private key secret and do not change the pair later (every phone would have to turn notifications on again). Optional: `GI_VAPID_SUBJECT=mailto:you@yourcompany.in`. Until the keys are set, More, Notifications says it is not set up yet.

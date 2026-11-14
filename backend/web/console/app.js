@@ -805,6 +805,7 @@ function eventRows() {
 }
 /* A short warning for a row that cannot do its job yet (empty when it is fine) */
 function warnText(r) {
+  if ((r.k === "rule" || r.k === "area") && r.on && r.rule && !(r.rule.recipient_ids || []).length) return "Goes to nobody";
   if (r.k === "data" && r.flag === "use_footfall" && !r.marked) return "No line marked";
   if (r.k === "data" && r.flag === "use_anpr" && r.on && !plateDirOf(r.cam)) return "No direction";
   if (r.k === "rule" && NEEDS_PLATES.has(r.type) && r.on) { if (!plateCams().length) return "No plate camera"; if (r.type === "vehicle_overstay" && noDirCams().length) return `No direction on ${noDirCams().length} camera${noDirCams().length === 1 ? "" : "s"}`; }

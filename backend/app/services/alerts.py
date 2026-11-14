@@ -39,6 +39,10 @@ def clips_wanted(tenant, rule) -> bool:
     return bool(rule["enabled"]) and (rule["params"] or {}).get("clip", True) is not False
 
 
+async def default_recipients(conn, tenant_id: UUID) -> list:
+    return [r["id"] for r in await conn.fetch("SELECT id FROM app.recipients WHERE tenant_id=$1 AND active AND phone IS NOT NULL", tenant_id)]
+
+
 async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", title: str | None = None, camera_id=None, camera_name: str = "",
                       details: dict | None = None, dedupe_key: str | None = None, cooldown_minutes: int = 10, evidence_id=None,
                       evidence_key: str | None = None, severity: str | None = None, expect_clip: bool = False, recipient_ids: list | None = None,
@@ -80,7 +84,12 @@ async def raise_alert(conn, tenant_id: UUID, rule_type: str, *, body: str = "", 
     if wait_until and ep and ep["active"] and "{clip_url}" in ep["payload_template"]:
         hold = wait_until            # only worth holding the event back when its payload carries the clip
     quiet = (not critical) and bool(rule) and in_quiet_hours(now.astimezone(tz).time(), rule["quiet_start"], rule["quiet_end"])
-    who = recipient_ids if recipient_ids is not None else (list(rule["recipients"]) if rule and rule["recipients"] else [])
+    if recipient_ids is not None:
+        who = recipient_ids
+    elif rule and (rule["recipients"] or rule["recipients_set"]):
+        who = list(rule["recipients"])
+    else:                                              # nobody has chosen yet: everyone of this customer with a mobile number (the summaries are never sent this way)
+        who = [] if rule_type in alert_catalog.DIRECT_SEND else await default_recipients(conn, tenant_id)
     if who:
         await fan_out(conn, tenant_id, tenant, alert_id, rule_type, who, payload, quiet, hold_until=hold, critical=critical, direct_ready=direct_ready)
     return alert_id
