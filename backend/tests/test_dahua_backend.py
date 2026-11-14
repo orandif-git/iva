@@ -75,3 +75,13 @@ def test_dahua_video_is_read_as_dhav_from_the_dahua_gateway_and_gb28181_as_mpeg(
     assert cmd[cmd.index("-f") + 1] == "dhav" and asked[-1][1] == 8082 and b'"stream":"main"' in asked[-1][2].replace(b" ", b"")
     cmd = command(RelaySource("G-1", 1))
     assert cmd[cmd.index("-f") + 1] == "mpeg" and asked[-1][1] == 8081 and b"stream" not in asked[-1][2]
+
+
+async def test_a_camera_that_only_has_a_marked_area_is_given_to_a_worker(client, make, su):
+    """Counting people, reading plates or watching a marked area each need the camera analysed. A camera used only for marked areas must not be left out."""
+    cred, cam, _ = await dahua_camera(client, make)
+    s = make.service()
+    await su.execute("UPDATE app.cameras SET use_footfall=false, use_anpr=false, use_areas=true WHERE id=$1", uuid.UUID(cam))
+    assert cam in (await client.get("/internal/v1/workers/cameras", headers=s)).json()["cameras"], "marked areas only: still analysed"
+    await su.execute("UPDATE app.cameras SET enabled=false WHERE id=$1", uuid.UUID(cam))
+    assert cam not in (await client.get("/internal/v1/workers/cameras", headers=s)).json()["cameras"], "switched off: not analysed"

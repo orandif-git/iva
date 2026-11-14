@@ -160,7 +160,7 @@ _POLICY_COLS = ", ".join([f"c.fps_{p} AS c_{p}" for p in PARTS] + [f"t.fps_{p} A
 
 @router.get("/workers/cameras")
 async def worker_cameras(shard: int = Query(0, ge=0), of: int = Query(1, ge=1, le=1000), ctx: ServiceCtx = Depends(service_ctx)):
-    """The cameras one worker process should run: every camera that is switched on, has something to analyse and somewhere to get video, whose
+    """The cameras one worker process should run: every camera that is switched on, has something to analyse (people counting, plates or a marked area) and somewhere to get video, whose
     account is active. Cameras are split between `of` workers by a stable hash of the camera id, so each camera has exactly one worker and
     cameras added later are picked up by the next poll."""
     if shard >= of:
@@ -168,7 +168,7 @@ async def worker_cameras(shard: int = Query(0, ge=0), of: int = Query(1, ge=1, l
     await platform_fault.worker_polled(ctx.conn, shard, of)          # how we know our own analysis is alive (see services/platform_fault.py)
     rows = await ctx.conn.fetch(
         """SELECT c.id FROM app.cameras c JOIN app.tenants t ON t.id = c.tenant_id LEFT JOIN app.recorders r ON r.id = c.recorder_id
-           WHERE c.enabled AND (c.use_footfall OR c.use_anpr) AND t.status::text NOT IN ('suspended','cancelled')
+           WHERE c.enabled AND (c.use_footfall OR c.use_anpr OR c.use_areas) AND t.status::text NOT IN ('suspended','cancelled')
              AND (c.source_ciphertext IS NOT NULL OR r.protocol::text IN ('gb28181','auto_register'))
              AND abs(hashtext(c.id::text)::bigint) % $2 = $1 ORDER BY c.id""", shard, of)
     return {"cameras": [str(r["id"]) for r in rows]}
