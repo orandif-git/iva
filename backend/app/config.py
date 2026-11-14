@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     reset_hours: int = 1
     lockout_failures: int = 5                # wrong passwords before an account is locked
     lockout_minutes: int = 15
+    passkey_second_step_roles: list[str] = ["owner", "admin"]   # these roles must also pass Face ID after the password, once they have set it up (a person who has not is not locked out)
     login_ip_limit: int = 30                 # sign-in attempts per address per 5 minutes
     sweep_interval_seconds: int = 30
     cors_origins: list[str] = []

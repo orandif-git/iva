@@ -5,8 +5,9 @@ from ..config import get_settings
 from ..db import db
 from ..deps import client_ip
 from ..errors import ApiError
-from ..schemas import PasskeyLoginIn, RefreshIn, RememberIn, SetPasswordIn, StaffLoginIn
+from ..schemas import PasskeyLoginIn, PasskeySecondIn, RefreshIn, RememberIn, SetPasswordIn, StaffLoginIn
 from ..services import auth, passkeys
+from ..security import verify_token
 from ..services.loginguard import guard
 
 staff = APIRouter(prefix="/admin/v1/auth", tags=["sign-in"])
@@ -66,6 +67,18 @@ async def passkey_login(body: PasskeyLoginIn, request: Request, response: Respon
     async with db.admin_tx() as conn:
         sid = await passkeys.check_login(conn, body.id, body.clientDataJSON, body.authenticatorData, body.signature)
         return await auth.passkey_login(conn, sid)
+
+
+@staff.post("/passkey/second")
+async def passkey_second(body: PasskeySecondIn, request: Request, response: Response):
+    """The second step of a sign-in for a role that must use Face ID too: the note from the password step, plus the phone's answer."""
+    _no_store(response)
+    s = get_settings()
+    guard.check(client_ip(request), "passkey-second", s.login_ip_limit, 10 ** 9, 1)
+    ticket = verify_token("ticket", body.ticket)
+    async with db.admin_tx() as conn:
+        sid = await passkeys.check_login(conn, body.id, body.clientDataJSON, body.authenticatorData, body.signature)
+        return await auth.passkey_second(conn, sid, ticket)
 
 
 @staff.post("/logout", status_code=204)

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from ..config import get_settings
 from ..errors import ApiError
 from ..security import issue_token
-from . import passwords
+from . import passkeys, passwords
 from .loginguard import guard
 
 WRONG = ("wrong_credentials", "That email and password do not match.")
@@ -81,10 +81,27 @@ async def staff_login(conn, email: str, password: str, ip: str | None, remember:
             await _record_failure(conn, "platform.staff_users", [r["id"]])
         return _fail()
     guard.succeeded(email)
-    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
     if passwords.needs_rehash(r["password_hash"]):                  # a password saved with older, weaker settings is saved again with today's
         await conn.execute("UPDATE platform.staff_users SET password_hash=$2 WHERE id=$1", r["id"], await passwords.hash_async(password))
+    if r["role"] in s.passkey_second_step_roles and await conn.fetchval("SELECT 1 FROM platform.passkeys WHERE staff_id=$1 LIMIT 1", r["id"]):
+        # The password was right, but this person has Face ID set up and their role must use it too: no sign-in yet, only a short note and a challenge for the phone.
+        return {"second_step": "passkey", "ticket": issue_token("ticket", {"sub": str(r["id"]), "remember": bool(remember)}, 300), "options": await passkeys.login_options(conn)}
+    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
     out = await _tokens(conn, r["id"], ttl=timedelta(days=s.staff_remember_days) if remember else None)
+    out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
+    return out
+
+
+async def passkey_second(conn, staff_id, ticket: dict) -> dict:
+    """The sign-in after the password AND Face ID both checked out. The Face ID must belong to the person who gave the password."""
+    if str(staff_id) != str(ticket.get("sub")):
+        raise ApiError(401, "invalid_token", "Sign in again.")
+    r = await conn.fetchrow("SELECT id, name, role::text AS role FROM platform.staff_users WHERE id=$1 AND status='active'", staff_id)
+    if not r:
+        raise ApiError(401, "invalid_token", "Sign in again.")
+    s = get_settings()
+    await conn.execute("UPDATE platform.staff_users SET failed_logins=0, locked_until=NULL, last_login_at=now() WHERE id=$1", r["id"])
+    out = await _tokens(conn, r["id"], ttl=timedelta(days=s.staff_remember_days) if ticket.get("remember") else None)
     out["user"] = {"id": r["id"], "name": r["name"], "role": r["role"]}
     return out
 

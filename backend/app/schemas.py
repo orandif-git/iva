@@ -389,6 +389,10 @@ class PasskeyLoginIn(Strict):
     signature: Annotated[str, StringConstraints(min_length=40, max_length=1000)]
 
 
+class PasskeySecondIn(PasskeyLoginIn):
+    ticket: Annotated[str, StringConstraints(min_length=20, max_length=2000)]
+
+
 class PasskeyRegisterIn(Strict):
     clientDataJSON: Annotated[str, StringConstraints(min_length=20, max_length=4000)]
     attestationObject: Annotated[str, StringConstraints(min_length=40, max_length=8000)]

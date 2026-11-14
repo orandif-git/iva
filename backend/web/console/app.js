@@ -939,7 +939,7 @@ function confirmDelete(i) {
   const r = S.cur.rows[i], shop = esc(cname());
   let what, extra = "";
   if (r.k === "data") { const c = r.cam, other = [c.use_footfall && r.flag !== "use_footfall", c.use_anpr && r.flag !== "use_anpr", c.use_areas].some(Boolean); what = `${r.t} on ${esc(c.name)}`; if (!other) extra = `<div class="note warn">This is the camera's only use. Deleting it stops watching this camera. Continue?</div>`; }
-  else if (r.k === "area") { const c = r.cam, last = (S.cur.areas[c.id] || []).length === 1 && !c.use_footfall && !c.use_anpr; what = `${r.area.name} (${esc(evMeta(r.type)?.title || "")}) on ${esc(c.name)}`; if (last) extra = `<div class="note warn">This is the camera's only use. Deleting it stops watching this camera. Continue?</div>`; }
+  else if (r.k === "area") { const c = r.cam, last = (S.cur.areas[c.id] || []).length === 1 && !c.use_footfall && !c.use_anpr; what = `${esc(r.area.name)} (${esc(evMeta(r.type)?.title || "")}) on ${esc(c.name)}`; if (last) extra = `<div class="note warn">This is the camera's only use. Deleting it stops watching this camera. Continue?</div>`; }
   else what = esc(r.rule.label || r.rule.title);
   modal(`${mh("Delete this event?")}<p class="nm"><b>${what}</b></p><p class="sub nm">${r.k === "rule" ? `${shop} stops getting this and it leaves the list. This changes this shop only; the event itself stays for every other shop.` : `It is removed from ${esc(r.cam.name)}. Messages already sent stay in the log.`}</p>${extra}<div class="row"><button class="btn danger" type="button" data-confirm="delev" data-i="${i}">Delete</button><button class="btn" type="button" data-close>Keep</button></div>`);
 }
@@ -967,7 +967,7 @@ function pageMore() {
    <div class="sec-h">This phone</div>
    ${standalone() ? "" : `<button class="card nodot" type="button" data-install>${ico("phone", 20)}<span class="ct"><b>Add to home screen</b><span class="sub small">Open it like an app, without the browser bar</span></span>${ico("chev", 16)}</button>`}
    <button class="card nodot" type="button" data-notif>${ico("bell", 20)}<span class="ct"><b>Notifications</b><span class="sub small">Choose what this phone tells you about</span></span>${ico("chev", 16)}</button>
-   ${faceOk() ? `<button class="card nodot" type="button" data-fid>${ico("faceid", 20)}<span class="ct"><b>Face ID</b><span class="sub small">Sign in with a look instead of a password</span></span>${ico("chev", 16)}</button>` : ""}
+   ${faceOk() ? `<button class="card nodot" type="button" data-fid>${ico("faceid", 20)}<span class="ct"><b>Face ID</b><span class="sub small">${["owner", "admin"].includes(S.role) ? "Asked for after your password, to keep this account safe" : "Sign in with a look instead of a password"}</span></span>${ico("chev", 16)}</button>` : ""}
    <button class="card nodot" type="button" data-pwopen>${ico("lock", 20)}<span class="ct"><b>Change password</b></span>${ico("chev", 16)}</button>
    <button class="card nodot" type="button" id="theme2">${ico("moon", 20)}<span class="ct"><b>Dark or light</b><span class="sub small">Switch how it looks</span></span>${ico("chev", 16)}</button>
    <div class="card nodot">${ico("shield", 20)}<span class="ct"><b>Stay signed in on this phone</b><span class="sub small" id="keep-sub">${api.keep ? "For 30 days after you last open it" : "Off. You sign in again when the app closes"}</span></span>${sw("keep-on", api.keep, false, "staykeep")}</div>
@@ -1503,7 +1503,7 @@ async function openFaceId() {
   let list;
   try { list = (await api.get("/admin/v1/passkeys")).items; } catch (e) { return toast(errText(e), true); }
   let here = false; try { here = faceOk() && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch { /* no */ }
-  modal(`${mh("Face ID")}<div class="sub">Sign in with Face ID or your fingerprint instead of typing your password. Your password still works.</div>
+  modal(`${mh("Face ID")}${["owner", "admin"].includes(S.role) ? '<div class="sub">Once Face ID is set up, signing in asks for it after your password. Set it up on two devices, so losing one never locks you out. If you do lose them all, another Owner can remove it for you under Console users.</div>' : '<div class="sub">Sign in with Face ID or your fingerprint instead of typing your password. Your password still works.</div>'}
   ${list.length ? `<div class="llist">${list.map((k) => `<div class="lrow nodot"><span class="ct"><b>${esc(k.name || "This phone")}</b><span class="sub small">Set up ${fmtTime(k.created_at)} · ${k.last_used_at ? "last used " + fmtTime(k.last_used_at) : "not used yet"}</span></span><button class="btn sm" type="button" data-fiddel="${k.id}">Remove</button></div>`).join("")}</div>` : '<div class="note">Face ID is not set up on any phone yet.</div>'}
   ${here ? '<button class="btn pri" type="button" data-fidadd>Set up Face ID on this phone</button>' : '<div class="note">This phone cannot use Face ID or a fingerprint for sign-in here.</div>'}
   <div class="sub small">Apple can keep this key in iCloud, so it may also work on your other Apple devices.</div>`);

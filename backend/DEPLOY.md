@@ -171,6 +171,10 @@ Anyone on the internet can call `/hik/events/<code>`, so let the web server slow
 `limit_req_zone $binary_remote_addr zone=hikalerts:10m rate=60r/m;` and in the site's server block add `location /hik/ { limit_req zone=hikalerts burst=120 nodelay; proxy_pass http://127.0.0.1:8000; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`.
 In aaPanel, the first line goes in *Settings, Config* of nginx and the second in the website's own configuration. A Hikvision recorder only sends over plain HTTP, so the website must also answer `http://` for this path without sending it on to `https://`.
 
+### 6e. If the only Owner loses the phone that has Face ID
+Owners and Admins who have set up Face ID must pass it after their password (`GI_PASSKEY_SECOND_STEP_ROLES`, default `["owner","admin"]`; set `[]` to turn this off). Face ID sign-in itself is never blocked by a locked password, so an attacker cannot use wrong passwords to keep an Owner out. Normally another Owner removes the lost Face ID (Console users, then Remove Face ID). If there is no other Owner, on the server:
+`sudo -u postgres psql gateinsight -c "DELETE FROM platform.passkeys WHERE staff_id = (SELECT id FROM platform.staff_users WHERE email = 'owner@example.com');"` and then sign in with the password and set Face ID up again.
+
 ## 7. Reach the API safely
 
 - [ ] From your laptop: `ssh -L 8000:127.0.0.1:8000 you@<VPS IP>` and leave it open. Now `http://localhost:8000/docs` on your laptop is the API's interactive page. The page cannot send your token for you, so use curl with the header as in section 8.

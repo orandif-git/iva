@@ -76,14 +76,19 @@ function startSetPassword() {
 /* ---------------------------------------------------------------------------- sign in with Face ID or a fingerprint (a passkey set up under More) */
 const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+/* The phone's Face ID (or fingerprint) answer to a challenge from the server. Throws a sentence the person can act on. */
+async function faceAnswer(o, cancelled) {
+  let cred;
+  try { cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, timeout: o.timeout, userVerification: "required" } }); }
+  catch (e) { throw new Error(e.name === "NotAllowedError" ? cancelled : "Face ID could not start on this device."); }
+  const r = cred.response;
+  return { id: cred.id, clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) };
+}
 async function faceSignIn() {
   clear(); $("#fid").disabled = true;
   try {
     const o = await post("/admin/v1/auth/passkey/options", {});
-    let cred;
-    try { cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, timeout: o.timeout, userVerification: "required" } }); }
-    catch (e) { throw new Error(e.name === "NotAllowedError" ? "Face ID was cancelled or this phone has no Face ID sign-in set up. Use your password, then set it up under More." : "Face ID could not start on this phone."); }
-    const r = cred.response, j = await post("/admin/v1/auth/passkey/login", { id: cred.id, clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) });
+    const j = await post("/admin/v1/auth/passkey/login", await faceAnswer(o, "Face ID was cancelled or this phone has no Face ID sign-in set up. Use your password, then set it up under More."));
     store.keep(false); store.set(j.refresh_token); location.replace("/console/");
   } catch (e) { $("#fid").disabled = false; fail(null, e.message); }
 }
@@ -106,7 +111,11 @@ async function startSignIn() {
     if (!pw) return fail("pw", "Enter your password.");
     $("#go").disabled = true; $("#go").textContent = "Signing in…";
     try {
-      const j = await post("/admin/v1/auth/login", { email, password: pw });
+      let j = await post("/admin/v1/auth/login", { email, password: pw });
+      if (j.second_step === "passkey") {                      // the password was right; this role must also pass Face ID
+        $("#go").textContent = "Waiting for Face ID…";
+        j = await post("/admin/v1/auth/passkey/second", { ticket: j.ticket, ...(await faceAnswer(j.options, "Face ID is needed to finish signing in. Try again.")) });
+      }
       store.keep(false); store.set(j.refresh_token); location.replace("/console/");
     } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign in"; fail(null, e.message); $("#pw").value = ""; $("#pw").focus(); }
   });

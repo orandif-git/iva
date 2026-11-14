@@ -245,3 +245,99 @@ def test_the_reader_of_phone_answers_handles_what_a_passkey_sends():
     for junk in (b"", b"\xff", b"\xa1", b"\x5f", b"\x42a"):
         with pytest.raises(Exception):
             passkeys.cbor(junk)
+
+
+# ---------------------------------------------------------------- Face ID as the second step for owners and admins
+from app.security import issue_token
+
+
+async def pw_login(client, email, **extra):
+    return await client.post("/admin/v1/auth/login", json={"email": email, "password": PW, **extra})
+
+
+async def second(client, ticket, answer):
+    return await client.post("/admin/v1/auth/passkey/second", json={"ticket": ticket, **answer})
+
+
+@pytest.mark.parametrize("role", ["owner", "admin"])
+async def test_owners_and_admins_with_face_id_must_pass_it_after_the_password(client, su, role):
+    sid, email, headers = await signed_in(client, su, role)
+    phone = await set_up(client, headers)
+    r = await pw_login(client, email)
+    j = r.json()
+    assert r.status_code == 200 and j["second_step"] == "passkey" and "access_token" not in j and "refresh_token" not in j
+    done = await second(client, j["ticket"], phone.get(j["options"]))
+    assert done.status_code == 200, done.text
+    out = done.json()
+    assert out["user"]["role"] == role and out["refresh_token"]
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + out["access_token"]})).status_code == 200
+
+
+async def test_a_role_that_is_not_in_the_list_signs_in_with_the_password_alone(client, su):
+    sid, email, headers = await signed_in(client, su, "support")
+    await set_up(client, headers)
+    j = (await pw_login(client, email)).json()
+    assert "second_step" not in j and j["access_token"]
+
+
+async def test_someone_who_has_not_set_up_face_id_is_not_locked_out(client, su):
+    sid, email = await staff_with_password(su, role="owner")
+    j = (await pw_login(client, email)).json()
+    assert "second_step" not in j and j["access_token"]
+
+
+async def test_the_password_step_alone_gives_no_access_and_the_note_is_not_a_sign_in_token(client, su):
+    sid, email, headers = await signed_in(client, su)
+    await set_up(client, headers)
+    j = (await pw_login(client, email)).json()
+    assert (await client.get("/admin/v1/me", headers={"Authorization": "Bearer " + j["ticket"]})).status_code == 401, "the note must not work as an access token"
+    ok = (await client.post("/admin/v1/auth/login", json={"email": email, "password": PW})).json()
+    assert ok["second_step"] == "passkey"
+    # and an ordinary access token is not accepted as the note
+    access = issue_token("platform", {"sub": str(sid)}, 300)
+    phone_answer = {"id": "x" * 10, "clientDataJSON": "y" * 30, "authenticatorData": "z" * 50, "signature": "s" * 50}
+    assert (await second(client, access, phone_answer)).status_code in (401, 422)
+
+
+async def test_another_persons_face_id_does_not_finish_my_sign_in(client, su):
+    sid, email, headers = await signed_in(client, su)
+    await set_up(client, headers)
+    sid2, email2, headers2 = await signed_in(client, su, "owner")
+    other = await set_up(client, headers2)
+    j = (await pw_login(client, email)).json()
+    r = await second(client, j["ticket"], other.get(j["options"]))
+    assert r.status_code == 401
+
+
+async def test_a_wrong_or_old_note_gets_nothing(client, su):
+    sid, email, headers = await signed_in(client, su)
+    phone = await set_up(client, headers)
+    j = (await pw_login(client, email)).json()
+    answer = phone.get(j["options"])
+    assert (await second(client, "not-a-note-at-all-" + "x" * 20, answer)).status_code == 401
+    expired = issue_token("ticket", {"sub": str(sid)}, -10)
+    assert (await second(client, expired, answer)).status_code == 401
+
+
+async def test_the_phones_answer_works_once(client, su):
+    sid, email, headers = await signed_in(client, su)
+    phone = await set_up(client, headers)
+    j = (await pw_login(client, email)).json()
+    answer = phone.get(j["options"])
+    assert (await second(client, j["ticket"], answer)).status_code == 200
+    assert (await second(client, j["ticket"], answer)).status_code == 422, "a challenge is spent by its first use"
+
+
+async def test_staying_signed_in_survives_the_second_step(client, su):
+    sid, email, headers = await signed_in(client, su)
+    phone = await set_up(client, headers)
+    j = (await pw_login(client, email, remember=True)).json()
+    out = (await second(client, j["ticket"], phone.get(j["options"]))).json()
+    assert out["remember"] is True
+
+
+async def test_a_wrong_password_still_gets_no_note(client, su):
+    sid, email, headers = await signed_in(client, su)
+    await set_up(client, headers)
+    r = await client.post("/admin/v1/auth/login", json={"email": email, "password": "definitely wrong!!"})
+    assert r.status_code == 401 and "ticket" not in r.text
