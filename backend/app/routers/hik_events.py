@@ -1,9 +1,10 @@
 """The private address a Hikvision recorder sends its fault messages to:  /hik/events/<code>.  No sign-in: the long secret code in the address is the proof.
-A wrong code gets the same plain "not found" as any address that does not exist, and nothing is written."""
+A wrong code gets the same plain "not found" as any address that does not exist, and nothing is written. Many wrong codes from one address are slowed down (the web
+server should limit this address too: see DEPLOY.md). The database is reached with the narrow public role only (services/hik_alerts.py)."""
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
-from ..db import db
+from ..deps import client_ip
 from ..errors import ApiError
 from ..services import hik_alerts
 
@@ -22,25 +23,29 @@ async def _body(request: Request) -> bytes:
     return out
 
 
-def _ip(request: Request) -> str | None:
-    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return fwd or (request.client.host if request.client else None)
+def _refuse_if_guessing(ip) -> None:
+    if hik_alerts.unknown.blocked(ip):
+        raise ApiError(429, "too_many_attempts", "Too many requests.")
 
 
 @router.post("/hik/events/{code}", include_in_schema=False)
 @router.put("/hik/events/{code}", include_in_schema=False)
 async def receive(code: str, request: Request):
+    ip = client_ip(request)
+    _refuse_if_guessing(ip)
     body = await _body(request)
-    async with db.service_tx() as conn:
-        if not await hik_alerts.receive(conn, code, request.headers.get("content-type", ""), body, _ip(request)):
-            raise ApiError(404, "not_found", "Not found.")
+    if not await hik_alerts.receive(code, request.headers.get("content-type", ""), body, ip):
+        hik_alerts.unknown.miss(ip)
+        raise ApiError(404, "not_found", "Not found.")
     return PlainTextResponse("OK")
 
 
 @router.get("/hik/events/{code}", include_in_schema=False)
-async def check(code: str):
+async def check(code: str, request: Request):
     """Open this address from the recorder's network to see that it reaches us. Shows nothing about the customer."""
-    async with db.service_tx() as conn:
-        if not await conn.fetchval("SELECT 1 FROM platform.alert_links WHERE code_hash=$1", hik_alerts.fingerprint(code)):
-            raise ApiError(404, "not_found", "Not found.")
+    ip = client_ip(request)
+    _refuse_if_guessing(ip)
+    if not await hik_alerts.exists(code):
+        hik_alerts.unknown.miss(ip)
+        raise ApiError(404, "not_found", "Not found.")
     return PlainTextResponse("Ready to receive alerts.")

@@ -4,6 +4,7 @@ Every request runs in one transaction under a restricted database role:
   app_user       customer API. Row-level security limits it to one tenant.
   platform_admin admin console. Can read across tenants (BYPASSRLS), every write is audited.
   service_worker registrar and workers.
+  public_edge    the pages anyone on the internet can open (evidence and report links, a recorder's alert address). It reads no customer table directly.
 The connection itself logs in as a low-privilege role that is a member of those three; SET LOCAL ROLE
 switches for the length of the transaction only, so a pooled connection never keeps elevated rights.
 """
@@ -12,7 +13,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 
-_ROLES = {"app_user", "platform_admin", "service_worker"}
+_ROLES = {"app_user", "platform_admin", "service_worker", "public_edge"}
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
@@ -52,6 +53,10 @@ class Database:
 
     def service_tx(self):
         return self._tx("service_worker")
+
+    def edge_tx(self):
+        """For the addresses anyone on the internet can reach. This role can read no table of a customer, only call a few fixed lookups (see migration 034)."""
+        return self._tx("public_edge")
 
 
 db = Database()

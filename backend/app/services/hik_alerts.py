@@ -12,6 +12,7 @@ from email.policy import default as email_policy
 from xml.etree import ElementTree as ET
 
 from ..config import get_settings
+from ..db import db
 from . import alerts
 
 MAX_BODY = 6_000_000          # a message with a picture can be a few hundred KB; anything near this is not a recorder
@@ -122,6 +123,9 @@ def _wording(kind: str, name: str, ch: int | None) -> tuple[str, dict, str]:
     return f"{cam} on {name} has stopped sending video.", {"recorder": name}, f"hik:{name}:video:{ch or 0}"
 
 
+LOG_PER_HOUR = 600           # a link may write this many lines an hour; a flood of different message types cannot fill the table
+
+
 async def _log(conn, link_id, ev: dict, ch, result: str, raw: str) -> None:
     """Write a line in the log. The same quiet message repeated every few seconds is written once in a while, not every time."""
     quiet = ev["eventState"] != "active"
@@ -130,41 +134,77 @@ async def _log(conn, link_id, ev: dict, ch, result: str, raw: str) -> None:
             f"""SELECT 1 FROM platform.alert_link_messages WHERE link_id=$1 AND event_type=$2 AND channel IS NOT DISTINCT FROM $3 AND state IS NOT DISTINCT FROM $4
                 AND result=$5 AND received_at > now() - interval '{window}' LIMIT 1""", link_id, ev["eventType"], ch, ev["eventState"] or None, result):
         return
+    if await conn.fetchval("SELECT count(*) FROM platform.alert_link_messages WHERE link_id=$1 AND received_at > now() - interval '1 hour'", link_id) >= LOG_PER_HOUR:
+        return
     await conn.execute("INSERT INTO platform.alert_link_messages (link_id, event_type, state, channel, event_time, result, raw) VALUES ($1,$2,$3,$4,$5,$6,$7)",
                        link_id, ev["eventType"][:60], (ev["eventState"] or None) and ev["eventState"][:20], ch, ev["dateTime"][:40] or None, result, raw[:1500])
     await conn.execute("DELETE FROM platform.alert_link_messages WHERE link_id=$1 AND received_at < now() - make_interval(days => $2)", link_id, KEEP_DAYS)
 
 
-async def receive(conn, code: str, content_type: str, body: bytes, ip: str | None) -> bool:
-    """Handles one message from a recorder. False when the code is not one of ours (the caller answers 'not found'); True otherwise, even for a message we could not read."""
-    link = await conn.fetchrow("SELECT l.id, l.tenant_id, l.name, t.status::text AS tenant_status FROM platform.alert_links l JOIN app.tenants t ON t.id = l.tenant_id WHERE l.code_hash=$1",
-                               fingerprint(code))
+class UnknownCodes:
+    """Counts messages with a wrong code per sender address, so guessing codes (or just flooding the address) is slowed down before the database is asked."""
+
+    def __init__(self, limit: int = 30, window: float = 60.0, clock=None):
+        import time
+        from collections import defaultdict, deque
+        self.limit, self.window, self.clock = limit, window, clock or time.monotonic
+        self._q = defaultdict(deque)
+
+    def blocked(self, ip: str | None) -> bool:
+        q = self._q[ip or "?"]
+        now = self.clock()
+        while q and now - q[0] > self.window:
+            q.popleft()
+        return len(q) >= self.limit
+
+    def miss(self, ip: str | None) -> None:
+        if len(self._q) > 20000:
+            self._q.clear()
+        self._q[ip or "?"].append(self.clock())
+
+
+unknown = UnknownCodes()
+
+
+async def exists(code: str) -> bool:
+    async with db.edge_tx() as conn:
+        return bool(await conn.fetchval("SELECT platform.edge_hik_exists($1)", fingerprint(code)))
+
+
+async def receive(code: str, content_type: str, body: bytes, ip: str | None) -> bool:
+    """Handles one message from a recorder. False when the code is not one of ours (the caller answers 'not found'); True otherwise, even for a message we could not read.
+    The lookup and the log use the narrow public role; an alert is raised under the customer's own restricted role."""
+    async with db.edge_tx() as conn:
+        link = await conn.fetchrow("SELECT * FROM platform.edge_hik_touch($1, $2::inet)", fingerprint(code), ip)
     if not link:
         return False
-    await conn.execute("UPDATE platform.alert_links SET last_message_at=now(), last_ip=$2::inet WHERE id=$1", link["id"], ip)
     stopped = link["tenant_status"] in ("suspended", "cancelled")
+    notes = []                                  # (event, channel, what we did, the text to keep)
     events = parse(content_type, body)
     if not events:
         text = body[:300].decode("utf-8", "replace") if b"\x00" not in body[:300] else "(not text)"
-        await _log(conn, link["id"], {"eventType": "unreadable", "eventState": "", "dateTime": ""}, None, "Could not read this message", text)
-        return True
+        notes.append(({"eventType": "unreadable", "eventState": "", "dateTime": ""}, None, "Could not read this message", text))
     for ev in events:
         kind, ch = ev["eventType"], _channel(ev)
         if kind == "heartBeat":
             continue
         raw = f"{kind} {ev['eventState']} channel {ch} {ev['eventDescription']}".strip()
         if ev["eventState"] != "active":
-            await _log(conn, link["id"], ev, ch, "Noted. Nothing to send.", raw)
+            notes.append((ev, ch, "Noted. Nothing to send.", raw))
         elif stopped:
-            await _log(conn, link["id"], ev, ch, "Not sent: this customer's service has stopped.", raw)
+            notes.append((ev, ch, "Not sent: this customer's service has stopped.", raw))
         elif kind in FAULTS:
             what, details, key = _wording(kind, link["name"], ch)
-            async with conn.transaction():
-                made = await alerts.raise_alert(conn, link["tenant_id"], FAULTS[kind], body=what, camera_name=link["name"] if kind != "videoloss" or not ch else f"Camera {ch}",
+            async with db.tenant_tx(link["tenant_id"]) as tconn:
+                made = await alerts.raise_alert(tconn, link["tenant_id"], FAULTS[kind], body=what, camera_name=link["name"] if kind != "videoloss" or not ch else f"Camera {ch}",
                                                 details=details, dedupe_key=key, cooldown_minutes=FAULT_COOLDOWN if kind != "videoloss" else 60)
-            await _log(conn, link["id"], ev, ch, "Alert raised." if made else "Alert not raised again (sent recently, or switched off).", raw)
+            notes.append((ev, ch, "Alert raised." if made else "Alert not raised again (sent recently, or switched off).", raw))
         else:
-            await _log(conn, link["id"], ev, ch, "Logged only. No alert for this kind of message yet.", raw)
+            notes.append((ev, ch, "Logged only. No alert for this kind of message yet.", raw))
+    if notes:
+        async with db.edge_tx() as conn:
+            for ev, ch, result, raw in notes:
+                await _log(conn, link["id"], ev, ch, result, raw)
     return True
 
 

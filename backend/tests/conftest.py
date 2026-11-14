@@ -45,7 +45,7 @@ async def su():
     c = await asyncpg.connect(SUPER_DSN)
     await c.execute(SCHEMA.read_text())
     await c.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='gi_api') THEN CREATE ROLE gi_api LOGIN PASSWORD 'gi'; END IF; END $$")
-    await c.execute("GRANT app_user, platform_admin, service_worker TO gi_api")
+    await c.execute("GRANT app_user, platform_admin, service_worker, public_edge TO gi_api")
     await c.execute("GRANT CONNECT ON DATABASE gi_test TO gi_api")
     await c.execute("DELETE FROM platform.alert_switches")          # the schema starts the area alerts switched off; tests start with everything on and test that separately
     await c.execute("INSERT INTO platform.plans VALUES ('quick','Quick connect',79900,'snapshots','{}'), ('full','Full speed',149900,'realtime_5fps','{\"anpr\": true}')")

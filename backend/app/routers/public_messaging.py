@@ -31,14 +31,8 @@ async def _load(token: str):
     eid, expired = parsed
     if expired:
         return None, "expired"
-    async with db.service_tx() as conn:
-        row = await conn.fetchrow(
-            """SELECT e.id, e.kind, e.storage_key, e.content_type, e.created_at, e.expires_at, c.name AS camera, a.title, a.body, t.timezone, t.name AS company,
-                      cl.id AS clip_id, cl.storage_key AS clip_key
-               FROM app.evidence e JOIN app.tenants t ON t.id=e.tenant_id LEFT JOIN app.cameras c ON c.id=e.camera_id
-                    LEFT JOIN app.alerts a ON a.evidence_id=e.id OR a.clip_id=e.id
-                    LEFT JOIN app.evidence cl ON cl.id = a.clip_id AND cl.expires_at > now()
-               WHERE e.id=$1 AND e.expires_at > now() AND t.status::text NOT IN ('suspended','cancelled')""", eid)
+    async with db.edge_tx() as conn:
+        row = await conn.fetchrow("SELECT * FROM platform.edge_evidence($1)", eid)
     return row, ("gone" if not row else None)
 
 
@@ -116,10 +110,8 @@ async def report_file(token: str):
     if expired:
         return _page("Link expired", "<div class='card'><h1>This link has expired</h1><p>For security, report links only work for a few hours. Please open the Jas iVision app and look under Reports.</p></div>", 410)
     from ..services.reports import filename
-    async with db.service_tx() as conn:
-        r = await conn.fetchrow(
-            """SELECT r.report_type, r.period_start, r.period_end, r.file_key, r.expires_at, t.timezone FROM app.reports r JOIN app.tenants t ON t.id=r.tenant_id
-               WHERE r.id=$1 AND r.status='ready' AND r.expires_at > now() AND t.status::text NOT IN ('suspended','cancelled')""", rid)
+    async with db.edge_tx() as conn:
+        r = await conn.fetchrow("SELECT * FROM platform.edge_report($1)", rid)
     if not r or not r["file_key"]:
         return Response(status_code=404, headers=SAFE)
     data = await evidence.store().get(r["file_key"])

@@ -46,7 +46,7 @@ Nothing here has been run on a real server or a real recorder yet. Where a step 
 - [ ] ```bash
       sudo -u postgres createdb gateinsight
       sudo -u postgres psql gateinsight -f /opt/gateinsight/schema.sql
-      sudo -u postgres psql gateinsight -c "CREATE ROLE gi_api LOGIN PASSWORD '<a long random password>'; GRANT app_user, platform_admin, service_worker TO gi_api; GRANT CONNECT ON DATABASE gateinsight TO gi_api;"
+      sudo -u postgres psql gateinsight -c "CREATE ROLE gi_api LOGIN PASSWORD '<a long random password>'; GRANT app_user, platform_admin, service_worker, public_edge TO gi_api; GRANT CONNECT ON DATABASE gateinsight TO gi_api;"
       ```
 - [ ] PostgreSQL listens on `localhost` only (the default). Check: `ss -ltn | grep 5432` shows `127.0.0.1`.
 - [ ] Back it up before the test ends: `sudo -u postgres pg_dump gateinsight > backup.sql`.
@@ -134,6 +134,8 @@ WantedBy=multi-user.target
    su postgres -c "psql -d gateinsight -f migrations/031_passkeys.sql"  # sign in with Face ID or a fingerprint
    su postgres -c "psql -d gateinsight -f migrations/032_alert_recipients_default.sql"  # an alert nobody chose people for goes to everyone with a mobile number
    su postgres -c "psql -d gateinsight -f migrations/033_hikvision_alert_links.sql"      # Hikvision alerts: a private address per recorder, and the log of what it sent
+   su postgres -c "psql -d gateinsight -f migrations/034_public_edge_role.sql"          # a narrow database role for the pages anyone can open (evidence links, report links, Hikvision alert addresses)
+   # AFTER 034, give the API's database user the new role (the migration does this by itself when the user is called gi_api): GRANT public_edge TO <your api user>;
    # Hikvision recorders send alerts over plain HTTP only. Check that http://<your site>/hik/events/<code> is answered on port 80 and NOT redirected to HTTPS (a recorder does not follow redirects).
    ```
    Then restart the API: `systemctl restart gi-api`.
@@ -164,6 +166,11 @@ Old addresses (`/platform`, `/staff`, `/next`) redirect to `/`. Customers have n
 - Push (Firebase) settings are kept for later; see `docs/PUSH.md`.
 
 Security of the pages: they load only their own scripts and styles (a strict content policy is sent with every page) and the sign-in token lives in the browser only until the tab is closed. Because sign-in is a password alone, use a long unique password; five wrong tries lock the account for 15 minutes.
+
+### 6d. Slow down the Hikvision alert address (recommended)
+Anyone on the internet can call `/hik/events/<code>`, so let the web server slow down a flood before it reaches the API (the API also slows down wrong codes by itself). In nginx: in the `http {}` section add
+`limit_req_zone $binary_remote_addr zone=hikalerts:10m rate=60r/m;` and in the site's server block add `location /hik/ { limit_req zone=hikalerts burst=120 nodelay; proxy_pass http://127.0.0.1:8000; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`.
+In aaPanel, the first line goes in *Settings, Config* of nginx and the second in the website's own configuration. A Hikvision recorder only sends over plain HTTP, so the website must also answer `http://` for this path without sending it on to `https://`.
 
 ## 7. Reach the API safely
 

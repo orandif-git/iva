@@ -20,6 +20,7 @@ def multipart(*parts):
 
 @pytest.fixture(autouse=True)
 async def _tidy(su):
+    hik_alerts.unknown._q.clear()
     yield
     await su.execute("DELETE FROM app.notifications n USING app.alerts a WHERE a.id = n.alert_id AND a.dedupe_key LIKE 'hik:%' AND n.status = 'queued'")
 
@@ -174,3 +175,45 @@ async def test_the_log_is_newest_first_and_roles_are_respected(client, make):
     assert r.status_code == 200 and [m["event_type"] for m in r.json()] == ["diskerror", "illaccess"] and r.json()[0]["link"] == "Main shop recorder"
     assert (await client.post(f"/admin/v1/tenants/{t}/alert-links", json={"name": "x"}, headers=support["headers"])).status_code == 403
     assert (await client.get(f"/admin/v1/tenants/{t}/alert-links", headers=support["headers"])).status_code == 200
+
+
+# ---------------------------------------------------------------- the narrow public role, and the limits
+import asyncpg
+from app.db import db
+
+
+@pytest.mark.parametrize("sql", ["SELECT * FROM app.alerts", "SELECT * FROM app.evidence", "SELECT * FROM app.tenants", "SELECT * FROM platform.alert_links", "SELECT * FROM platform.staff_users",
+                                 "SELECT * FROM app.recorders", "INSERT INTO platform.alert_links (tenant_id, name, code_hash) VALUES (gen_random_uuid(), 'x', 'y')", "UPDATE app.alerts SET title='x'"])
+async def test_the_public_role_cannot_read_or_change_anything_of_a_customer(client, sql):
+    async with db.edge_tx() as conn:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.execute(sql)
+
+
+async def test_the_workers_no_longer_reach_the_hikvision_tables(client):
+    async with db.service_tx() as conn:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.fetch("SELECT * FROM platform.alert_links")
+
+
+async def test_the_public_role_only_learns_what_its_lookups_return(client, make, su):
+    t, _, made = await link(client, make)
+    async with db.edge_tx() as conn:
+        row = await conn.fetchrow("SELECT * FROM platform.edge_hik_touch($1, NULL)", hik_alerts.fingerprint(made["code"]))
+        assert row["tenant_id"] == t and not await conn.fetchval("SELECT platform.edge_hik_exists($1)", "nothing-like-this")
+
+
+async def test_many_wrong_codes_from_one_address_are_slowed_down(client):
+    codes = [f"wrong-code-{i}" for i in range(hik_alerts.unknown.limit)]
+    for c in codes:
+        assert (await client.get(f"/hik/events/{c}")).status_code == 404
+    assert (await client.get("/hik/events/one-more")).status_code == 429
+    assert (await post(client, "yet-another", msg())).status_code == 429
+
+
+async def test_a_link_cannot_fill_its_log_with_endless_different_messages(client, make, su, monkeypatch):
+    monkeypatch.setattr(hik_alerts, "LOG_PER_HOUR", 3)
+    t, _, made = await link(client, make)
+    for i in range(8):
+        await post(client, made["code"], msg(f"madeUpEvent{i}", "active", i))
+    assert len(await log(su, t)) == 3
