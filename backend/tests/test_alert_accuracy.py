@@ -154,3 +154,21 @@ async def test_the_gateway_reporting_a_dropped_connection_leads_to_the_alert_a_f
     await sweeper.mark_stale_recorders(90)
     await sweeper.mark_stale_recorders(90)
     assert [x[0] for x in await outage_alerts(su, t)] == ["Recorder offline"]
+
+
+async def test_a_recorder_alerted_after_a_few_minutes_still_gets_its_service_restored_message(client, make, su):
+    """The alert for an outage found by the new check carries its own key (recorder_offline:<id>:<time>); the 'back to normal' message must still find it."""
+    t, rec = await offline_recorder(client, make, su, 20)
+    await sweeper.mark_stale_recorders(90)
+    assert [x[0] for x in await outage_alerts(su, t)] == ["Recorder offline"]
+    r = await client.post(f"/internal/v1/recorders/{rec['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.2.3.4", "channels": [{"channel_no": 1, "name": "C1"}]})
+    assert r.status_code == 200
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type='back_to_normal'", t) == 1
+
+
+async def test_a_recorder_that_was_reminded_after_six_hours_also_gets_its_service_restored_message(client, make, su):
+    t, rec = await offline_recorder(client, make, su, 7 * 60)
+    await sweeper.mark_stale_recorders(90)
+    r = await client.post(f"/internal/v1/recorders/{rec['device_id']}/heartbeat", headers=make.service(), json={"ip": "1.2.3.4", "channels": [{"channel_no": 1, "name": "C1"}]})
+    assert r.status_code == 200
+    assert await su.fetchval("SELECT count(*) FROM app.alerts WHERE tenant_id=$1 AND rule_type='back_to_normal'", t) == 1
