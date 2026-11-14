@@ -135,6 +135,7 @@ async def message_log(
     date_from: date | None = Query(None, alias="from"), date_to: date | None = Query(None, alias="to"),
     tenant_id: UUID | None = None, group: str | None = Query(None, pattern="^(Sent|Failed|Waiting|Held back)$"),
     q: str | None = Query(None, max_length=80), limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0, le=100000),
+    hours: int | None = Query(None, ge=1, le=720),
     ctx: AdminCtx = Depends(admin_ctx()),
 ):
     """The message log for a range of days (India time, both ends included), with the search done here so it finds old messages too. Returns the page and the total."""
@@ -148,6 +149,8 @@ async def message_log(
         add("n.created_at >= (?::date)::timestamp AT TIME ZONE 'Asia/Kolkata'", date_from)
     if date_to:
         add("n.created_at < ((?::date) + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'", date_to)
+    if hours:                                     # the last N hours up to now (the Overview counts the last 24)
+        add("n.created_at > now() - make_interval(hours => ?)", hours)
     if tenant_id:
         add("n.tenant_id = ?", tenant_id)
     if group:

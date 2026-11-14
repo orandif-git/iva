@@ -206,6 +206,8 @@ async def test_the_message_log_can_be_read_for_a_range_of_days_and_searched(clie
     assert (await get(group="Held back")).json()["total"] == 1 and (await get(group="Waiting")).json()["total"] == 1 and (await get(group="Sent")).json()["total"] == 1
     assert (await get(q="webhook")).json()["total"] == 1 and (await get(q="Kavin")).json()["total"] == 4 and (await get(q="9876543212")).json()["total"] == 1
     assert (await get(q="100%")).json()["total"] == 0                                                              # a % in the search is a plain character, not "everything"
+    assert (await get(hours=24)).json()["total"] == 1 and (await get(hours=72)).json()["total"] == 2, "the last N hours up to now (the Overview counts the last 24)"
+    assert (await get(hours=0)).status_code == 422
     page = (await get(limit=2, offset=2)).json()
     assert page["total"] == 4 and len(page["items"]) == 2
 

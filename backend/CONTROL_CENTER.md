@@ -178,3 +178,7 @@ Recorder and cameras lists every camera with a **Watch live** button (Owner and 
 ## Staying on the same page after a refresh
 
 The address carries where you are (`#customer/<id>/<section>`, `#setup/<tab>`, `#overview`, `#customers`, `#messages`), so refreshing the browser, or opening the same address again, comes back to that page. The step-by-step screens (new customer, new event) are not remembered.
+
+## Overview numbers
+
+Every number on the Overview opens the matching page: Customers, Active and Need a look open the customer list with that status; Cameras and Recorders open the customer list; Sent in 24 hours, Held back and Failed to send open Messages for the last 24 hours with that result. The message log has a "Last 24 hours" range (`hours=24` on `GET /admin/v1/messaging/log`, the last N hours up to now), which is exactly what the Overview counts.
